@@ -650,7 +650,12 @@ final class PersonalExtraUsageTests: XCTestCase {
             credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
             in: store
         )
-        let service = try makeService(profileID: profileID, store: store)
+        let renewals = RenewedCredentialRecorder()
+        let service = try makeService(
+            profileID: profileID,
+            store: store,
+            renewals: renewals
+        )
         let profile = try seededProfile(profileID)
 
         StubClaudeEndpointsURLProtocol.install(
@@ -665,6 +670,15 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         StubClaudeEndpointsURLProtocol.reset()
         XCTAssertEqual(unavailable.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(
+            try store.loadProfileCredentials(profileID).cliCredentialsJSON,
+            Self.credentialsJSON(expiresAt: 1_000),
+            "a failed renewal must leave the stored credential alone"
+        )
+        XCTAssertTrue(
+            renewals.writes.isEmpty,
+            "a failed renewal must not be handed to the credential writer"
+        )
 
         // Same stored credential, the endpoint is back.
         StubClaudeEndpointsURLProtocol.install(
@@ -683,6 +697,15 @@ final class PersonalExtraUsageTests: XCTestCase {
             "renewal must be attempted again once the transient failure clears"
         )
         XCTAssertNil(recovered.personalExtraUsageIssue)
+        // Where the renewed token was sent, not merely that one was obtained.
+        // `ClaudeAPIService` swallows a persistence failure by design, so a
+        // renewal written to the wrong store costs nothing visible — which is
+        // how this test came to write through `ProfileStore.shared`, reading
+        // the developer's whole login Keychain on the way.
+        XCTAssertTrue(
+            renewals.carriesAccessToken("renewed-access", for: profileID),
+            "the renewed token must be handed to this test's own writer"
+        )
     }
 
     /// An expired login stays short-circuited until the credential is
@@ -967,7 +990,8 @@ final class PersonalExtraUsageTests: XCTestCase {
 
     private func makeService(
         profileID: UUID,
-        store: ProfileStore
+        store: ProfileStore,
+        renewals: RenewedCredentialRecorder? = nil
     ) throws -> ClaudeAPIService {
         let manager = ProfileManager(profileStore: store)
         let profile = try XCTUnwrap(
@@ -977,9 +1001,10 @@ final class PersonalExtraUsageTests: XCTestCase {
         manager.activeProfile = profile
         retained.append(manager)
         retained.append(store)
-        return ClaudeAPIService(
+        return makeIsolatedClaudeAPIService(
             profileManager: manager,
-            systemCredentialsReader: { nil }
+            store: store,
+            renewals: renewals
         )
     }
 

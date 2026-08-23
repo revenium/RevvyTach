@@ -261,3 +261,98 @@ func legacyProfilesData(
 enum LegacyFixtureError: Error {
     case notAnObject
 }
+
+// MARK: - Isolation from the real Keychain
+
+/// A `SecurityCommandRunning` that must never be reached.
+///
+/// The credential paths built below never shell out to `/usr/bin/security`.
+/// Wiring this in rather than leaving `SecurityCLIRunner()` means that if one
+/// ever starts to, the test fails loudly instead of quietly running the real
+/// binary against the developer's login Keychain.
+struct UnreachableSecurityRunner: SecurityCommandRunning {
+    struct Invoked: Error {
+        let arguments: [String]
+    }
+
+    func run(_ arguments: [String]) throws -> SecurityCommandResult {
+        throw Invoked(arguments: arguments)
+    }
+}
+
+/// A `ClaudeAPIService` with **all three** of its credential-store seams
+/// pointed at `store`.
+///
+/// Prefer this over `ClaudeAPIService(profileManager:systemCredentialsReader:)`
+/// in every test. Each of the three defaults resolves to the developer's own
+/// credentials, and injecting only the obvious one is not enough:
+///
+/// - `profileManager` resolves to `.shared`.
+/// - `systemCredentialsReader` resolves to
+///   `ClaudeCodeSyncService.shared.readSystemCredentials`, which reads the
+///   real `~/.claude/.credentials.json` and shells out to `security
+///   find-generic-password`.
+/// - `renewedCredentialWriter` resolves to
+///   `ClaudeCodeSyncService.shared.saveRefreshedCredentials`, which writes
+///   through `ProfileStore.shared`.
+///
+/// The third one is the expensive one, and it is the one with no argument at
+/// the call site to hint that it exists. Persisting a renewed token loads
+/// every profile in `ProfileStore.shared` first, which reads every stored
+/// secret out of the developer's login Keychain — fourteen macOS consent
+/// dialogs on the maintainer's machine, from a single test. The renewal
+/// failure is swallowed by design (`ClaudeAPIService` keeps a successful
+/// renewal even when it cannot be persisted), so the cost showed up only as
+/// dialogs, never as a test failure.
+///
+/// The writer is routed through a real `ClaudeCodeSyncService` rather than a
+/// bare closure so the validation in `saveRefreshedCredentials` — the guard
+/// that refuses to persist a blob carrying no token — still runs. Only the
+/// store underneath it changes.
+@MainActor
+func makeIsolatedClaudeAPIService(
+    profileManager: ProfileManager,
+    store: ProfileStore,
+    systemCredentials: @escaping () throws -> String? = { nil },
+    renewals: RenewedCredentialRecorder? = nil
+) -> ClaudeAPIService {
+    let cliSync = ClaudeCodeSyncService(
+        profileStore: store,
+        securityRunner: UnreachableSecurityRunner()
+    )
+    return ClaudeAPIService(
+        profileManager: profileManager,
+        systemCredentialsReader: systemCredentials,
+        // Captures `cliSync` and `renewals`, which is what keeps them alive
+        // for the service's lifetime.
+        renewedCredentialWriter: { json, profileID in
+            renewals?.record(json, for: profileID)
+            try cliSync.saveRefreshedCredentials(json, for: profileID)
+        }
+    )
+}
+
+/// Records the renewed credentials a `ClaudeAPIService` handed to its
+/// injected writer.
+///
+/// A test that asserts on this is asserting on the seam, which is the thing
+/// that has to keep holding: leave `renewedCredentialWriter` on its default
+/// and nothing is recorded here, because the renewal went to
+/// `ProfileStore.shared` instead. Asserting on the isolated store's final
+/// contents would not be equivalent — a renewal that lands there can still be
+/// overwritten later in the same refresh.
+@MainActor
+final class RenewedCredentialRecorder {
+    private(set) var writes: [(json: String, profileID: UUID)] = []
+
+    func record(_ json: String, for profileID: UUID) {
+        writes.append((json, profileID))
+    }
+
+    func carriesAccessToken(_ token: String, for profileID: UUID) -> Bool {
+        writes.contains {
+            $0.profileID == profileID
+                && $0.json.contains("\"accessToken\":\"\(token)\"")
+        }
+    }
+}

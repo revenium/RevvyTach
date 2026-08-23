@@ -720,8 +720,13 @@ final class UsageProviderRegistryTests: HostedAppTestCase {
     func testClaudeServiceCapturesTwoProfilesWithoutCredentialDrift()
         throws
     {
-        let service = retain(ClaudeAPIService(
-            systemCredentialsReader: { nil }
+        // `profileManager` left un-injected resolves to `.shared`, and the
+        // renewal writer to `ProfileStore.shared`; the capture under test
+        // reaches neither, but neither should be reachable from here at all.
+        let store = retain(makeIsolatedProfileStore())
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: retain(ProfileManager(profileStore: store)),
+            store: store
         ))
         var first = Profile(
             name: "First",
@@ -777,8 +782,13 @@ final class UsageProviderRegistryTests: HostedAppTestCase {
     func testClaudeServiceCapturesInitiatingProfileOverageSetting()
         throws
     {
-        let service = retain(ClaudeAPIService(
-            systemCredentialsReader: { nil }
+        // `profileManager` left un-injected resolves to `.shared`, and the
+        // renewal writer to `ProfileStore.shared`; the capture under test
+        // reaches neither, but neither should be reachable from here at all.
+        let store = retain(makeIsolatedProfileStore())
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: retain(ProfileManager(profileStore: store)),
+            store: store
         ))
         var profile = Profile(
             name: "No Overage",

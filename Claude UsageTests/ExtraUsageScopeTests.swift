@@ -851,7 +851,15 @@ final class ExtraUsageScopeTests: XCTestCase {
         // Deliberately not loaded: with no profiles there is no stored
         // organization to short-circuit the lookup under test.
         let manager = ProfileManager(profileStore: store)
-        return ClaudeAPIService(profileManager: manager)
+        // Injecting only `profileManager` left the other two credential seams
+        // on their defaults, which read the real `~/.claude/.credentials.json`
+        // and write through `ProfileStore.shared`. The lookup under test
+        // reaches neither, so nothing here changes — but "isolated" has to
+        // mean it.
+        return makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
     }
 }
 
