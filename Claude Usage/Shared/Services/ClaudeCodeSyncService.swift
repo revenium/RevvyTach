@@ -281,8 +281,23 @@ class ClaudeCodeSyncService {
     func readKeychainCredentials(
         forAccountNamed accountName: String? = nil
     ) throws -> String? {
-        let serviceName = accountServiceName(forAccountNamed: accountName)
-            ?? resolveServiceName()
+        let serviceName: String
+        if let accountName, !accountName.isEmpty {
+            // A named account's Keychain item is that account's login, full
+            // stop. Falling through to `resolveServiceName()` here — the
+            // shared/legacy item — used to hand back whichever account last
+            // wrote it, which authenticated requests as the wrong account
+            // and let a sync persist that account's credential into this
+            // one's profile. `readCredentialsFile(forAccountNamed:)` never
+            // had this problem: it already only falls back to the shared
+            // directory when no account is named. This matches it.
+            guard let accountSpecific = accountServiceName(forAccountNamed: accountName) else {
+                return nil
+            }
+            serviceName = accountSpecific
+        } else {
+            serviceName = resolveServiceName()
+        }
         let result = try securityRunner.run([
             "find-generic-password",
             "-s", serviceName,
@@ -455,40 +470,6 @@ class ClaudeCodeSyncService {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
-    }
-
-    /// Reads the Keychain item for exactly the named account, with no
-    /// fallback to the shared item when the account doesn't have one of its
-    /// own yet.
-    ///
-    /// `readSystemCredentials(forAccountNamed:)` deliberately falls back to
-    /// the shared un-suffixed item so ordinary reads keep working before an
-    /// account's own item exists. That fallback is wrong for the
-    /// don't-downgrade guard in `applyProfileCredentials`: a read performed
-    /// in service of a write must not fall back, for the same reason
-    /// `accountServiceNameForWriting` never does. Returning `nil` here means
-    /// "nothing to compare against yet" and lets the write proceed, rather
-    /// than accidentally comparing against a different account's login.
-    private func readExactAccountKeychainCredentials(
-        forAccountNamed accountName: String?
-    ) throws -> String? {
-        guard let serviceName = accountServiceNameForWriting(forAccountNamed: accountName) else {
-            // No account name — the shared item IS the exact item.
-            return try readSystemCredentials(forAccountNamed: accountName)
-        }
-        guard keychainItemExists(serviceName: serviceName) else {
-            return nil
-        }
-        let result = try securityRunner.run([
-            "find-generic-password",
-            "-s", serviceName,
-            "-a", NSUserName(),
-            "-w"
-        ])
-        guard result.exitCode == 0, let value = result.standardOutput else {
-            return nil
-        }
-        return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Searches the keychain for a hashed service name matching
@@ -689,20 +670,36 @@ class ClaudeCodeSyncService {
         // pushing it would sign the account backwards on every activation.
         // The CLI keeps its own copy current, so the newer one wins.
         //
-        // The comparison must read the account's OWN item, never the shared
-        // fallback `readSystemCredentials` returns when that item doesn't
-        // exist yet. Comparing against some other account's credential could
-        // find it "newer" and suppress this write, so the account-specific
-        // item is never created and Claude Code stays signed into the wrong
-        // account — the exact defect this PR exists to remove.
-        if let live = try? readExactAccountKeychainCredentials(forAccountNamed: accountName),
-           let liveExpiry = extractTokenExpiry(from: live),
-           let mineExpiry = extractTokenExpiry(from: jsonData),
-           liveExpiry > mineExpiry {
+        // `readSystemCredentials(forAccountNamed:)` no longer crosses account
+        // boundaries for a named account (see `readKeychainCredentials`), so
+        // a non-nil result here is genuinely this account's own live login —
+        // never another account's credential borrowed from the shared item.
+        //
+        // Freshness fails CLOSED, not open: no live login at all means there
+        // is nothing to protect, so the write proceeds. A live login DOES
+        // exist but we can't prove our snapshot is at least as new — missing
+        // `expiresAt` on either side, or the read itself failing — and we
+        // decline the write rather than risk rolling back a login we can't
+        // reason about.
+        do {
+            if let live = try readSystemCredentials(forAccountNamed: accountName) {
+                guard let liveExpiry = extractTokenExpiry(from: live),
+                      let mineExpiry = extractTokenExpiry(from: jsonData),
+                      mineExpiry >= liveExpiry else {
+                    LoggingService.shared.log(
+                        "Cannot establish that the stored CLI credential is "
+                        + "at least as new as this account's live Claude "
+                        + "Code login; leaving the live login in place "
+                        + "rather than risking a rollback"
+                    )
+                    return
+                }
+            }
+        } catch {
             LoggingService.shared.log(
-                "The system Claude Code login for this account is newer than "
-                + "the stored copy; leaving it in place rather than applying "
-                + "an older token"
+                "Could not read this account's live Claude Code login to "
+                + "compare freshness; leaving the system unchanged rather "
+                + "than risking a rollback: \(error.localizedDescription)"
             )
             return
         }

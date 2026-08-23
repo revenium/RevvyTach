@@ -47,6 +47,32 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         )
     }
 
+    /// For `applyProfileCredentials` tests: `systemCredentialsReader` stands
+    /// in for the account's live login without touching the real Keychain or
+    /// filesystem, and `profileStore` is supplied by the caller so a test can
+    /// seed the profile `applyProfileCredentials` looks up.
+    @MainActor
+    private func makeService(
+        runner: RecordingSecurityRunner,
+        profileStore: ProfileStore,
+        systemCredentialsReader: (() throws -> String?)? = nil
+    ) -> ClaudeCodeSyncService {
+        _ = retain(runner)
+        return retain(
+            ClaudeCodeSyncService(
+                profileStore: profileStore,
+                systemCredentialsReader: systemCredentialsReader,
+                securityRunner: runner
+            )
+        )
+    }
+
+    /// A credential blob with an explicit expiry, in the milliseconds-since-
+    /// epoch shape the CLI actually stores.
+    private func credentials(expiresAtMillis: Double) -> String {
+        #"{"claudeAiOauth":{"accessToken":"abc","expiresAt":\#(expiresAtMillis)}}"#
+    }
+
     // MARK: - Writes must never open a window with no login
 
     /// The regression this file exists for. The previous implementation ran
@@ -218,5 +244,169 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             XCTAssertEqual(exitCode, 36)
             XCTAssertTrue(message.contains("interaction not allowed"), message)
         }
+    }
+
+    // MARK: - Named-account reads must never cross into another account's login
+
+    /// A named account with no Keychain item of its own must read as absent,
+    /// never fall through to the shared/legacy item. Before this fix, a
+    /// missing account-specific item silently resolved to whichever account
+    /// last wrote the shared one — which then authenticated requests, and
+    /// synchronization could persist, as the wrong account.
+    ///
+    /// The account name here is unique per test run, so it is guaranteed to
+    /// have no real Keychain item — `accountServiceName` finds none and
+    /// `readKeychainCredentials` must return `nil` without ever invoking
+    /// `security` looking for the shared item.
+    @MainActor
+    func testNamedAccountWithNoOwnItemNeverFallsBackToSharedKeychainItem() throws {
+        let runner = RecordingSecurityRunner()
+        let service = makeService(runner: runner)
+        let accountName = "no-such-account-\(UUID().uuidString)"
+
+        XCTAssertNil(try service.readKeychainCredentials(forAccountNamed: accountName))
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A named account with no item of its own must never search for "
+                + "the shared/legacy item: \(runner.invocations)"
+        )
+    }
+
+    // MARK: - applyProfileCredentials must fail closed on unknown freshness
+
+    private func seedProfileForApply(
+        cliCredentialsJSON: String,
+        in store: ProfileStore
+    ) throws -> UUID {
+        let profile = Profile(
+            name: "Apply Test",
+            cliCredentialsJSON: cliCredentialsJSON,
+            hasCliAccount: true,
+            cliAccountName: "apply-test-account"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        // `seedProfilesForTesting` writes the profile's non-secret fields;
+        // the CLI credential itself lives in the secret store and needs the
+        // explicit secure-write API, or `loadProfileCredentials` reads back
+        // `nil` and `applyProfileCredentials` throws `noProfileCredentials`.
+        try store.saveCLIProfileCredential(cliCredentialsJSON, for: profile.id)
+        return profile.id
+    }
+
+    /// No live login exists for the account at all — there is nothing to
+    /// protect, so the write proceeds. This is the case the write exists for.
+    @MainActor
+    func testApplyProfileCredentialsWritesWhenNoLiveLoginExists() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: credentials(expiresAtMillis: 1_000),
+            in: store
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { nil }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
+    }
+
+    /// A live login exists, but its expiry can't be read — freshness is
+    /// indeterminate, so the write must be declined rather than risk rolling
+    /// back a login this code can't reason about.
+    @MainActor
+    func testApplyProfileCredentialsDeclinesWriteWhenLiveExpiryIsUnknown() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: credentials(expiresAtMillis: 1_000),
+            in: store
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            // A live login with no `expiresAt` at all.
+            systemCredentialsReader: { #"{"claudeAiOauth":{"accessToken":"live"}}"# }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "Unknown freshness must decline the write, not permit it: \(runner.invocations)"
+        )
+    }
+
+    /// The live read itself fails — same "can't establish freshness" case as
+    /// a missing `expiresAt`, and must fail closed the same way.
+    @MainActor
+    func testApplyProfileCredentialsDeclinesWriteWhenLiveReadFails() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: credentials(expiresAtMillis: 1_000),
+            in: store
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { throw ClaudeCodeError.invalidJSON }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A failed freshness read must decline the write, not permit it: \(runner.invocations)"
+        )
+    }
+
+    /// The live login is demonstrably newer than the stored snapshot —
+    /// applying the snapshot would sign the account backwards, so the write
+    /// must be declined.
+    @MainActor
+    func testApplyProfileCredentialsDeclinesWriteWhenLiveLoginIsNewer() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: credentials(expiresAtMillis: 1_000),
+            in: store
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { self.credentials(expiresAtMillis: 2_000) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A newer live login must not be rolled back: \(runner.invocations)"
+        )
+    }
+
+    /// The stored snapshot is at least as new as the live login — the write
+    /// is safe and must proceed.
+    @MainActor
+    func testApplyProfileCredentialsWritesWhenStoredIsAtLeastAsNewAsLive() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: credentials(expiresAtMillis: 2_000),
+            in: store
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { self.credentials(expiresAtMillis: 1_000) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
     }
 }
