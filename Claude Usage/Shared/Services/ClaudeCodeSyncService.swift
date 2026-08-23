@@ -395,11 +395,13 @@ class ClaudeCodeSyncService {
     /// The Keychain service that *should* hold one linked account's login,
     /// whether or not it already does.
     ///
-    /// Distinct from `accountServiceName` on purpose. A read has to fall back
-    /// to the shared item when the account has no item of its own, because
-    /// that is where an older Claude Code put it. A write must not: falling
-    /// back would put this account's login in the shared item, where the next
-    /// account to be activated overwrites it. `nil` only for no account name.
+    /// Distinct from `accountServiceName` on purpose, though no longer
+    /// because they disagree about falling back — neither falls back for a
+    /// named account any more. This one does not consult the Keychain at
+    /// all: it names where the login *belongs*, so a first write can create
+    /// an item that does not exist yet. `accountServiceName` requires the
+    /// item to already exist, which is right for a read and would make a
+    /// write impossible. `nil` only for no account name.
     private func accountServiceNameForWriting(
         forAccountNamed name: String?
     ) -> String? {
@@ -411,8 +413,15 @@ class ClaudeCodeSyncService {
     }
 
     /// The Keychain service holding one linked account's login, when that
-    /// account actually has one. `nil` sends the caller back to the shared
-    /// resolution, which is still correct for the default account.
+    /// account actually has one.
+    ///
+    /// `nil` means this account has no login stored, full stop — its only
+    /// caller, `readKeychainCredentials`, now returns nil rather than
+    /// resolving the shared item. It used to fall back, which is how a
+    /// profile with no item of its own authenticated as whoever owned the
+    /// shared one. A named account always lives under
+    /// `~/.claude-accounts/<name>`, so it can never legitimately own the
+    /// legacy un-suffixed item and nothing is lost by refusing it.
     private func accountServiceName(forAccountNamed name: String?) -> String? {
         guard let name, !name.isEmpty else { return nil }
         let directory = Self.configurationDirectory(forAccountNamed: name)
@@ -421,8 +430,9 @@ class ClaudeCodeSyncService {
         )
         guard keychainItemExists(serviceName: candidate) else {
             LoggingService.shared.logDebug(
-                "No Claude Code login stored for account '\(name)'; falling "
-                + "back to the default login."
+                "No Claude Code login stored for account '\(name)'; treating "
+                + "it as having none rather than reading another account's "
+                + "shared login."
             )
             return nil
         }
