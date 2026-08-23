@@ -141,9 +141,25 @@ class ClaudeCodeSyncService {
             return nil
         }
 
-        // 3. Validate keychain JSON
+        // 3. Validate keychain JSON, and that it actually holds a login.
+        //
+        // Syntactic validity was the only check here, which is how an item
+        // carrying `claudeAiOauth` with an empty `accessToken` — the shape
+        // Claude Code leaves behind for a configuration directory with no
+        // login — was imported over a working credential. `nil` sends the
+        // caller down the "no login found" path, which is the truth.
         if let data = rawJSON.data(using: .utf8),
-           let _ = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+           let object = try? JSONSerialization.jsonObject(with: data)
+            as? [String: Any] {
+            guard Self.containsClaudeCodeLogin(object) else {
+                LoggingService.shared.log(
+                    "The Keychain login for account "
+                    + "'\(accountName ?? "default")' holds no Claude Code "
+                    + "token; treating it as absent rather than importing a "
+                    + "credential that cannot authenticate"
+                )
+                return nil
+            }
             return rawJSON
         }
 
@@ -176,6 +192,24 @@ class ClaudeCodeSyncService {
             !token.isEmpty
         else { return false }
         return true
+    }
+
+    /// Whether a credential blob is safe to store against a profile.
+    ///
+    /// The one rule every import path shares: never replace a stored
+    /// credential with one that cannot authenticate. `readSystemCredentials`
+    /// already filters the ordinary case, but it can be bypassed — an
+    /// injected reader in tests, the truncated-Keychain regex fallback, a
+    /// credential handed in by a caller — and the cost of getting this wrong
+    /// is a working login destroyed and an error message whose advised
+    /// remedy reproduces the problem.
+    static func carriesLogin(_ credentialsJSON: String) -> Bool {
+        guard
+            let data = credentialsJSON.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else { return false }
+        return containsClaudeCodeLogin(object)
     }
 
     /// Reads credentials from ~/.claude/.credentials.json or ~/.claude/credentials.json file
@@ -343,6 +377,24 @@ class ClaudeCodeSyncService {
         ClaudeSwitchService.shared.accountDirectoryPath(for: name)
     }
 
+    /// The Keychain service that *should* hold one linked account's login,
+    /// whether or not it already does.
+    ///
+    /// Distinct from `accountServiceName` on purpose. A read has to fall back
+    /// to the shared item when the account has no item of its own, because
+    /// that is where an older Claude Code put it. A write must not: falling
+    /// back would put this account's login in the shared item, where the next
+    /// account to be activated overwrites it. `nil` only for no account name.
+    private func accountServiceNameForWriting(
+        forAccountNamed name: String?
+    ) -> String? {
+        guard let name, !name.isEmpty else { return nil }
+        return Self.serviceName(
+            forConfigurationDirectory:
+                Self.configurationDirectory(forAccountNamed: name).path
+        )
+    }
+
     /// The Keychain service holding one linked account's login, when that
     /// account actually has one. `nil` sends the caller back to the shared
     /// resolution, which is still correct for the default account.
@@ -461,8 +513,19 @@ class ClaudeCodeSyncService {
     /// user dismisses — left the user logged out of Claude Code, and cost a
     /// second full atomic rewrite of the login Keychain on every profile
     /// switch. `-U` was already being passed, so the delete bought nothing.
-    func writeSystemCredentials(_ jsonData: String) throws {
-        let serviceName = resolveServiceName()
+    func writeSystemCredentials(
+        _ jsonData: String,
+        forAccountNamed accountName: String? = nil
+    ) throws {
+        // Reads have honoured the account name since per-account logins
+        // landed; this write never did, so applying a profile's login always
+        // targeted the shared un-suffixed item and never the account's own.
+        // On a machine whose shared item belongs to a different account that
+        // is a cross-account overwrite, and it is why the shared item here
+        // ends up holding whichever profile was activated last.
+        let serviceName = accountServiceNameForWriting(
+            forAccountNamed: accountName
+        ) ?? resolveServiceName()
         LoggingService.shared.log("Writing credentials to keychain using security command (service: \(serviceName))")
 
         let result = try addGenericPassword(jsonData, serviceName: serviceName)
@@ -551,6 +614,14 @@ class ClaudeCodeSyncService {
             throw ClaudeCodeError.invalidJSON
         }
 
+        // A blob with no token in it must never be stored. Importing one used
+        // to succeed silently, overwrite a working credential, and then read
+        // back as valid — which is why pressing this button repeatedly had no
+        // effect and was not even harmless.
+        guard Self.carriesLogin(jsonData) else {
+            throw ClaudeCodeError.noCredentialsFound
+        }
+
         let previous = try profileStore
             .loadProfileCredentials(profileId)
             .cliCredentialsJSON
@@ -573,8 +644,30 @@ class ClaudeCodeSyncService {
             throw ClaudeCodeError.noProfileCredentials
         }
 
+        let accountName = profileStore.loadProfiles()
+            .first { $0.id == profileId }?
+            .cliAccountName
+
+        // Now that this write lands on the account's own Keychain item rather
+        // than the shared one, it reaches the item Claude Code actively uses.
+        // That makes it able to do harm the old shared-item write could not:
+        // the app's snapshot can be older than the CLI's live login, and
+        // pushing it would sign the account backwards on every activation.
+        // The CLI keeps its own copy current, so the newer one wins.
+        if let live = try? readSystemCredentials(forAccountNamed: accountName),
+           let liveExpiry = extractTokenExpiry(from: live),
+           let mineExpiry = extractTokenExpiry(from: jsonData),
+           liveExpiry > mineExpiry {
+            LoggingService.shared.log(
+                "The system Claude Code login for this account is newer than "
+                + "the stored copy; leaving it in place rather than applying "
+                + "an older token"
+            )
+            return
+        }
+
         LoggingService.shared.log("📦 Found CLI credentials, writing to keychain...")
-        try writeSystemCredentials(jsonData)
+        try writeSystemCredentials(jsonData, forAccountNamed: accountName)
 
         LoggingService.shared.log("✅ Applied profile CLI credentials to system: \(profileId)")
     }
@@ -593,6 +686,9 @@ class ClaudeCodeSyncService {
         guard let data = jsonData.data(using: .utf8),
               (try? JSONSerialization.jsonObject(with: data))
                 as? [String: Any] != nil else {
+            throw ClaudeCodeError.invalidJSON
+        }
+        guard Self.carriesLogin(jsonData) else {
             throw ClaudeCodeError.invalidJSON
         }
         try profileStore.saveCLIProfileCredential(jsonData, for: profileId)
@@ -616,11 +712,21 @@ class ClaudeCodeSyncService {
 
     // MARK: - Access Token Extraction
 
+    /// The access token in a stored credential, or nil when there isn't one.
+    ///
+    /// An empty string is answered as *absent*, not as a token. Claude Code
+    /// leaves `claudeAiOauth` in place with `accessToken` set to `""` when a
+    /// configuration directory holds no login — MCP server logins only, or an
+    /// account that has been signed out. Returning `""` here let that pass
+    /// every `if let` in the app, so requests went out with a bare
+    /// `Authorization: Bearer `, 401ed, and were reported as a transient
+    /// read failure whose advised remedy re-imported the same empty blob.
     func extractAccessToken(from jsonData: String) -> String? {
         guard let data = jsonData.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
-              let token = oauth["accessToken"] as? String else {
+              let token = oauth["accessToken"] as? String,
+              !token.isEmpty else {
             return nil
         }
         return token
@@ -688,6 +794,19 @@ class ClaudeCodeSyncService {
         guard let data = freshJSON.data(using: .utf8),
               let _ = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             LoggingService.shared.log("Re-synced credentials contain invalid JSON - skipping save")
+            return
+        }
+
+        // Switching profiles must never cost the outgoing profile its login.
+        // The system copy can legitimately hold no token — Claude Code leaves
+        // `claudeAiOauth` behind with an empty `accessToken` for a signed-out
+        // configuration directory — and storing that over a working
+        // credential is a silent loss the user cannot undo by re-syncing.
+        guard Self.carriesLogin(freshJSON) else {
+            LoggingService.shared.log(
+                "The system Claude Code login for this account holds no "
+                + "token - keeping the stored credential instead"
+            )
             return
         }
 

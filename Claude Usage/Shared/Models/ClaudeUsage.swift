@@ -83,12 +83,20 @@ struct ClaudeUsage: Codable, Equatable {
     enum PersonalExtraUsageIssue: String, Codable, Equatable {
         /// No Claude Code account is linked to this profile.
         case notLinked
-        /// One is linked, but its sign-in is too old to renew. Only signing
-        /// in to that Claude Code account again fixes this — re-syncing
-        /// copies a login, it does not renew one, so advising a re-sync here
-        /// sends someone round a loop that appears to work and changes
-        /// nothing.
+        /// One is linked, but its sign-in is too old to renew.
+        ///
+        /// Signing in to that Claude Code account again is necessary and not
+        /// sufficient: the app holds its own copy of the login and re-reads
+        /// the real one only when a profile is activated or the account is
+        /// re-synced. Advice that stops at "sign in again" leaves people
+        /// watching an unchanged number, so both halves have to be said.
         case signInExpired
+        /// One is linked, but the login stored for it carries no token at
+        /// all — the state Claude Code leaves behind for a configuration
+        /// directory it has been signed out of. Nothing the app can do with
+        /// this, and re-syncing only re-imports it, so it is kept apart from
+        /// `signInUnusable` whose remedy really is a re-sync.
+        case signInHasNoToken
         /// One is linked and its sign-in is current, but it could not be
         /// used this time. Re-syncing is the right remedy here.
         case signInUnusable

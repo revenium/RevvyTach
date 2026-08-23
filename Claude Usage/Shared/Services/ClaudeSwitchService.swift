@@ -286,6 +286,13 @@ class ClaudeSwitchService {
 
     /// Reads credentials JSON from the linked account directory.
     /// Tries .credentials.json first, falls back to extracting from .claude.json.
+    ///
+    /// Both branches now have to produce something that can actually
+    /// authenticate. `.credentials.json` was previously returned verbatim on
+    /// the strength of being a non-empty string — not even parsed — and this
+    /// is the *first* source the re-sync button consults, so a file holding
+    /// only MCP server logins, or a truncated one, was stored over a working
+    /// credential and then read back as valid.
     func readLinkedAccountCredentials(directoryName: String) -> String? {
         let dir = (try? validatedAccountDir(for: directoryName)) ?? accountDirectoryPath(for: directoryName)
 
@@ -293,7 +300,7 @@ class ClaudeSwitchService {
         let credFile = dir.appendingPathComponent(".credentials.json")
         if let data = try? Data(contentsOf: credFile),
            let json = String(data: data, encoding: .utf8),
-           !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+           ClaudeCodeSyncService.carriesLogin(json) {
             return json
         }
 
@@ -302,8 +309,14 @@ class ClaudeSwitchService {
         if let data = try? Data(contentsOf: claudeJson),
            let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let oauthAccount = parsed["oauthAccount"] as? [String: Any],
-           let accessToken = oauthAccount["accessToken"] as? String {
+           let accessToken = oauthAccount["accessToken"] as? String,
+           !accessToken.isEmpty {
             // Build credentials JSON safely using JSONSerialization (not string interpolation)
+            //
+            // Deliberately carries no `expiresAt` and no `refreshToken`,
+            // because this source has neither. That makes it a credential the
+            // app can use until the token stops working and can never renew,
+            // so it stays the last resort it has always been.
             let dict: [String: Any] = ["claudeAiOauth": ["accessToken": accessToken]]
             if let jsonData = try? JSONSerialization.data(withJSONObject: dict),
                let jsonString = String(data: jsonData, encoding: .utf8) {

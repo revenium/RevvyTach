@@ -56,7 +56,14 @@ class ClaudeAPIService: APIServiceProtocol {
     private let sessionKeyPath: URL
     private let sessionKeyValidator: SessionKeyValidator
     private let profileManager: ProfileManager
-    private let systemCredentialsReader: () throws -> String?
+    /// Reads the system Claude Code login for one linked account.
+    ///
+    /// Takes the account name because a profile's login lives in that
+    /// account's own Keychain item; reading without one returns whichever
+    /// account happens to own the shared item, which on a multi-account
+    /// machine means authenticating as somebody else. The injectable form
+    /// stays argument-free so the seam reads the same in tests.
+    private let systemCredentialsReader: (String?) throws -> String?
 
     /// Persists a renewed CLI credential. Injectable for the same reason
     /// `systemCredentialsReader` is: it is the one step of the renewal path
@@ -82,8 +89,14 @@ class ClaudeAPIService: APIServiceProtocol {
         self.sessionKeyValidator = sessionKeyValidator
         self.profileManager = profileManager ?? .shared
         self.systemCredentialsReader =
-            systemCredentialsReader
-            ?? { try ClaudeCodeSyncService.shared.readSystemCredentials() }
+            systemCredentialsReader.map { injected in
+                { _ in try injected() }
+            }
+            ?? { accountName in
+                try ClaudeCodeSyncService.shared.readSystemCredentials(
+                    forAccountNamed: accountName
+                )
+            }
         self.renewedCredentialWriter =
             renewedCredentialWriter
             ?? {
@@ -167,9 +180,14 @@ class ClaudeAPIService: APIServiceProtocol {
             }
         }
 
-        // Fall back to reading CLI credentials directly from system Keychain
+        // Fall back to reading CLI credentials directly from system Keychain,
+        // scoped to the account this profile is linked to. Reading the shared
+        // item here authenticated as whichever account last wrote it.
         do {
-            if let systemCredentials = try ClaudeCodeSyncService.shared.readSystemCredentials() {
+            if let systemCredentials = try ClaudeCodeSyncService.shared
+                .readSystemCredentials(
+                    forAccountNamed: activeClaudeProfile.cliAccountName
+                ) {
                 LoggingService.shared.log("ClaudeAPIService: Found CLI credentials in system Keychain")
 
                 // Validate token is not expired
@@ -580,13 +598,24 @@ class ClaudeAPIService: APIServiceProtocol {
     private static let oauthProfileURL =
         "https://api.anthropic.com/api/oauth/profile"
 
-    /// Credentials whose renewal already failed during this app run, so a
-    /// dead refresh token costs one request rather than one per refresh tick.
-    private var failedTokenRefreshes: Set<Int> = []
+    /// The credential fingerprint each profile last presented, so a
+    /// replacement can retire the failure records of the one it replaced.
+    private var lastSeenCredentialFingerprints: [UUID: Int] = [:]
 
-    /// Credentials whose renewal failed specifically because the account's
-    /// login is too old. Kept apart from the general failure set so the
-    /// popover can tell someone to sign in rather than to re-sync.
+    /// Credentials whose renewal failed because the login itself is too old —
+    /// the token endpoint answered `invalid_grant`.
+    ///
+    /// This is the *only* short circuit. It is a settled answer about a
+    /// specific credential: retrying costs a request per refresh tick and
+    /// cannot succeed until that credential is replaced, which
+    /// `forgetRenewalFailures(for:nowPresenting:)` detects.
+    ///
+    /// Everything else — offline, a 500, a timeout — is now retried on the
+    /// next tick. It used to land in a companion set that was never cleared,
+    /// so one bad moment disabled renewal of that credential for the rest of
+    /// the process. This app runs for days at a time, so "the network blipped
+    /// once" and "this login is dead" became the same outcome, and the second
+    /// is what the popover reported.
     private var expiredCLILogins: Set<Int> = []
 
     /// Credentials renewed during this app run, keyed by profile, each paired
@@ -678,6 +707,22 @@ class ClaudeAPIService: APIServiceProtocol {
             return .issue(.notLinked)
         }
 
+        forgetRenewalFailures(for: profile.id, nowPresenting: stored)
+
+        // A stored credential with no token in it is its own state. It used
+        // to reach `usableCLICredential`, which answered with an empty access
+        // token because an empty string is not nil, so the request went out as
+        // a bare `Bearer `, 401ed, and was reported as "couldn't be read just
+        // now — re-sync", the one action that re-imports it.
+        guard ClaudeCodeSyncService.carriesLogin(stored) else {
+            LoggingService.shared.logWarning(
+                "The Claude Code login stored for profile '\(profile.name)' "
+                + "carries no access token; the member's own extra usage "
+                + "cannot be read until that account is signed in again."
+            )
+            return .issue(.signInHasNoToken)
+        }
+
         guard let credential = await usableCLICredential(
             for: profile,
             credentialsJSON: stored
@@ -733,6 +778,25 @@ class ClaudeAPIService: APIServiceProtocol {
         return .available(extraUsage)
     }
 
+    /// Retires the expired verdict recorded against the credential a profile
+    /// has just stopped presenting.
+    ///
+    /// This is what makes "sign in to Claude Code again, then re-sync"
+    /// actually work: the re-sync replaces the credential, and the verdict
+    /// recorded against the old one must not outlive it. Keyed per profile
+    /// rather than cleared wholesale, so one profile's re-sync does not make
+    /// every other profile retry a renewal already known to be hopeless.
+    private func forgetRenewalFailures(
+        for profileID: UUID,
+        nowPresenting credentialsJSON: String
+    ) {
+        let fingerprint = credentialsJSON.hashValue
+        let previous = lastSeenCredentialFingerprints[profileID]
+        lastSeenCredentialFingerprints[profileID] = fingerprint
+        guard let previous, previous != fingerprint else { return }
+        expiredCLILogins.remove(previous)
+    }
+
     /// A CLI credential with a token that is actually usable right now.
     ///
     /// The stored credential is a snapshot taken when the profile was last
@@ -751,7 +815,7 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         let fingerprint = credentialsJSON.hashValue
-        guard !failedTokenRefreshes.contains(fingerprint) else { return nil }
+        guard !expiredCLILogins.contains(fingerprint) else { return nil }
 
         let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
             from: credentialsJSON
@@ -760,7 +824,6 @@ class ClaudeAPIService: APIServiceProtocol {
             case .renewed(let refreshed) = outcome,
             let accessToken = sync.extractAccessToken(from: refreshed)
         else {
-            failedTokenRefreshes.insert(fingerprint)
             if case .failed(.expired) = outcome {
                 expiredCLILogins.insert(fingerprint)
             }
@@ -818,8 +881,11 @@ class ClaudeAPIService: APIServiceProtocol {
             if failedCLIOrganizationLookupFingerprints[profile.id] == fingerprint {
                 // The same credential that already failed this run: honor
                 // the short-circuit rather than repeating a lookup that can
-                // only fail again.
-                return profile.cliOrganizationId
+                // only fail again. Nil for the same reason the live failure
+                // above answers nil — the cached id belongs to whichever
+                // credential last resolved successfully, which is not this
+                // one.
+                return nil
             }
             // A different credential is presented than the one that failed
             // — the profile was re-linked to a different Claude Code
@@ -844,9 +910,19 @@ class ClaudeAPIService: APIServiceProtocol {
             failedCLIOrganizationLookupFingerprints[profile.id] = fingerprint
             LoggingService.shared.logWarning(
                 "Could not establish which organization the linked Claude "
-                + "Code account belongs to."
+                + "Code account belongs to; the member's own extra usage is "
+                + "skipped rather than attributed on a cached answer."
             )
-            return profile.cliOrganizationId
+            // Deliberately nil, not `profile.cliOrganizationId`.
+            //
+            // The cached id was resolved from a *different* credential — this
+            // lookup only runs because the fingerprint changed. Answering
+            // with it let the caller's organization-match guard pass on the
+            // strength of the previous account's identity and then read the
+            // member figure with the new account's token, which is exactly
+            // the cross-account attribution this guard exists to stop. One
+            // failed request was enough to reach it.
+            return nil
         }
 
         cliOrganizationCredentialHashes[profile.id] = fingerprint
@@ -1031,7 +1107,9 @@ class ClaudeAPIService: APIServiceProtocol {
                 profileID: profile.id
             )
         }
-        if let systemCredentials = try systemCredentialsReader(),
+        if let systemCredentials = try systemCredentialsReader(
+                profile.cliAccountName
+           ),
            !ClaudeCodeSyncService.shared.isTokenExpired(
                 systemCredentials
            ),

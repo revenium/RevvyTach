@@ -1291,7 +1291,8 @@
 "menubar.overage_balance" = "クレジット残高";
 "menubar.overage_balance_organization" = "クレジット残高 · 組織";
 "popover.extra_usage.cli_not_linked" = "これは組織全体の合計です。ご自身の追加使用量は Claude Code から取得されますが、このアカウントにはまだ連携されていません。設定 → CLI アカウントで追加してください。";
-"popover.extra_usage.cli_sign_in_expired" = "これは組織全体の合計です。このアカウントの Claude Code サインインは期限切れです。再度サインインすると、ご自身の追加使用量が表示されます。方法は「設定 → CLI アカウント」に記載されています。";
+"popover.extra_usage.cli_sign_in_expired" = "これは組織全体の合計です。このアカウント用に保存された Claude Code のサインインは期限切れです。Claude Code に再度サインインし、その後「設定 → CLI アカウント」で再同期してください。サインインだけではアプリに反映されません。";
+"popover.extra_usage.cli_sign_in_has_no_token" = "これは組織全体の合計です。ここにリンクされたアカウントで Claude Code がサインアウトされているため、ご自身の追加使用量を読み取るためのサインインがありません。そのアカウントにサインインしてから「設定 → CLI アカウント」で再同期してください。";
 "popover.extra_usage.cli_sign_in_unusable" = "これは組織全体の合計です。ご自身の追加使用量を今回読み取れませんでした。「設定 → CLI アカウント」で Claude Code アカウントを再同期してください。";
 "cli.login_expired_title" = "サインインの期限切れ";
 "cli.login_expired_explain" = "再同期では解決しません。再同期はこのアカウントのサインインを複製するもので、そのサインイン自体が期限切れです。ターミナルで次を実行して再度サインインしてください。";

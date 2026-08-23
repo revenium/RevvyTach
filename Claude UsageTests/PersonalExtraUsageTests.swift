@@ -490,6 +490,251 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    // MARK: - Importing a login that carries no token
+
+    /// The shape Claude Code leaves behind for a configuration directory it
+    /// has been signed out of: `claudeAiOauth` still present, `accessToken`
+    /// empty, no expiry and no refresh token.
+    private static let signedOutCredentialsJSON = """
+    {"mcpOAuth":{"some-server":{"accessToken":"mcp-token"}},\
+    "claudeAiOauth":{"accessToken":"","scopes":[]}}
+    """
+
+    /// An empty access token is absent, not present-and-empty.
+    ///
+    /// Returning `""` here was the load-bearing mistake: it satisfied every
+    /// `if let` downstream, so requests went out as a bare
+    /// `Authorization: Bearer `.
+    func testAnEmptyAccessTokenReadsAsNoTokenAtAll() {
+        XCTAssertNil(
+            ClaudeCodeSyncService.shared.extractAccessToken(
+                from: Self.signedOutCredentialsJSON
+            ),
+            "an empty accessToken must not be handed out as a token"
+        )
+        XCTAssertEqual(
+            ClaudeCodeSyncService.shared.extractAccessToken(
+                from: Self.credentialsJSON(expiresAt: 1_000)
+            ),
+            "fixture-access-token"
+        )
+    }
+
+    /// The single rule every import path shares: a blob that cannot
+    /// authenticate must never be stored over one that can.
+    func testASignedOutBlobIsNotAcceptedAsALogin() {
+        XCTAssertFalse(
+            ClaudeCodeSyncService.carriesLogin(Self.signedOutCredentialsJSON)
+        )
+        XCTAssertFalse(ClaudeCodeSyncService.carriesLogin("not json at all"))
+        XCTAssertTrue(
+            ClaudeCodeSyncService.carriesLogin(
+                Self.credentialsJSON(expiresAt: 1_000)
+            )
+        )
+    }
+
+    /// A stored login with no token is its own reported state, and no request
+    /// is made with it.
+    ///
+    /// Previously it reached the renewal path, which answered with an empty
+    /// access token because an empty string is not nil, so the member's usage
+    /// really was requested with a bare bearer, 401ed, and surfaced as
+    /// "couldn't be read just now — re-sync" — the one action that re-imports
+    /// the same empty blob. Both halves of that are asserted here.
+    func testAStoredLoginWithNoTokenIsReportedAsSuchAndNeverRequestedWith()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.signedOutCredentialsJSON,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertEqual(
+            usage.personalExtraUsageIssue,
+            ClaudeUsage.PersonalExtraUsageIssue.signInHasNoToken,
+            "a login with no token must not be reported as a re-syncable "
+                + "read failure"
+        )
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/profile")
+                    || $0.hasSuffix("/api/oauth/usage")
+            },
+            "nothing may be requested with a credential that has no token"
+        )
+        // The organization's own figure is unaffected.
+        XCTAssertEqual(usage.costUsed, 26_118)
+    }
+
+    /// A failed organization lookup must not fall back to the cached answer.
+    ///
+    /// The cached id was resolved from a different credential. Answering with
+    /// it let the organization-match guard pass on the previous account's
+    /// identity and then read the member figure with the new account's token,
+    /// which is the cross-account attribution the guard exists to stop — and
+    /// one failed request was enough to reach it.
+    func testAFailedOrganizationLookupDoesNotFallBackToTheCachedOrganization()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        // The cached answer that used to be trusted: it matches the
+        // organization on screen exactly, so it satisfied the guard.
+        ProfileManager(profileStore: store)
+            .updateCliOrganizationId(teamOrganizationID, for: profileID)
+        var profile = try seededProfile(profileID)
+        profile.cliOrganizationId = teamOrganizationID
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthProfileStatusCode: 401
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(
+            usage.personalCostUsed,
+            "no member figure may be attributed on an unverified organization"
+        )
+        XCTAssertEqual(usage.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "the member's usage must not be requested once the organization "
+                + "could not be established"
+        )
+    }
+
+    /// A transient renewal failure must be retried, not treated as a verdict.
+    ///
+    /// The failure record used to be permanent for the process, and this app
+    /// runs for days, so one moment offline and a genuinely dead login became
+    /// the same outcome. The stored credential is unchanged between the two
+    /// fetches here; only the token endpoint's answer differs.
+    func testATransientRenewalFailureIsRetriedOnTheNextRefresh() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        let profile = try seededProfile(profileID)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 503,
+            tokenRefreshErrorCode: "service_unavailable"
+        )
+        let unavailable = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+        StubClaudeEndpointsURLProtocol.reset()
+        XCTAssertEqual(unavailable.personalExtraUsageIssue, .signInUnusable)
+
+        // Same stored credential, the endpoint is back.
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+        let recovered = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(
+            recovered.personalCostUsed,
+            0,
+            "renewal must be attempted again once the transient failure clears"
+        )
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+    }
+
+    /// An expired login stays short-circuited until the credential is
+    /// replaced — which is what the notice now tells people to do, and what
+    /// makes that instruction true.
+    func testReplacingAnExpiredCredentialRetiresItsExpiredVerdict()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        var profile = try seededProfile(profileID)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        let expired = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+        StubClaudeEndpointsURLProtocol.reset()
+        XCTAssertEqual(expired.personalExtraUsageIssue, .signInExpired)
+
+        // What a re-sync after signing in again produces: a different
+        // credential, whose predecessor's verdict must not apply to it.
+        profile.cliCredentialsJSON = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+        let renewed = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(renewed.personalCostUsed, 0)
+        XCTAssertNil(renewed.personalExtraUsageIssue)
+    }
+
     // MARK: - One login per account
 
     /// Claude Code stores one Keychain item per configuration directory,
@@ -586,18 +831,34 @@ final class PersonalExtraUsageTests: XCTestCase {
                 + "from Claude Code, which isn't linked to this account yet "
                 + "— add it in Settings → CLI Account."
         )
-        // An expired login and a stale copy need OPPOSITE advice. Telling
-        // someone to re-sync an expired login sends them round a loop where
-        // the button appears to work and nothing changes — observed live.
+        // Signing in again is necessary and NOT sufficient: the app holds
+        // its own copy and re-reads the real login only on a re-sync or a
+        // profile activation. Advice that stops at "sign in again" left
+        // someone pressing re-sync repeatedly against an unchanged number —
+        // observed live, and the whole reason this message says both halves.
         XCTAssertEqual(
             english.localizedString(
                 forKey: "popover.extra_usage.cli_sign_in_expired",
                 value: nil,
                 table: nil
             ),
-            "This is your organization's total. The Claude Code sign-in for "
-                + "this account has expired — sign in to it again to see your "
-                + "own extra usage. Settings → CLI Account shows you how."
+            "This is your organization's total. The Claude Code sign-in "
+                + "stored for this account has expired. Sign in to Claude "
+                + "Code again, then re-sync it in Settings → CLI Account — "
+                + "signing in alone doesn't reach the app."
+        )
+        // A login with no token in it is not a transient read failure, and
+        // must not be given the re-sync advice: re-syncing re-imports it.
+        XCTAssertEqual(
+            english.localizedString(
+                forKey: "popover.extra_usage.cli_sign_in_has_no_token",
+                value: nil,
+                table: nil
+            ),
+            "This is your organization's total. Claude Code is signed out of "
+                + "the account linked here, so there's no sign-in to read "
+                + "your own extra usage with. Sign in to it, then re-sync in "
+                + "Settings → CLI Account."
         )
         XCTAssertEqual(
             english.localizedString(
@@ -736,7 +997,9 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
 
     static func install(
         cliOrganizationID: String,
-        tokenRefreshStatusCode: Int = 200
+        tokenRefreshStatusCode: Int = 200,
+        oauthProfileStatusCode: Int = 200,
+        tokenRefreshErrorCode: String = "invalid_grant"
     ) {
         requestedURLs = []
         responses = [
@@ -753,26 +1016,37 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
                  "used_credits":26118,"is_enabled":true,
                  "limit_type":"organization"}
                 """.utf8)),
-            "https://api.anthropic.com/api/oauth/profile": (200, Data("""
-            {"organization":{"uuid":"\(cliOrganizationID)"},
-             "account":{"email_address":"fixture@example.com"}}
-            """.utf8)),
+            "https://api.anthropic.com/api/oauth/profile": (
+                oauthProfileStatusCode,
+                Data("""
+                {"organization":{"uuid":"\(cliOrganizationID)"},
+                 "account":{"email_address":"fixture@example.com"}}
+                """.utf8)
+            ),
             "https://api.anthropic.com/api/oauth/usage": (200, Data("""
             {"extra_usage":{"is_enabled":true,"monthly_limit":5000,
              "used_credits":0.0,"utilization":null,"currency":"USD"}}
             """.utf8)),
             "https://platform.claude.com/v1/oauth/token": (
                 tokenRefreshStatusCode,
-                Data(tokenBody(for: tokenRefreshStatusCode).utf8)
+                Data(
+                    tokenBody(
+                        for: tokenRefreshStatusCode,
+                        errorCode: tokenRefreshErrorCode
+                    ).utf8
+                )
             )
         ]
         isActive = true
         URLProtocol.registerClass(StubClaudeEndpointsURLProtocol.self)
     }
 
-    private static func tokenBody(for statusCode: Int) -> String {
+    private static func tokenBody(
+        for statusCode: Int,
+        errorCode: String = "invalid_grant"
+    ) -> String {
         guard statusCode == 200 else {
-            return #"{"error":"invalid_grant"}"#
+            return #"{"error":"\#(errorCode)"}"#
         }
         return """
         {"access_token":"renewed-access",

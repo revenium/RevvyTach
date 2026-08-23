@@ -1274,7 +1274,8 @@
 "menubar.overage_balance" = "Saldo de Créditos";
 "menubar.overage_balance_organization" = "Saldo de Créditos · Organización";
 "popover.extra_usage.cli_not_linked" = "Este es el total de tu organización. Tu uso adicional proviene de Claude Code, que aún no está vinculado a esta cuenta: añádelo en Ajustes → Cuenta CLI.";
-"popover.extra_usage.cli_sign_in_expired" = "Este es el total de tu organización. El inicio de sesión de Claude Code de esta cuenta ha caducado: vuelve a iniciar sesión para ver tu uso adicional. Ajustes → Cuenta CLI te explica cómo.";
+"popover.extra_usage.cli_sign_in_expired" = "Este es el total de tu organización. El inicio de sesión de Claude Code guardado para esta cuenta ha caducado. Vuelve a iniciar sesión en Claude Code y luego sincronízalo en Ajustes → Cuenta CLI: iniciar sesión por sí solo no llega a la app.";
+"popover.extra_usage.cli_sign_in_has_no_token" = "Este es el total de tu organización. Claude Code tiene la sesión cerrada en la cuenta vinculada aquí, así que no hay inicio de sesión con el que leer tu uso adicional. Inicia sesión en ella y luego sincroniza en Ajustes → Cuenta CLI.";
 "popover.extra_usage.cli_sign_in_unusable" = "Este es el total de tu organización. No se ha podido leer tu uso adicional ahora mismo: vuelve a sincronizar tu cuenta de Claude Code en Ajustes → Cuenta CLI.";
 "cli.login_expired_title" = "Sesión caducada";
 "cli.login_expired_explain" = "Volver a sincronizar no ayudará: copia el inicio de sesión de esta cuenta, y ese inicio de sesión ha caducado. Ejecuta esto en el Terminal para iniciar sesión de nuevo.";
