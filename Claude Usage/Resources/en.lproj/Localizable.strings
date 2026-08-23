@@ -1312,4 +1312,5 @@
 "cli.login_expired_explain" = "Re-syncing won't help: it copies this account's sign-in, and that sign-in has expired. Run this in Terminal to sign in again.";
 "cli.login_expired_then_resync" = "Once you're signed in, come back and press Re-sync.";
 "popover.extra_usage.cli_other_organization" = "This is your organization's total. Your linked Claude Code account belongs to a different organization, so its usage isn't shown here.";
+"popover.extra_usage.claude_account_unresolved" = "This is your organization's total. Your own usage couldn't be matched to this organization — reconnect your account in Settings → Claude.ai.";
 "cli.connect_extra_usage_hint" = "Connect your Claude Code account to see your own extra usage. If you're an admin, you'll see your organization's by default.";

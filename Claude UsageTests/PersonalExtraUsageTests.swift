@@ -299,6 +299,128 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    /// The fifth, previously silent outcome: a profile bound to a different
+    /// claude.ai organization than the one this refresh is showing. The old
+    /// behaviour left `personalExtraUsageIssue` nil, so the organization's
+    /// figure rendered with no explanation at all — this pins that it now
+    /// reports itself, and still never requests the member's endpoint.
+    func testAnOrganizationMismatchReportsTheIssueInsteadOfNothing() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: personalOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: personalOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        // The profile is bound to `personalOrganizationID`; the refresh is
+        // for `teamOrganizationID`. The mismatch guard has to fire before
+        // any credential is even looked at.
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .claudeAccountUnresolved)
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertEqual(usage.costUsed, 26_118)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "an organization mismatch must never reach the member's usage "
+                + "endpoint"
+        )
+    }
+
+    /// The other previously silent route: the profile a request was captured
+    /// for is gone by the time the fetch actually runs (removed mid-refresh).
+    /// The organization figure must still explain why no member figure sits
+    /// beside it, rather than rendering as if nothing were missing.
+    func testANoLongerResolvableProfileStillExplainsItself() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+        // Routed through the isolated builder, not `ClaudeAPIService(...)`
+        // directly: the bare initialiser leaves `renewedCredentialWriter`
+        // resolving to `ProfileStore.shared`, which reads every stored secret
+        // out of the developer's login Keychain.
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+
+        let request = try service.captureUsageRequest(for: profile)
+
+        // The profile vanishes between capture and fetch — removed, in this
+        // case, but a deleted profile reaches the same `nil` lookup.
+        manager.profiles = []
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(using: request)
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .claudeAccountUnresolved)
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertEqual(usage.costUsed, 26_118)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "no member figure may be requested with no profile to attach it to"
+        )
+    }
+
+    /// Extra usage switched off for the member is a settled answer with
+    /// nothing to fix, and must stay silent — a guard against this route
+    /// later being folded into `.claudeAccountUnresolved` by mistake.
+    func testExtraUsageSwitchedOffForTheMemberStaysSilent() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            memberExtraUsageEnabled: false
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertEqual(usage.costUsed, 26_118)
+    }
+
     /// The same flow with the logins agreeing: the member's own figure lands
     /// on the record beside the organization's.
     func testAMatchingCLIOrganizationPopulatesTheMemberFigure() async throws {
@@ -916,6 +1038,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         XCTAssertEqual(
             english.localizedString(
+                forKey: "popover.extra_usage.claude_account_unresolved",
+                value: nil,
+                table: nil
+            ),
+            "This is your organization's total. Your own usage couldn't be "
+                + "matched to this organization — reconnect your account in "
+                + "Settings → Claude.ai."
+        )
+        XCTAssertEqual(
+            english.localizedString(
                 forKey: "cli.connect_extra_usage_hint",
                 value: nil,
                 table: nil
@@ -1024,7 +1156,8 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         cliOrganizationID: String,
         tokenRefreshStatusCode: Int = 200,
         oauthProfileStatusCode: Int = 200,
-        tokenRefreshErrorCode: String = "invalid_grant"
+        tokenRefreshErrorCode: String = "invalid_grant",
+        memberExtraUsageEnabled: Bool = true
     ) {
         requestedURLs = []
         responses = [
@@ -1049,7 +1182,8 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
                 """.utf8)
             ),
             "https://api.anthropic.com/api/oauth/usage": (200, Data("""
-            {"extra_usage":{"is_enabled":true,"monthly_limit":5000,
+            {"extra_usage":{"is_enabled":\(memberExtraUsageEnabled),
+             "monthly_limit":5000,
              "used_credits":0.0,"utilization":null,"currency":"USD"}}
             """.utf8)),
             "https://platform.claude.com/v1/oauth/token": (

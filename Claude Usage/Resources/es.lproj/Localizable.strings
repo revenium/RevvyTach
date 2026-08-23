@@ -1281,4 +1281,5 @@
 "cli.login_expired_explain" = "Volver a sincronizar no ayudará: copia el inicio de sesión de esta cuenta, y ese inicio de sesión ha caducado. Ejecuta esto en el Terminal para iniciar sesión de nuevo.";
 "cli.login_expired_then_resync" = "Cuando hayas iniciado sesión, vuelve y pulsa Volver a sincronizar.";
 "popover.extra_usage.cli_other_organization" = "Este es el total de tu organización. Tu cuenta de Claude Code vinculada pertenece a otra organización, por lo que su uso no se muestra aquí.";
+"popover.extra_usage.claude_account_unresolved" = "Este es el total de tu organización. Tu propio uso no se pudo asociar a esta organización: vuelve a conectar tu cuenta en Ajustes → Claude.ai.";
 "cli.connect_extra_usage_hint" = "Conecta tu cuenta de Claude Code para ver tu propio uso extra. Si eres administrador, verás el de tu organización de forma predeterminada.";

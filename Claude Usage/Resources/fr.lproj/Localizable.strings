@@ -1278,4 +1278,5 @@
 "cli.login_expired_explain" = "Une resynchronisation n'y changera rien : elle copie la connexion de ce compte, et cette connexion a expiré. Exécutez ceci dans le Terminal pour vous reconnecter.";
 "cli.login_expired_then_resync" = "Une fois connecté, revenez ici et appuyez sur Resynchroniser.";
 "popover.extra_usage.cli_other_organization" = "Il s'agit du total de votre organisation. Votre compte Claude Code lié appartient à une autre organisation, son utilisation n'est donc pas affichée ici.";
+"popover.extra_usage.claude_account_unresolved" = "Il s'agit du total de votre organisation. Votre propre utilisation n'a pas pu être associée à cette organisation — reconnectez votre compte dans Réglages → Claude.ai.";
 "cli.connect_extra_usage_hint" = "Connectez votre compte Claude Code pour voir votre propre utilisation supplémentaire. Si vous êtes administrateur, celle de votre organisation s'affiche par défaut.";

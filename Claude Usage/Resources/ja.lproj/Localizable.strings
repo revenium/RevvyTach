@@ -1298,4 +1298,5 @@
 "cli.login_expired_explain" = "再同期では解決しません。再同期はこのアカウントのサインインを複製するもので、そのサインイン自体が期限切れです。ターミナルで次を実行して再度サインインしてください。";
 "cli.login_expired_then_resync" = "サインインが完了したら、ここに戻って「再同期」を押してください。";
 "popover.extra_usage.cli_other_organization" = "これは組織全体の合計です。連携されている Claude Code アカウントは別の組織に属しているため、その使用量はここには表示されません。";
+"popover.extra_usage.claude_account_unresolved" = "これは組織全体の合計です。ご自身の使用量をこの組織と照合できませんでした。「設定 → Claude.ai」でアカウントを再接続してください。";
 "cli.connect_extra_usage_hint" = "自分の追加使用を表示するには Claude Code アカウントを接続してください。管理者の場合は、既定で組織の分が表示されます。";

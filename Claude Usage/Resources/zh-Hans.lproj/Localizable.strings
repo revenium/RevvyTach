@@ -1294,4 +1294,5 @@
 "cli.login_expired_explain" = "重新同步无法解决：它只是复制此账号的登录，而该登录已过期。请在终端中运行以下命令重新登录。";
 "cli.login_expired_then_resync" = "登录完成后，回到这里点击“重新同步”。";
 "popover.extra_usage.cli_other_organization" = "这是您所在组织的总量。已关联的 Claude Code 账号属于其他组织，因此不会在此显示其用量。";
+"popover.extra_usage.claude_account_unresolved" = "这是您所在组织的总量。无法将您自己的用量与此组织匹配 — 请在“设置 → Claude.ai”中重新连接您的账号。";
 "cli.connect_extra_usage_hint" = "连接您的 Claude Code 账号即可查看自己的额外用量。如果您是管理员，默认显示的是组织的用量。";

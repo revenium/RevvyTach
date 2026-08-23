@@ -675,13 +675,13 @@ class ClaudeAPIService: APIServiceProtocol {
         // figure that never arrived indistinguishable from one that is
         // genuinely unavailable, which cost a live debugging session.
         guard profile.organizationId == organizationId else {
-            LoggingService.shared.logDebug(
+            LoggingService.shared.logWarning(
                 "Profile '\(profile.name)' is bound to organization "
                 + "\(profile.organizationId ?? "none"), not the "
                 + "organization \(organizationId) currently being "
                 + "refreshed; skipping the member's own extra usage."
             )
-            return .notApplicable
+            return .issue(.claudeAccountUnresolved)
         }
 
         // A renewal is only good for the credential it was derived from. If
@@ -1063,6 +1063,19 @@ class ClaudeAPIService: APIServiceProtocol {
                 profile: profile,
                 organizationId: organizationId
             )
+        } else if checkOverageLimitEnabled, claudeUsage.costUsed != nil {
+            // No profile survived to check against — it was removed, or the
+            // request's captured id no longer resolves — yet the
+            // organization's extra usage row is about to be shown. Leaving
+            // `personalExtraUsageIssue` nil here is exactly the silent
+            // fifth outcome this case exists to close off.
+            LoggingService.shared.logWarning(
+                "No profile could be resolved for organization "
+                + "\(organizationId) on this refresh; the member's own "
+                + "extra usage will be reported as unresolved rather than "
+                + "left unexplained."
+            )
+            claudeUsage.personalExtraUsageIssue = .claudeAccountUnresolved
         }
 
         if checkOverageLimitEnabled,

@@ -1093,6 +1093,11 @@ struct NormalizedUsageView: View {
     /// Opens Settings → CLI Account. Absent in surfaces that have nowhere to
     /// navigate to, which also hides the invitation to connect an account.
     var onConnectCLIAccount: (() -> Void)?
+    /// Opens Settings → Claude.ai, the remedy for `.claudeAccountUnresolved`.
+    /// Always supplied alongside `onConnectCLIAccount` in production; the
+    /// notice's visibility is still gated on `onConnectCLIAccount` alone so
+    /// existing call sites that only wire the CLI action keep working.
+    var onConnectClaudeAIAccount: (() -> Void)?
 
     /// The organization's extra usage is on screen and the viewer's own is
     /// not, so the popover explains whose number this is and what is missing.
@@ -1158,7 +1163,8 @@ struct NormalizedUsageView: View {
             if let personalExtraUsageIssue, let onConnectCLIAccount {
                 PersonalExtraUsageNoticeView(
                     issue: personalExtraUsageIssue,
-                    action: onConnectCLIAccount
+                    cliAccountAction: onConnectCLIAccount,
+                    claudeAIAccountAction: onConnectClaudeAIAccount ?? onConnectCLIAccount
                 )
             }
             if let summary = presentation.summary {
@@ -1184,7 +1190,24 @@ struct NormalizedUsageView: View {
 /// Claude Code account gets connected.
 private struct PersonalExtraUsageNoticeView: View {
     let issue: ClaudeUsage.PersonalExtraUsageIssue
-    let action: () -> Void
+    /// Settings → CLI Account, for the cases whose remedy is a Claude Code
+    /// sign-in.
+    let cliAccountAction: () -> Void
+    /// Settings → Claude.ai, for `.claudeAccountUnresolved`, whose remedy is
+    /// on the claude.ai side rather than the Claude Code one. Routing that
+    /// case to the CLI screen would send someone to a screen with nothing
+    /// useful on it — the exact failure this whole area already suffered
+    /// once.
+    let claudeAIAccountAction: () -> Void
+
+    private var action: () -> Void {
+        switch issue {
+        case .claudeAccountUnresolved:
+            return claudeAIAccountAction
+        default:
+            return cliAccountAction
+        }
+    }
 
     /// Each case names the connection that is missing and where to fix it.
     /// A profile signs in twice — once to claude.ai in a browser, which is
@@ -1230,6 +1253,13 @@ private struct PersonalExtraUsageNoticeView: View {
                     + "Claude Code account belongs to a different "
                     + "organization, so its usage isn't shown here."
             )
+        case .claudeAccountUnresolved:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.claude_account_unresolved",
+                default: "This is your organization's total. Your own "
+                    + "usage couldn't be matched to this organization — "
+                    + "reconnect your account in Settings → Claude.ai."
+            )
         }
     }
 
@@ -1241,6 +1271,8 @@ private struct PersonalExtraUsageNoticeView: View {
             return "exclamationmark.triangle"
         case .differentOrganization:
             return "person.2.slash"
+        case .claudeAccountUnresolved:
+            return "person.crop.circle.badge.questionmark"
         }
     }
 

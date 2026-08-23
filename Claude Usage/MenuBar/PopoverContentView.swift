@@ -26,6 +26,9 @@ struct PopoverNavigationActions {
     let preferences: () -> Void
     /// Settings → CLI Account, where a Claude Code account gets linked.
     let cliAccount: () -> Void
+    /// Settings → Claude.ai, where the profile's claude.ai organization link
+    /// gets reconnected.
+    let claudeAIAccount: () -> Void
 }
 
 enum LegacyPopoverBanner: Equatable {
@@ -218,7 +221,8 @@ struct PopoverContentView: View {
         onRefresh: @escaping () -> Void,
         onManageProfiles: @escaping () -> Void,
         onPreferences: @escaping () -> Void,
-        onCLIAccount: @escaping () -> Void
+        onCLIAccount: @escaping () -> Void,
+        onClaudeAIAccount: @escaping () -> Void
     ) {
         self.manager = manager
         _profileManager = ObservedObject(
@@ -228,7 +232,8 @@ struct PopoverContentView: View {
         navigationActions = PopoverNavigationActions(
             manageProfiles: onManageProfiles,
             preferences: onPreferences,
-            cliAccount: onCLIAccount
+            cliAccount: onCLIAccount,
+            claudeAIAccount: onClaudeAIAccount
         )
     }
 
@@ -398,7 +403,8 @@ struct PopoverContentView: View {
                     // notice from an already-linked profile would bury a
                     // broken sign-in rather than surface it. Which of the
                     // three explanations appears is decided from the data.
-                    onConnectCLIAccount: navigationActions.cliAccount
+                    onConnectCLIAccount: navigationActions.cliAccount,
+                    onConnectClaudeAIAccount: navigationActions.claudeAIAccount
                 )
             }
         }

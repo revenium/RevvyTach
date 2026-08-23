@@ -104,6 +104,17 @@ struct ClaudeUsage: Codable, Equatable {
         /// the one being displayed, so its figures describe someone else's
         /// context.
         case differentOrganization
+
+        /// This profile could not be lined up with the organization on
+        /// screen at all — either its claude.ai organization is not the one
+        /// this refresh is showing, or no profile could be found to check in
+        /// the first place. Both leave the app unable to say whose member
+        /// figure would even apply, which is a claude.ai-side problem: the
+        /// remedy is reconnecting the account there, not the Claude Code
+        /// link that the other cases point to. Kept apart from extra usage
+        /// being switched off for a member, which is a settled answer with
+        /// nothing to fix and stays silent rather than becoming a case here.
+        case claudeAccountUnresolved
     }
 
     /// Nil when the member's figure is present, or when there is no

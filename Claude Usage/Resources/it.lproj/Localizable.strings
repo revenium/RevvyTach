@@ -1298,4 +1298,5 @@
 "cli.login_expired_explain" = "Risincronizzare non serve: copia l'accesso di questo account, e quell'accesso è scaduto. Esegui questo nel Terminale per accedere di nuovo.";
 "cli.login_expired_then_resync" = "Una volta effettuato l'accesso, torna qui e premi Risincronizza.";
 "popover.extra_usage.cli_other_organization" = "Questo è il totale della tua organizzazione. L'account Claude Code collegato appartiene a un'altra organizzazione, quindi il suo utilizzo non viene mostrato qui.";
+"popover.extra_usage.claude_account_unresolved" = "Questo è il totale della tua organizzazione. Non è stato possibile abbinare il tuo utilizzo a questa organizzazione: ricollega il tuo account in Impostazioni → Claude.ai.";
 "cli.connect_extra_usage_hint" = "Collega il tuo account Claude Code per vedere il tuo utilizzo extra. Se sei un amministratore, per impostazione predefinita vedrai quello della tua organizzazione.";

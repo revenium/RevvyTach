@@ -1952,6 +1952,12 @@ class MenuBarManager: NSObject, ObservableObject {
                 self.openPopoverCLIAccount(
                     target: self.popoverActionTarget()
                 )
+            },
+            onClaudeAIAccount: { [weak self] in
+                guard let self else { return }
+                self.openPopoverClaudeAIAccount(
+                    target: self.popoverActionTarget()
+                )
             }
         )
 
@@ -2021,6 +2027,21 @@ class MenuBarManager: NSObject, ObservableObject {
         guard let target else { return }
         capturedTargetRouter().route(
             .cliAccount,
+            target: target
+        )
+    }
+
+    /// Settings → Claude.ai. Routes through the generic `.providerAccount`
+    /// action, which `SettingsCoordinator.navigate` resolves to the
+    /// `.claudeAI` section for a Claude profile — the remedy for
+    /// `.claudeAccountUnresolved`, which is about the claude.ai link rather
+    /// than the Claude Code one that `.cliAccount` opens.
+    private func openPopoverClaudeAIAccount(
+        target: ProviderStatusItemIdentity?
+    ) {
+        guard let target else { return }
+        capturedTargetRouter().route(
+            .providerAccount,
             target: target
         )
     }
@@ -4226,6 +4247,9 @@ extension MenuBarManager: NSPopoverDelegate {
                     },
                     onCLIAccount: { [weak self] in
                         self?.openPopoverCLIAccount(target: target)
+                    },
+                    onClaudeAIAccount: { [weak self] in
+                        self?.openPopoverClaudeAIAccount(target: target)
                     }
                 )
                 let hostingController = NSHostingController(

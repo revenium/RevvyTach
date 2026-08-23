@@ -1298,4 +1298,5 @@
 "cli.login_expired_explain" = "Sincronizar novamente não resolve: isso copia o login desta conta, e esse login expirou. Execute isto no Terminal para entrar de novo.";
 "cli.login_expired_then_resync" = "Depois de entrar, volte aqui e clique em Sincronizar novamente.";
 "popover.extra_usage.cli_other_organization" = "Este é o total da sua organização. A conta do Claude Code vinculada pertence a outra organização, portanto o uso dela não é mostrado aqui.";
+"popover.extra_usage.claude_account_unresolved" = "Este é o total da sua organização. O seu próprio uso não pôde ser associado a esta organização — reconecte a sua conta em Configurações → Claude.ai.";
 "cli.connect_extra_usage_hint" = "Conecte a sua conta do Claude Code para ver o seu próprio uso extra. Se você for administrador, verá o da sua organização por padrão.";

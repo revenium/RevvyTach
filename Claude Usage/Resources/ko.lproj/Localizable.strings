@@ -1274,4 +1274,5 @@
 "cli.login_expired_explain" = "다시 동기화해도 해결되지 않습니다. 동기화는 이 계정의 로그인을 복사할 뿐이며, 그 로그인이 만료되었습니다. 터미널에서 다음을 실행해 다시 로그인하세요.";
 "cli.login_expired_then_resync" = "로그인한 뒤 여기로 돌아와 다시 동기화를 누르세요.";
 "popover.extra_usage.cli_other_organization" = "이것은 조직 전체의 합계입니다. 연결된 Claude Code 계정이 다른 조직에 속해 있어 해당 사용량은 여기에 표시되지 않습니다.";
+"popover.extra_usage.claude_account_unresolved" = "이것은 조직 전체의 합계입니다. 본인의 사용량을 이 조직과 연결할 수 없었습니다. 설정 → Claude.ai에서 계정을 다시 연결하세요.";
 "cli.connect_extra_usage_hint" = "본인의 추가 사용량을 보려면 Claude Code 계정을 연결하세요. 관리자인 경우 기본적으로 조직의 사용량이 표시됩니다.";
