@@ -457,6 +457,40 @@ class ClaudeCodeSyncService {
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
+    /// Reads the Keychain item for exactly the named account, with no
+    /// fallback to the shared item when the account doesn't have one of its
+    /// own yet.
+    ///
+    /// `readSystemCredentials(forAccountNamed:)` deliberately falls back to
+    /// the shared un-suffixed item so ordinary reads keep working before an
+    /// account's own item exists. That fallback is wrong for the
+    /// don't-downgrade guard in `applyProfileCredentials`: a read performed
+    /// in service of a write must not fall back, for the same reason
+    /// `accountServiceNameForWriting` never does. Returning `nil` here means
+    /// "nothing to compare against yet" and lets the write proceed, rather
+    /// than accidentally comparing against a different account's login.
+    private func readExactAccountKeychainCredentials(
+        forAccountNamed accountName: String?
+    ) throws -> String? {
+        guard let serviceName = accountServiceNameForWriting(forAccountNamed: accountName) else {
+            // No account name — the shared item IS the exact item.
+            return try readSystemCredentials(forAccountNamed: accountName)
+        }
+        guard keychainItemExists(serviceName: serviceName) else {
+            return nil
+        }
+        let result = try securityRunner.run([
+            "find-generic-password",
+            "-s", serviceName,
+            "-a", NSUserName(),
+            "-w"
+        ])
+        guard result.exitCode == 0, let value = result.standardOutput else {
+            return nil
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Searches the keychain for a hashed service name matching
     /// "Claude Code-credentials-*".
     ///
@@ -654,7 +688,14 @@ class ClaudeCodeSyncService {
         // the app's snapshot can be older than the CLI's live login, and
         // pushing it would sign the account backwards on every activation.
         // The CLI keeps its own copy current, so the newer one wins.
-        if let live = try? readSystemCredentials(forAccountNamed: accountName),
+        //
+        // The comparison must read the account's OWN item, never the shared
+        // fallback `readSystemCredentials` returns when that item doesn't
+        // exist yet. Comparing against some other account's credential could
+        // find it "newer" and suppress this write, so the account-specific
+        // item is never created and Claude Code stays signed into the wrong
+        // account — the exact defect this PR exists to remove.
+        if let live = try? readExactAccountKeychainCredentials(forAccountNamed: accountName),
            let liveExpiry = extractTokenExpiry(from: live),
            let mineExpiry = extractTokenExpiry(from: jsonData),
            liveExpiry > mineExpiry {
@@ -724,9 +765,9 @@ class ClaudeCodeSyncService {
     func extractAccessToken(from jsonData: String) -> String? {
         guard let data = jsonData.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Self.containsClaudeCodeLogin(json),
               let oauth = json["claudeAiOauth"] as? [String: Any],
-              let token = oauth["accessToken"] as? String,
-              !token.isEmpty else {
+              let token = oauth["accessToken"] as? String else {
             return nil
         }
         return token
