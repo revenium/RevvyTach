@@ -1200,11 +1200,17 @@ private struct PersonalExtraUsageNoticeView: View {
     /// once.
     let claudeAIAccountAction: () -> Void
 
+    /// Exhaustive on purpose, like `message` and `icon` below. A `default:`
+    /// here would route a newly added case to CLI Account and compile
+    /// cleanly, which is the silent-default shape this notice exists to
+    /// remove — the point of the notice is that a case nobody decided about
+    /// must not quietly look decided.
     private var action: () -> Void {
         switch issue {
         case .claudeAccountUnresolved:
             return claudeAIAccountAction
-        default:
+        case .notLinked, .signInExpired, .signInUnusable,
+             .signInHasNoToken, .differentOrganization:
             return cliAccountAction
         }
     }
