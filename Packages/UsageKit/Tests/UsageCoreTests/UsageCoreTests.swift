@@ -274,7 +274,6 @@ final class UsageCoreTests: XCTestCase {
 
     func testWindowValidationRejectsInvalidMeasurementsAndRanges() throws {
         let id = try UsageWindowID("window")
-        XCTAssertThrowsError(try UsageWindow(id: id))
         XCTAssertThrowsError(try UsageWindow(id: id, usedPercentage: -.leastNonzeroMagnitude))
         XCTAssertThrowsError(try UsageWindow(id: id, usedPercentage: .infinity))
         XCTAssertThrowsError(try UsageWindow(id: id, usedPercentage: 1, duration: 0))
@@ -289,6 +288,25 @@ final class UsageCoreTests: XCTestCase {
 
         let overage = try UsageWindow(id: id, usedPercentage: 125)
         XCTAssertEqual(overage.usedPercentage, 125)
+    }
+
+    /// A window may carry no measurement at all. That is a provider saying
+    /// "this limit exists and I could not read it", and it has to be
+    /// expressible: while the initializer rejected it, a percentage-only
+    /// provider had nowhere to put an unread window and sent a fabricated 0%
+    /// instead, which displayed as a healthy figure.
+    func testWindowMayCarryNoMeasurementToMeanNoReading() throws {
+        let window = try UsageWindow(id: try UsageWindowID("window"))
+        XCTAssertNil(window.usedPercentage)
+        XCTAssertNil(window.quantity)
+
+        // And it survives a round trip, so a stored report keeps saying
+        // "unread" rather than decoding into something else.
+        let decoded = try JSONDecoder().decode(
+            UsageWindow.self,
+            from: try JSONEncoder().encode(window)
+        )
+        XCTAssertEqual(decoded, window)
     }
 
     func testDuplicateIdentitiesAndInvalidReportDatesAreRejected() throws {

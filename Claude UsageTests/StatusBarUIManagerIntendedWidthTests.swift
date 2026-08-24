@@ -68,6 +68,11 @@ final class StatusBarUIManagerIntendedWidthTests: HostedAppTestCase {
     private func makeProfile(sessionPercentage: Double) -> Profile {
         var usage = ClaudeUsage.empty
         usage.sessionPercentage = sessionPercentage
+        // `ClaudeUsage.empty` means "nothing has been read yet" and renders
+        // as a dash, so these profiles have to say the figure below is a real
+        // reading — otherwise every width here would be the dash's width.
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
         usage.sessionResetTime = Date().addingTimeInterval(3_600)
         var profile = Profile(name: "Test")
         profile.claudeUsage = usage

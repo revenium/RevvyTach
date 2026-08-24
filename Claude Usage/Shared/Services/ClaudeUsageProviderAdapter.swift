@@ -69,18 +69,25 @@ enum ClaudeUsageProviderAdapter {
                 windows: [
                     try UsageWindow(
                         id: UsageWindowID("session"),
-                        // Match ClaudeUsage.effectiveSessionPercentage without
-                        // its implicit Date() dependency.
-                        usedPercentage: usage.sessionResetTime < context.fetchedAt
-                            ? 0
-                            : usage.sessionPercentage,
+                        // nil when the response never reported the window, so
+                        // the popover says "Unavailable" instead of drawing a
+                        // reassuring empty bar. When it was reported, match
+                        // ClaudeUsage.effectiveSessionPercentage without its
+                        // implicit Date() dependency.
+                        usedPercentage: usage.sessionPercentageAvailable
+                            ? (usage.sessionResetTime < context.fetchedAt
+                                ? 0
+                                : usage.sessionPercentage)
+                            : nil,
                         quantity: nil,
                         resetsAt: usage.sessionResetTime,
                         duration: Constants.sessionWindow
                     ),
                     try UsageWindow(
                         id: UsageWindowID("weekly"),
-                        usedPercentage: usage.weeklyPercentage,
+                        usedPercentage: usage.weeklyPercentageAvailable
+                            ? usage.weeklyPercentage
+                            : nil,
                         quantity: nil,
                         resetsAt: usage.weeklyResetTime,
                         duration: Constants.weeklyWindow

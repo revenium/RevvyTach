@@ -222,6 +222,24 @@ final class StatusBarUIManager {
         )
     }
 
+    /// What the label says about the session figure. A dash on screen and a
+    /// spoken "0% used" would be the same lie told twice, so the unknown
+    /// state is stated in words rather than rounded into a number.
+    static func sessionAccessibilityValue(
+        for render: ProfileMenuBarRender
+    ) -> String {
+        if render.unknownWindows.contains(.session) {
+            // Reuses the existing no-data vocabulary rather than inventing a
+            // ninth translation of the same sentence.
+            return ProviderUILocalization.text(
+                "menubar.accessibility.state.no_data",
+                fallback: "no usage data"
+            )
+        }
+        return "\(Int(render.sessionDisplay.rounded()))% "
+            + usageModeText(showRemaining: render.showRemaining)
+    }
+
     static func usageModeText(showRemaining: Bool) -> String {
         ProviderUILocalization.text(
             showRemaining
@@ -1280,6 +1298,22 @@ final class StatusBarUIManager {
         let image: NSImage
         let sessionDisplay: Double
         let showRemaining: Bool
+        /// Which windows had no reading behind them. Carried alongside the
+        /// image so the accessibility label and tooltip cannot describe a
+        /// figure the image is deliberately refusing to show.
+        let unknownWindows: MenuBarUnknownWindows
+
+        init(
+            image: NSImage,
+            sessionDisplay: Double,
+            showRemaining: Bool,
+            unknownWindows: MenuBarUnknownWindows = []
+        ) {
+            self.image = image
+            self.sessionDisplay = sessionDisplay
+            self.showRemaining = showRemaining
+            self.unknownWindows = unknownWindows
+        }
     }
 
     /// Builds the exact image `updateMultiProfileButtons` paints for one
@@ -1295,9 +1329,20 @@ final class StatusBarUIManager {
         isDarkMode: Bool,
         isActive: Bool
     ) -> ProfileMenuBarRender {
-        // Get usage data for this profile
+        // Get usage data for this profile. `ClaudeUsage.empty` stands for
+        // "nothing has been read yet" and says so through its availability
+        // flags, so a profile that never completed a fetch renders as no
+        // reading rather than as a pristine account at 0%.
         let usage = profile.claudeUsage ?? ClaudeUsage.empty
         let showRemaining = config.showRemainingPercentage
+
+        var unknownWindows: MenuBarUnknownWindows = []
+        if !usage.sessionPercentageAvailable {
+            unknownWindows.insert(.session)
+        }
+        if !usage.weeklyPercentageAvailable {
+            unknownWindows.insert(.week)
+        }
 
         // Calculate percentages
         let sessionUsed = usage.effectiveSessionPercentage
@@ -1373,7 +1418,8 @@ final class StatusBarUIManager {
                     weekTimeMarker: config.showWeek ? weekMarker : nil,
                     sessionPaceStatus: sessionPaceStatus,
                     weekPaceStatus: config.showWeek ? weekPaceStatus : nil,
-                    showPaceMarker: config.showPaceMarker
+                    showPaceMarker: config.showPaceMarker,
+                    unknownWindows: unknownWindows
                 )
             } else {
                 image = renderer.createConcentricIcon(
@@ -1389,7 +1435,8 @@ final class StatusBarUIManager {
                     weekTimeMarker: config.showWeek ? weekMarker : nil,
                     sessionPaceStatus: sessionPaceStatus,
                     weekPaceStatus: config.showWeek ? weekPaceStatus : nil,
-                    showPaceMarker: config.showPaceMarker
+                    showPaceMarker: config.showPaceMarker,
+                    unknownWindows: unknownWindows
                 )
             }
         case .progressBar:
@@ -1406,7 +1453,8 @@ final class StatusBarUIManager {
                 weekTimeMarker: config.showWeek ? weekMarker : nil,
                 sessionPaceStatus: sessionPaceStatus,
                 weekPaceStatus: config.showWeek ? weekPaceStatus : nil,
-                showPaceMarker: config.showPaceMarker
+                showPaceMarker: config.showPaceMarker,
+                unknownWindows: unknownWindows
             )
         case .compact:
             image = renderer.createCompactDot(
@@ -1417,7 +1465,8 @@ final class StatusBarUIManager {
                 isDarkMode: isDarkMode,
                 useSystemColor: false,
                 paceStatus: sessionPaceStatus,
-                showPaceMarker: config.showPaceMarker
+                showPaceMarker: config.showPaceMarker,
+                unknownWindows: unknownWindows
             )
         case .percentage:
             image = renderer.createMultiProfilePercentage(
@@ -1431,7 +1480,8 @@ final class StatusBarUIManager {
                 useSystemColor: false,
                 sessionPaceStatus: sessionPaceStatus,
                 weekPaceStatus: config.showWeek ? weekPaceStatus : nil,
-                showPaceMarker: config.showPaceMarker
+                showPaceMarker: config.showPaceMarker,
+                unknownWindows: unknownWindows
             )
         }
 
@@ -1458,7 +1508,8 @@ final class StatusBarUIManager {
         return ProfileMenuBarRender(
             image: finalImage,
             sessionDisplay: sessionDisplay,
-            showRemaining: showRemaining
+            showRemaining: showRemaining,
+            unknownWindows: unknownWindows
         )
     }
 
@@ -1496,8 +1547,7 @@ final class StatusBarUIManager {
                 profile.providerID
             )
             let baseLabel = "\(appearance.displayName), \(profile.name), "
-                + "\(Int(render.sessionDisplay.rounded()))% "
-                + Self.usageModeText(showRemaining: render.showRemaining)
+                + Self.sessionAccessibilityValue(for: render)
             let label = Self.profileAccessibilityLabel(
                 baseLabel,
                 isActive: isActive

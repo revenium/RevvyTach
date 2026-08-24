@@ -273,35 +273,26 @@ final class AutoStartSessionService {
             throw AppError(code: .apiParsingFailed, message: "Failed to parse usage data", isRecoverable: false)
         }
 
-        // Extract session usage (five_hour)
-        var sessionPercentage = 0.0
-        var sessionResetTime = Date().addingTimeInterval(5 * 3600)
+        // A window the response never mentioned stays flagged unavailable
+        // rather than reading as a measured zero. Same shared parser as
+        // ClaudeAPIService, which reads the same response shape.
+        let sessionWindow = UsageLimitParsing.parsePrimaryWindow(
+            from: json,
+            key: "five_hour"
+        )
+        let sessionPercentage = sessionWindow.percentage ?? 0.0
+        let sessionPercentageAvailable = sessionWindow.isAvailable
+        let sessionResetTime = sessionWindow.resetTime
+            ?? Date().addingTimeInterval(5 * 3600)
 
-        if let fiveHour = json["five_hour"] as? [String: Any] {
-            if let utilization = fiveHour["utilization"] {
-                sessionPercentage = parseUtilization(utilization)
-            }
-            if let resetsAt = fiveHour["resets_at"] as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                sessionResetTime = formatter.date(from: resetsAt) ?? sessionResetTime
-            }
-        }
-
-        // Extract weekly usage (seven_day)
-        var weeklyPercentage = 0.0
-        var weeklyResetTime = Date().nextMonday1259pm()
-
-        if let sevenDay = json["seven_day"] as? [String: Any] {
-            if let utilization = sevenDay["utilization"] {
-                weeklyPercentage = parseUtilization(utilization)
-            }
-            if let resetsAt = sevenDay["resets_at"] as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                weeklyResetTime = formatter.date(from: resetsAt) ?? weeklyResetTime
-            }
-        }
+        let weeklyWindow = UsageLimitParsing.parsePrimaryWindow(
+            from: json,
+            key: "seven_day"
+        )
+        let weeklyPercentage = weeklyWindow.percentage ?? 0.0
+        let weeklyPercentageAvailable = weeklyWindow.isAvailable
+        let weeklyResetTime = weeklyWindow.resetTime
+            ?? Date().nextMonday1259pm()
 
         let opusUsage = UsageLimitParsing.parseWeeklyModelUsage(
             from: json, legacyKey: "seven_day_opus", modelDisplayName: "Opus")
@@ -326,10 +317,12 @@ final class AutoStartSessionService {
             sessionLimit: 0,
             sessionPercentage: sessionPercentage,
             sessionResetTime: sessionResetTime,
+            sessionPercentageAvailable: sessionPercentageAvailable,
             weeklyTokensUsed: weeklyTokens,
             weeklyLimit: weeklyLimit,
             weeklyPercentage: weeklyPercentage,
             weeklyResetTime: weeklyResetTime,
+            weeklyPercentageAvailable: weeklyPercentageAvailable,
             opusWeeklyTokensUsed: opusTokens,
             opusWeeklyPercentage: opusPercentage,
             sonnetWeeklyTokensUsed: sonnetTokens,

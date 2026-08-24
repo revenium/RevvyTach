@@ -8,6 +8,28 @@
 import Cocoa
 import UsageCore
 
+/// Which of a profile's menu bar windows have no reading behind them.
+///
+/// The menu bar's colours are fully spoken for by how much of a limit is used
+/// — green, orange, red are three severities of a known figure — so a fourth
+/// colour would be read as a fourth severity rather than as an absence. An
+/// unknown window is therefore drawn as a different *form*: a dimmed dash
+/// where a number would be, a hollow dashed mark where a filled one would be.
+/// Nothing about it can be mistaken for a measurement of zero.
+struct MenuBarUnknownWindows: OptionSet, Hashable {
+    let rawValue: Int
+
+    static let session = MenuBarUnknownWindows(rawValue: 1 << 0)
+    static let week = MenuBarUnknownWindows(rawValue: 1 << 1)
+
+    /// The glyph standing in for a number nobody received.
+    static let dashGlyph = "\u{2014}"
+
+    /// Dash pattern for the outline marks (rings, dots) that replace a filled
+    /// shape when its window has no reading.
+    static let strokeDashPattern: [CGFloat] = [2.0, 2.0]
+}
+
 /// Handles rendering of individual metric icons for the menu bar
 struct MenuBarIconRenderer {
 
@@ -1291,7 +1313,8 @@ struct MenuBarIconRenderer {
         weekTimeMarker: CGFloat? = nil,
         sessionPaceStatus: PaceStatus? = nil,
         weekPaceStatus: PaceStatus? = nil,
-        showPaceMarker: Bool = false
+        showPaceMarker: Bool = false,
+        unknownWindows: MenuBarUnknownWindows = []
     ) -> NSImage {
         let size: CGFloat = 24
         let image = NSImage(size: NSSize(width: size, height: size))
@@ -1307,6 +1330,8 @@ struct MenuBarIconRenderer {
         let sessionColor: NSColor = getColor(for: sessionStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let weekColor: NSColor = getColor(for: weekStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let backgroundColor: NSColor = foregroundColor.withAlphaComponent(0.15)
+        let sessionUnknown = unknownWindows.contains(.session)
+        let weekUnknown = unknownWindows.contains(.week)
 
         // Outer ring (Session) - larger radius, thicker stroke - Session is primary/more important
         let outerRadius: CGFloat = (size - 4) / 2  // 10pt radius
@@ -1323,10 +1348,19 @@ struct MenuBarIconRenderer {
         )
         backgroundColor.setStroke()
         outerBgPath.lineWidth = outerStrokeWidth
+        // A dashed track is the ring's "no reading" form. A solid empty track
+        // is what 0% looks like, so an unread window must not borrow it.
+        if sessionUnknown {
+            outerBgPath.setLineDash(
+                MenuBarUnknownWindows.strokeDashPattern,
+                count: MenuBarUnknownWindows.strokeDashPattern.count,
+                phase: 0
+            )
+        }
         outerBgPath.stroke()
 
         // Session progress ring (outer - primary metric, clockwise from 12 o'clock)
-        if sessionPercentage > 0 {
+        if !sessionUnknown, sessionPercentage > 0 {
             let sessionEndAngle = 90 - (360 * CGFloat(sessionPercentage / 100.0))
             let outerProgressPath = NSBezierPath()
             outerProgressPath.appendArc(
@@ -1342,8 +1376,9 @@ struct MenuBarIconRenderer {
             outerProgressPath.stroke()
         }
 
-        // Session time marker on outer ring
-        if let fraction = sessionTimeMarker {
+        // Session time marker on outer ring. Suppressed without a
+        // reading: a pace tick against no figure implies a comparison.
+        if !sessionUnknown, let fraction = sessionTimeMarker {
             let tickAngle = (90 - 360 * fraction) * .pi / 180
             let innerR = outerRadius - 2.0
             let outerR = outerRadius + 2.0
@@ -1368,10 +1403,17 @@ struct MenuBarIconRenderer {
         )
         backgroundColor.setStroke()
         innerBgPath.lineWidth = innerStrokeWidth
+        if weekUnknown {
+            innerBgPath.setLineDash(
+                MenuBarUnknownWindows.strokeDashPattern,
+                count: MenuBarUnknownWindows.strokeDashPattern.count,
+                phase: 0
+            )
+        }
         innerBgPath.stroke()
 
         // Week progress ring (inner - secondary metric, clockwise from 12 o'clock)
-        if weekPercentage > 0 {
+        if !weekUnknown, weekPercentage > 0 {
             let weekEndAngle = 90 - (360 * CGFloat(weekPercentage / 100.0))
             let innerProgressPath = NSBezierPath()
             innerProgressPath.appendArc(
@@ -1388,7 +1430,7 @@ struct MenuBarIconRenderer {
         }
 
         // Week time marker on inner ring
-        if let fraction = weekTimeMarker {
+        if !weekUnknown, let fraction = weekTimeMarker {
             let tickAngle = (90 - 360 * fraction) * .pi / 180
             let innerR = innerRadius - 2.0
             let outerR = innerRadius + 2.0
@@ -1432,7 +1474,8 @@ struct MenuBarIconRenderer {
         weekTimeMarker: CGFloat? = nil,
         sessionPaceStatus: PaceStatus? = nil,
         weekPaceStatus: PaceStatus? = nil,
-        showPaceMarker: Bool = false
+        showPaceMarker: Bool = false,
+        unknownWindows: MenuBarUnknownWindows = []
     ) -> NSImage {
         let circleSize: CGFloat = 20
         let labelHeight: CGFloat = 10
@@ -1454,6 +1497,8 @@ struct MenuBarIconRenderer {
         let sessionColor: NSColor = getColor(for: sessionStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let weekColor: NSColor = getColor(for: weekStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let backgroundColor: NSColor = foregroundColor.withAlphaComponent(0.15)
+        let sessionUnknown = unknownWindows.contains(.session)
+        let weekUnknown = unknownWindows.contains(.week)
 
         // Outer ring (Session) - Session is primary/more important
         let outerRadius: CGFloat = (circleSize - 4) / 2
@@ -1470,10 +1515,18 @@ struct MenuBarIconRenderer {
         )
         backgroundColor.setStroke()
         outerBgPath.lineWidth = outerStrokeWidth
+        // Dashed track = no reading; a solid empty track is what 0% looks like.
+        if sessionUnknown {
+            outerBgPath.setLineDash(
+                MenuBarUnknownWindows.strokeDashPattern,
+                count: MenuBarUnknownWindows.strokeDashPattern.count,
+                phase: 0
+            )
+        }
         outerBgPath.stroke()
 
         // Session progress ring (outer - primary metric, clockwise from 12 o'clock)
-        if sessionPercentage > 0 {
+        if !sessionUnknown, sessionPercentage > 0 {
             let sessionEndAngle = 90 - (360 * CGFloat(sessionPercentage / 100.0))
             let outerProgressPath = NSBezierPath()
             outerProgressPath.appendArc(
@@ -1490,7 +1543,7 @@ struct MenuBarIconRenderer {
         }
 
         // Session time marker on outer ring
-        if let fraction = sessionTimeMarker {
+        if !sessionUnknown, let fraction = sessionTimeMarker {
             let tickAngle = (90 - 360 * fraction) * .pi / 180
             let innerR = outerRadius - 2.0
             let outerR = outerRadius + 2.0
@@ -1515,10 +1568,17 @@ struct MenuBarIconRenderer {
         )
         backgroundColor.setStroke()
         innerBgPath.lineWidth = innerStrokeWidth
+        if weekUnknown {
+            innerBgPath.setLineDash(
+                MenuBarUnknownWindows.strokeDashPattern,
+                count: MenuBarUnknownWindows.strokeDashPattern.count,
+                phase: 0
+            )
+        }
         innerBgPath.stroke()
 
         // Week progress ring (inner - secondary metric, clockwise from 12 o'clock)
-        if weekPercentage > 0 {
+        if !weekUnknown, weekPercentage > 0 {
             let weekEndAngle = 90 - (360 * CGFloat(weekPercentage / 100.0))
             let innerProgressPath = NSBezierPath()
             innerProgressPath.appendArc(
@@ -1535,7 +1595,7 @@ struct MenuBarIconRenderer {
         }
 
         // Week time marker on inner ring
-        if let fraction = weekTimeMarker {
+        if !weekUnknown, let fraction = weekTimeMarker {
             let tickAngle = (90 - 360 * fraction) * .pi / 180
             let innerR = innerRadius - 2.0
             let outerR = innerRadius + 2.0
@@ -1580,7 +1640,8 @@ struct MenuBarIconRenderer {
         weekTimeMarker: CGFloat? = nil,
         sessionPaceStatus: PaceStatus? = nil,
         weekPaceStatus: PaceStatus? = nil,
-        showPaceMarker: Bool = false
+        showPaceMarker: Bool = false,
+        unknownWindows: MenuBarUnknownWindows = []
     ) -> NSImage {
         let barWidth: CGFloat = 24
         let barHeight: CGFloat = 4
@@ -1601,6 +1662,29 @@ struct MenuBarIconRenderer {
         let sessionColor: NSColor = getColor(for: sessionStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let weekColor: NSColor = getColor(for: weekStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let backgroundColor: NSColor = foregroundColor.withAlphaComponent(0.2)
+        let sessionUnknown = unknownWindows.contains(.session)
+        let weekUnknown = unknownWindows.contains(.week)
+        let unknownMarkColor = foregroundColor.withAlphaComponent(0.55)
+
+        /// A short dash centred inside an empty track: the bar's "no reading"
+        /// form. Centred and thinner than the track on purpose — a
+        /// left-anchored fill of any width would read as a small percentage.
+        func drawUnknownDash(inTrackAt y: CGFloat) {
+            let dashWidth: CGFloat = 8
+            let dashHeight: CGFloat = 1.5
+            let dashRect = NSRect(
+                x: (barWidth - dashWidth) / 2,
+                y: y + (barHeight - dashHeight) / 2,
+                width: dashWidth,
+                height: dashHeight
+            )
+            unknownMarkColor.setFill()
+            NSBezierPath(
+                roundedRect: dashRect,
+                xRadius: dashHeight / 2,
+                yRadius: dashHeight / 2
+            ).fill()
+        }
 
         var currentY = totalHeight
 
@@ -1610,13 +1694,18 @@ struct MenuBarIconRenderer {
         backgroundColor.setFill()
         NSBezierPath(roundedRect: sessionBgRect, xRadius: 2, yRadius: 2).fill()
 
-        let sessionFillWidth = barWidth * CGFloat(sessionPercentage / 100.0)
-        let sessionFillRect = NSRect(x: 0, y: currentY, width: sessionFillWidth, height: barHeight)
-        sessionColor.setFill()
-        NSBezierPath(roundedRect: sessionFillRect, xRadius: 2, yRadius: 2).fill()
+        if sessionUnknown {
+            drawUnknownDash(inTrackAt: currentY)
+        } else {
+            let sessionFillWidth = barWidth * CGFloat(sessionPercentage / 100.0)
+            let sessionFillRect = NSRect(x: 0, y: currentY, width: sessionFillWidth, height: barHeight)
+            sessionColor.setFill()
+            NSBezierPath(roundedRect: sessionFillRect, xRadius: 2, yRadius: 2).fill()
+        }
 
-        // Session time marker tick
-        if let fraction = sessionTimeMarker {
+        // Session time marker tick. Omitted without a reading, since a pace
+        // tick beside no figure invites a comparison that cannot be made.
+        if !sessionUnknown, let fraction = sessionTimeMarker {
             let tickX = round(barWidth * fraction)
             let tickPath = NSBezierPath()
             tickPath.move(to: NSPoint(x: tickX, y: currentY))
@@ -1631,13 +1720,17 @@ struct MenuBarIconRenderer {
             backgroundColor.setFill()
             NSBezierPath(roundedRect: weekBgRect, xRadius: 2, yRadius: 2).fill()
 
-            let weekFillWidth = barWidth * CGFloat(weekPct / 100.0)
-            let weekFillRect = NSRect(x: 0, y: currentY, width: weekFillWidth, height: barHeight)
-            weekColor.setFill()
-            NSBezierPath(roundedRect: weekFillRect, xRadius: 2, yRadius: 2).fill()
+            if weekUnknown {
+                drawUnknownDash(inTrackAt: currentY)
+            } else {
+                let weekFillWidth = barWidth * CGFloat(weekPct / 100.0)
+                let weekFillRect = NSRect(x: 0, y: currentY, width: weekFillWidth, height: barHeight)
+                weekColor.setFill()
+                NSBezierPath(roundedRect: weekFillRect, xRadius: 2, yRadius: 2).fill()
+            }
 
             // Week time marker tick
-            if let fraction = weekTimeMarker {
+            if !weekUnknown, let fraction = weekTimeMarker {
                 let tickX = round(barWidth * fraction)
                 let tickPath = NSBezierPath()
                 tickPath.move(to: NSPoint(x: tickX, y: currentY))
@@ -1677,12 +1770,14 @@ struct MenuBarIconRenderer {
         isDarkMode: Bool,
         useSystemColor: Bool = false,
         paceStatus: PaceStatus? = nil,
-        showPaceMarker: Bool = false
+        showPaceMarker: Bool = false,
+        unknownWindows: MenuBarUnknownWindows = []
     ) -> NSImage {
         let dotSize: CGFloat = 10
         let labelHeight: CGFloat = profileInitial != nil ? 10 : 0
         let spacing: CGFloat = profileInitial != nil ? 1 : 0
-        let hasPaceDot = showPaceMarker && paceStatus != nil
+        let sessionUnknown = unknownWindows.contains(.session)
+        let hasPaceDot = showPaceMarker && paceStatus != nil && !sessionUnknown
         let paceDotExtra: CGFloat = hasPaceDot ? 6 : 0  // gap(2) + dot(4)
 
         let totalHeight = dotSize + spacing + labelHeight
@@ -1705,11 +1800,26 @@ struct MenuBarIconRenderer {
             width: dotSize,
             height: dotSize
         )
-        dotColor.setFill()
-        NSBezierPath(ovalIn: dotRect).fill()
+        if sessionUnknown {
+            // A hollow dashed outline instead of a filled dot. The filled dot
+            // always carries a colour that means a severity, so an unread
+            // window has to stop being a filled dot at all.
+            let outlinePath = NSBezierPath(ovalIn: dotRect.insetBy(dx: 0.75, dy: 0.75))
+            outlinePath.lineWidth = 1.5
+            outlinePath.setLineDash(
+                MenuBarUnknownWindows.strokeDashPattern,
+                count: MenuBarUnknownWindows.strokeDashPattern.count,
+                phase: 0
+            )
+            foregroundColor.withAlphaComponent(0.55).setStroke()
+            outlinePath.stroke()
+        } else {
+            dotColor.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
 
         // Pace dot next to main dot
-        if showPaceMarker, let pace = paceStatus {
+        if !sessionUnknown, showPaceMarker, let pace = paceStatus {
             let paceDotSize: CGFloat = 4.0
             let paceDotX = mainDotX + dotSize + 2
             let paceDotY = totalHeight - dotSize + (dotSize - paceDotSize) / 2
@@ -1796,12 +1906,20 @@ struct MenuBarIconRenderer {
         useSystemColor: Bool = false,
         sessionPaceStatus: PaceStatus? = nil,
         weekPaceStatus: PaceStatus? = nil,
-        showPaceMarker: Bool = false
+        showPaceMarker: Bool = false,
+        unknownWindows: MenuBarUnknownWindows = []
     ) -> NSImage {
         let compactFont: NSFont? = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
         let font = safeFont(preferred: compactFont, fallbackSize: 9)
         let foregroundColor = menuBarForegroundColor(isDarkMode: isDarkMode)
         let separatorColor = foregroundColor.withAlphaComponent(0.4)
+        // `sessionPercentage == nil` has always meant "nothing to draw here";
+        // an explicitly unknown window is the same statement made by the
+        // caller, so both arrive at the same dash.
+        let sessionUnknown = unknownWindows.contains(.session)
+            || sessionPercentage == nil
+        let weekUnknown = unknownWindows.contains(.week)
+        let unknownColor = foregroundColor.withAlphaComponent(0.55)
 
         let sessionColor: NSColor = getColor(for: sessionStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
         let weekColor: NSColor = getColor(for: weekStatus, monochromeMode: monochromeMode, useSystemColor: useSystemColor, isDarkMode: isDarkMode)
@@ -1812,11 +1930,16 @@ struct MenuBarIconRenderer {
         // percentage text) instead of crashing the app.
         let attributed = NSMutableAttributedString()
         if let font {
-            // Session number
-            let sessionText = sessionPercentage.map { "\(Int($0))" } ?? "—"
+            // Session number, or a dimmed dash when there is no reading
+            // behind it. Dimmed rather than recoloured: the three status
+            // colours are three severities of a known figure, so a fourth
+            // colour would be read as a fourth severity.
+            let sessionText = sessionUnknown
+                ? MenuBarUnknownWindows.dashGlyph
+                : "\(Int(sessionPercentage ?? 0))"
             attributed.append(NSAttributedString(string: sessionText, attributes: [
                 .font: font,
-                .foregroundColor: sessionColor
+                .foregroundColor: sessionUnknown ? unknownColor : sessionColor
             ]))
 
             // Separator and week number (if shown)
@@ -1825,16 +1948,20 @@ struct MenuBarIconRenderer {
                     .font: font,
                     .foregroundColor: separatorColor
                 ]))
-                let weekText = "\(Int(weekPct))"
+                let weekText = weekUnknown
+                    ? MenuBarUnknownWindows.dashGlyph
+                    : "\(Int(weekPct))"
                 attributed.append(NSAttributedString(string: weekText, attributes: [
                     .font: font,
-                    .foregroundColor: weekColor
+                    .foregroundColor: weekUnknown ? unknownColor : weekColor
                 ]))
             }
         }
 
         let textSize = attributed.size()
-        let hasPaceDot = showPaceMarker && sessionPaceStatus != nil
+        let hasPaceDot = showPaceMarker
+            && sessionPaceStatus != nil
+            && !sessionUnknown
         let paceDotExtra: CGFloat = hasPaceDot ? 6 : 0  // gap(2) + dot(4)
         let labelHeight: CGFloat = profileName != nil ? 10 : 0
         let labelSpacing: CGFloat = profileName != nil ? 1 : 0
@@ -1852,7 +1979,7 @@ struct MenuBarIconRenderer {
         attributed.draw(at: NSPoint(x: textX, y: textY))
 
         // Pace dot after the percentage text
-        if showPaceMarker, let pace = sessionPaceStatus {
+        if !sessionUnknown, showPaceMarker, let pace = sessionPaceStatus {
             let dotSize: CGFloat = 4.0
             let dotX = textX + textSize.width + 2
             let dotY = textY + (textSize.height - dotSize) / 2

@@ -1,0 +1,327 @@
+//
+//  UnknownUsageReadingTests.swift
+//  Claude UsageTests
+//
+//  Created by Claude Code on 2026-08-24.
+//
+
+import AppKit
+import UsageCore
+import XCTest
+@testable import Claude_Usage
+
+/// One invariant, tested from the parser up to the pixels: an unknown must
+/// never render as a reassuring known.
+///
+/// The two tests that matter most here are
+/// `testMissingFiveHourWindowIsDistinguishableFromMeasuredZero` and
+/// `testNeverLoadedProfileRendersDifferentlyFromZeroPercentProfile`. Before
+/// this change a usage response with no `five_hour` window and a response
+/// reporting `five_hour` at 0% produced byte-identical results all the way to
+/// the menu bar image, so "we could not read your usage" and "you have used
+/// nothing" were the same green pixels.
+@MainActor
+final class UnknownUsageReadingTests: HostedAppTestCase {
+
+    // MARK: - Parsing
+
+    func testMissingFiveHourWindowIsDistinguishableFromMeasuredZero() {
+        let withoutWindow: [String: Any] = ["seven_day": ["utilization": 40]]
+        let withZeroWindow: [String: Any] = [
+            "five_hour": ["utilization": 0],
+            "seven_day": ["utilization": 40]
+        ]
+
+        let missing = UsageLimitParsing.parsePrimaryWindow(
+            from: withoutWindow,
+            key: "five_hour"
+        )
+        let measuredZero = UsageLimitParsing.parsePrimaryWindow(
+            from: withZeroWindow,
+            key: "five_hour"
+        )
+
+        XCTAssertNil(
+            missing.percentage,
+            "A response with no five_hour window must not report a figure."
+        )
+        XCTAssertFalse(missing.isAvailable)
+        XCTAssertEqual(measuredZero.percentage, 0)
+        XCTAssertTrue(
+            measuredZero.isAvailable,
+            "A reported 0% is a reading and must stay one."
+        )
+        XCTAssertNotEqual(
+            missing,
+            measuredZero,
+            "The whole point: absent and zero must not be the same value."
+        )
+    }
+
+    func testMissingSevenDayWindowIsDistinguishableFromMeasuredZero() {
+        let missing = UsageLimitParsing.parsePrimaryWindow(
+            from: ["five_hour": ["utilization": 10]],
+            key: "seven_day"
+        )
+        let measuredZero = UsageLimitParsing.parsePrimaryWindow(
+            from: ["seven_day": ["utilization": 0]],
+            key: "seven_day"
+        )
+
+        XCTAssertFalse(missing.isAvailable)
+        XCTAssertTrue(measuredZero.isAvailable)
+        XCTAssertEqual(measuredZero.percentage, 0)
+    }
+
+    func testWindowPresentButWithoutUtilizationIsUnavailable() {
+        // The window exists and carries only a reset time. There is still no
+        // figure, so there is still nothing to display as a percentage.
+        let window = UsageLimitParsing.parsePrimaryWindow(
+            from: ["five_hour": ["resets_at": "2026-08-24T12:00:00Z"]],
+            key: "five_hour"
+        )
+        XCTAssertFalse(window.isAvailable)
+        XCTAssertNotNil(window.resetTime)
+    }
+
+    // MARK: - Model
+
+    func testEmptyUsageReportsNoReadingForEitherWindow() {
+        let empty = ClaudeUsage.empty
+        XCTAssertFalse(empty.sessionPercentageAvailable)
+        XCTAssertFalse(empty.weeklyPercentageAvailable)
+        XCTAssertNil(empty.readableSessionPercentage)
+        XCTAssertNil(empty.readableWeeklyPercentage)
+    }
+
+    func testReadablePercentagesSurviveARealZero() {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
+        usage.sessionResetTime = Date().addingTimeInterval(3_600)
+
+        XCTAssertEqual(usage.readableSessionPercentage, 0)
+        XCTAssertEqual(usage.readableWeeklyPercentage, 0)
+    }
+
+    func testCachedSnapshotWithoutTheFlagsTreatsAZeroAsUnknown() throws {
+        // A snapshot written before the flags existed cannot say whether its
+        // zero was received or invented, so a zero decodes as unknown while a
+        // real figure decodes as known.
+        func decode(sessionPercentage: Double) throws -> ClaudeUsage {
+            let json = """
+            {
+                "sessionTokensUsed": 0,
+                "sessionLimit": 0,
+                "sessionPercentage": \(sessionPercentage),
+                "sessionResetTime": 800000000,
+                "weeklyTokensUsed": 0,
+                "weeklyLimit": 1000000,
+                "weeklyPercentage": \(sessionPercentage),
+                "weeklyResetTime": 800000000,
+                "opusWeeklyTokensUsed": 0,
+                "opusWeeklyPercentage": 0,
+                "sonnetWeeklyTokensUsed": 0,
+                "sonnetWeeklyPercentage": 0,
+                "fableWeeklyTokensUsed": 0,
+                "fableWeeklyPercentage": 0,
+                "lastUpdated": 800000000,
+                "userTimezone": {"identifier": "UTC"}
+            }
+            """
+            return try JSONDecoder().decode(
+                ClaudeUsage.self,
+                from: Data(json.utf8)
+            )
+        }
+
+        let zero = try decode(sessionPercentage: 0)
+        XCTAssertFalse(zero.sessionPercentageAvailable)
+        XCTAssertFalse(zero.weeklyPercentageAvailable)
+
+        let real = try decode(sessionPercentage: 37)
+        XCTAssertTrue(real.sessionPercentageAvailable)
+        XCTAssertTrue(real.weeklyPercentageAvailable)
+    }
+
+    func testAvailabilityFlagsRoundTripThroughCoding() throws {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = false
+
+        let decoded = try JSONDecoder().decode(
+            ClaudeUsage.self,
+            from: try JSONEncoder().encode(usage)
+        )
+        XCTAssertTrue(decoded.sessionPercentageAvailable)
+        XCTAssertFalse(
+            decoded.weeklyPercentageAvailable,
+            "An explicitly stored false must not be re-derived from the "
+                + "percentage on the way back in."
+        )
+    }
+
+    // MARK: - Normalized report
+
+    func testUnreadWindowsReachTheReportAsNoMeasurement() throws {
+        let report = try ClaudeUsageProviderAdapter.makeReport(
+            from: .empty,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(status: .healthy, checkedAt: Date()),
+                fetchedAt: Date()
+            )
+        )
+        let windows = try XCTUnwrap(report.limitGroups.first).windows
+        XCTAssertEqual(windows.count, 2)
+        for window in windows {
+            XCTAssertNil(
+                window.usedPercentage,
+                "\(window.id.rawValue) had no reading, so the popover must "
+                    + "print no percentage and draw no bar for it."
+            )
+        }
+    }
+
+    func testMeasuredZeroReachesTheReportAsZero() throws {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
+        usage.sessionResetTime = Date().addingTimeInterval(3_600)
+
+        let report = try ClaudeUsageProviderAdapter.makeReport(
+            from: usage,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(status: .healthy, checkedAt: Date()),
+                fetchedAt: Date()
+            )
+        )
+        let windows = try XCTUnwrap(report.limitGroups.first).windows
+        XCTAssertEqual(windows.map(\.usedPercentage), [0, 0])
+    }
+
+    // MARK: - Menu bar
+
+    private func neverLoadedProfile() -> Profile {
+        Profile(name: "Test")
+    }
+
+    private func zeroPercentProfile() -> Profile {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
+        usage.sessionResetTime = Date().addingTimeInterval(3_600)
+        var profile = Profile(name: "Test")
+        profile.claudeUsage = usage
+        return profile
+    }
+
+    func testNeverLoadedProfileRendersDifferentlyFromZeroPercentProfile() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+
+        for style in MultiProfileIconStyle.allCases {
+            let config = MultiProfileDisplayConfig(iconStyle: style)
+            let unread = manager.renderProfileMenuBar(
+                for: neverLoadedProfile(),
+                config: config,
+                isDarkMode: false,
+                isActive: false
+            )
+            let measuredZero = manager.renderProfileMenuBar(
+                for: zeroPercentProfile(),
+                config: config,
+                isDarkMode: false,
+                isActive: false
+            )
+
+            XCTAssertEqual(
+                unread.unknownWindows,
+                [.session, .week],
+                "\(style): a profile that never fetched has no reading for "
+                    + "either window."
+            )
+            XCTAssertEqual(
+                measuredZero.unknownWindows,
+                [],
+                "\(style): a reported 0% is a reading."
+            )
+            XCTAssertNotEqual(
+                unread.image.tiffRepresentation,
+                measuredZero.image.tiffRepresentation,
+                "\(style): the two states render to identical pixels, so a "
+                    + "glance at the menu bar cannot tell them apart."
+            )
+        }
+    }
+
+    func testUnreadWindowNeverWidensTheMenuBarItem() {
+        // The menu bar has real width constraints and an overflow planner
+        // that budgets from these widths, so the unknown form must not be
+        // wider than the figure it replaces.
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+
+        for style in MultiProfileIconStyle.allCases {
+            let config = MultiProfileDisplayConfig(iconStyle: style)
+            let unread = manager.renderProfileMenuBar(
+                for: neverLoadedProfile(),
+                config: config,
+                isDarkMode: false,
+                isActive: false
+            ).image.size.width
+            let widest = manager.renderProfileMenuBar(
+                for: {
+                    var profile = zeroPercentProfile()
+                    profile.claudeUsage?.sessionPercentage = 100
+                    profile.claudeUsage?.weeklyPercentage = 100
+                    return profile
+                }(),
+                config: config,
+                isDarkMode: false,
+                isActive: false
+            ).image.size.width
+
+            XCTAssertLessThanOrEqual(
+                unread,
+                widest,
+                "\(style): the no-reading render is wider than a full "
+                    + "three-digit reading, which would disturb the "
+                    + "multi-profile layout."
+            )
+        }
+    }
+
+    func testAccessibilityLabelSaysNoReadingRatherThanZeroPercent() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let config = MultiProfileDisplayConfig(iconStyle: .percentage)
+
+        let unread = manager.renderProfileMenuBar(
+            for: neverLoadedProfile(),
+            config: config,
+            isDarkMode: false,
+            isActive: false
+        )
+        let measuredZero = manager.renderProfileMenuBar(
+            for: zeroPercentProfile(),
+            config: config,
+            isDarkMode: false,
+            isActive: false
+        )
+
+        let unreadValue = StatusBarUIManager.sessionAccessibilityValue(
+            for: unread
+        )
+        let zeroValue = StatusBarUIManager.sessionAccessibilityValue(
+            for: measuredZero
+        )
+
+        XCTAssertFalse(
+            unreadValue.contains("0%"),
+            "VoiceOver must not read a fabricated 0% where the image shows "
+                + "a dash. Got: \(unreadValue)"
+        )
+        XCTAssertTrue(zeroValue.contains("0%"))
+        XCTAssertNotEqual(unreadValue, zeroValue)
+    }
+}

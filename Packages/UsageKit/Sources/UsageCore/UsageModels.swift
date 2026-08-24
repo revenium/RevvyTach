@@ -157,9 +157,13 @@ public struct UsageWindow: Codable, Equatable, Sendable, Identifiable {
         if let startedAt, let resetsAt, resetsAt < startedAt {
             throw UsageCoreValidationError.invalidDateRange(field: "usageWindow")
         }
-        guard usedPercentage != nil || quantity != nil else {
-            throw UsageCoreValidationError.invalidValue(field: "usageWindow.measurement")
-        }
+        // A window carrying neither a percentage nor a quantity is allowed on
+        // purpose: it is a provider saying "this limit exists and I could not
+        // read it this time". Consumers already treat a nil `usedPercentage`
+        // as no reading — the popover prints "Unavailable" and draws no bar —
+        // but rejecting the state here left a percentage-only provider with
+        // nowhere to put it, so a missing window arrived as a fabricated 0%
+        // and displayed as a healthy, reassuring figure.
 
         self.id = id
         self.displayName = displayName

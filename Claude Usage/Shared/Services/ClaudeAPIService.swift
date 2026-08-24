@@ -1781,33 +1781,29 @@ class ClaudeAPIService: APIServiceProtocol {
         // Parse Claude's actual API response structure
 
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // Extract session usage (five_hour)
-            var sessionPercentage = 0.0
-            var sessionResetTime = Date().addingTimeInterval(5 * 3600)
-            if let fiveHour = json["five_hour"] as? [String: Any] {
-                if let utilization = fiveHour["utilization"] {
-                    sessionPercentage = parseUtilization(utilization)
-                }
-                if let resetsAt = fiveHour["resets_at"] as? String {
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    sessionResetTime = formatter.date(from: resetsAt) ?? sessionResetTime
-                }
-            }
+            // A response can arrive without a window at all, and this
+            // function still returns successfully — nothing throws, so the
+            // empty-state paths never engage. `PrimaryWindow` therefore
+            // carries "was this actually reported" alongside the figure,
+            // instead of a missing window defaulting to a zero that reads as
+            // good news.
+            let sessionWindow = UsageLimitParsing.parsePrimaryWindow(
+                from: json,
+                key: "five_hour"
+            )
+            let sessionPercentage = sessionWindow.percentage ?? 0.0
+            let sessionPercentageAvailable = sessionWindow.isAvailable
+            let sessionResetTime = sessionWindow.resetTime
+                ?? Date().addingTimeInterval(5 * 3600)
 
-            // Extract weekly usage (seven_day)
-            var weeklyPercentage = 0.0
-            var weeklyResetTime = Date().nextMonday1259pm()
-            if let sevenDay = json["seven_day"] as? [String: Any] {
-                if let utilization = sevenDay["utilization"] {
-                    weeklyPercentage = parseUtilization(utilization)
-                }
-                if let resetsAt = sevenDay["resets_at"] as? String {
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    weeklyResetTime = formatter.date(from: resetsAt) ?? weeklyResetTime
-                }
-            }
+            let weeklyWindow = UsageLimitParsing.parsePrimaryWindow(
+                from: json,
+                key: "seven_day"
+            )
+            let weeklyPercentage = weeklyWindow.percentage ?? 0.0
+            let weeklyPercentageAvailable = weeklyWindow.isAvailable
+            let weeklyResetTime = weeklyWindow.resetTime
+                ?? Date().nextMonday1259pm()
 
             let opusUsage = UsageLimitParsing.parseWeeklyModelUsage(
                 from: json, legacyKey: "seven_day_opus", modelDisplayName: "Opus")
@@ -1837,10 +1833,12 @@ class ClaudeAPIService: APIServiceProtocol {
                 sessionLimit: sessionLimit,
                 sessionPercentage: sessionPercentage,
                 sessionResetTime: sessionResetTime,
+                sessionPercentageAvailable: sessionPercentageAvailable,
                 weeklyTokensUsed: weeklyTokens,
                 weeklyLimit: weeklyLimit,
                 weeklyPercentage: weeklyPercentage,
                 weeklyResetTime: weeklyResetTime,
+                weeklyPercentageAvailable: weeklyPercentageAvailable,
                 opusWeeklyTokensUsed: opusTokens,
                 opusWeeklyPercentage: opusPercentage,
                 sonnetWeeklyTokensUsed: sonnetTokens,
@@ -1889,9 +1887,13 @@ class ClaudeAPIService: APIServiceProtocol {
             return nil
         }
 
-        // Session (5h) usage — utilization is 0.0-1.0, convert to 0-100
-        let sessionUtilization = headerDouble("anthropic-ratelimit-unified-5h-utilization") ?? 0
-        var sessionPercentage = sessionUtilization * 100.0
+        // Session (5h) usage — utilization is 0.0-1.0, convert to 0-100.
+        // An absent header is not a zero: the same "unknown rendered as a
+        // reassuring known" trap as the JSON path above, so the header's
+        // presence is recorded rather than collapsed into `?? 0`.
+        let sessionUtilization = headerDouble("anthropic-ratelimit-unified-5h-utilization")
+        let sessionPercentageAvailable = sessionUtilization != nil
+        var sessionPercentage = (sessionUtilization ?? 0) * 100.0
 
         let sessionResetTimestamp = headerDouble("anthropic-ratelimit-unified-5h-reset") ?? 0
         let sessionResetTime = sessionResetTimestamp > 0
@@ -1904,8 +1906,9 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         // Weekly (7d) usage
-        let weeklyUtilization = headerDouble("anthropic-ratelimit-unified-7d-utilization") ?? 0
-        let weeklyPercentage = weeklyUtilization * 100.0
+        let weeklyUtilization = headerDouble("anthropic-ratelimit-unified-7d-utilization")
+        let weeklyPercentageAvailable = weeklyUtilization != nil
+        let weeklyPercentage = (weeklyUtilization ?? 0) * 100.0
 
         let weeklyResetTimestamp = headerDouble("anthropic-ratelimit-unified-7d-reset") ?? 0
         let weeklyResetTime = weeklyResetTimestamp > 0
@@ -1923,10 +1926,12 @@ class ClaudeAPIService: APIServiceProtocol {
             sessionLimit: 0,
             sessionPercentage: sessionPercentage,
             sessionResetTime: sessionResetTime,
+            sessionPercentageAvailable: sessionPercentageAvailable,
             weeklyTokensUsed: weeklyTokens,
             weeklyLimit: weeklyLimit,
             weeklyPercentage: weeklyPercentage,
             weeklyResetTime: weeklyResetTime,
+            weeklyPercentageAvailable: weeklyPercentageAvailable,
             opusWeeklyTokensUsed: 0,
             opusWeeklyPercentage: 0,
             sonnetWeeklyTokensUsed: 0,
