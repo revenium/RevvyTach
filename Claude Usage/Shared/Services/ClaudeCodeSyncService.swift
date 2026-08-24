@@ -134,6 +134,12 @@ class ClaudeCodeSyncService {
         if let fileLogin, fileLoginPreemptsKeychain(fileLogin) {
             LoggingService.shared.log("Read credentials from .credentials.json file")
             return fileLogin
+        } else if let fileLogin {
+            LoggingService.shared.log(
+                "The credentials file holds an expired login; holding it "
+                + "back in favor of the Keychain rather than returning it "
+                + "as the answer"
+            )
         }
         // Held back rather than discarded — the last-resort returns below
         // hand it back if the Keychain turns out to have nothing better.
@@ -286,14 +292,12 @@ class ClaudeCodeSyncService {
 
     /// Reads credentials from ~/.claude/.credentials.json or ~/.claude/credentials.json file.
     ///
-    /// Returns whatever login the file holds without ruling on whether it
-    /// should win: a login can parse, carry a token, and still be weeks past
-    /// its expiry, and that verdict belongs to `fileLoginPreemptsKeychain`,
-    /// which the caller also consults — one decision point rather than two
-    /// that can drift. This function used to return an expired login
-    /// indistinguishably from a fresh one, and the chain accepted it, used
-    /// it, then discarded it as expired, while a valid Keychain login for
-    /// the same account went unread.
+    /// Returns whatever login the file holds — expired or not — and rules on
+    /// none of it: whether that login is allowed to pre-empt the Keychain is
+    /// `readSystemCredentials`'s call, not this function's. This function
+    /// used to return an expired login indistinguishably from a fresh one,
+    /// and the chain accepted it, used it, then discarded it as expired,
+    /// while a valid Keychain login for the same account went unread.
     private func readCredentialsFile(
         forAccountNamed accountName: String? = nil
     ) -> String? {
@@ -341,13 +345,6 @@ class ClaudeCodeSyncService {
                 continue
             }
 
-            if !fileLoginPreemptsKeychain(jsonString) {
-                LoggingService.shared.log(
-                    "\(fileURL.lastPathComponent) holds an expired login; "
-                    + "holding it back in favor of the Keychain rather than "
-                    + "returning it as the answer"
-                )
-            }
             return jsonString
         }
 
