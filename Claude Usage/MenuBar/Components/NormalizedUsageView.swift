@@ -290,6 +290,12 @@ struct NormalizedUsagePresentation: Equatable {
     let credits: [UsageCredit]
     let notices: [NormalizedUsageNotice]
     let emptyState: NormalizedUsageEmptyState?
+    /// When the figures below were last successfully read, so their age can
+    /// be shown rather than inferred. Nil when nothing has been read.
+    ///
+    /// General insurance rather than a fix for one bug: every future
+    /// staleness defect becomes visible without anyone having predicted it.
+    let readAt: Date?
     let legacyClaudeUsage: ClaudeUsage?
     let legacyClaudeAPIUsage: APIUsage?
 
@@ -428,6 +434,9 @@ enum NormalizedUsagePresentationBuilder {
             credits: credits,
             notices: notices,
             emptyState: emptyState,
+            // The provider's own statement of when its figures were current,
+            // falling back to when this app completed the fetch.
+            readAt: report?.sourceUpdatedAt ?? report?.fetchedAt,
             legacyClaudeUsage: snapshot.providerID == .claude
                 ? snapshot.claudeUsage
                 : nil,
@@ -674,6 +683,7 @@ enum NormalizedUsagePresentationBuilder {
             credits: [],
             notices: [],
             emptyState: .missingSnapshot,
+            readAt: nil,
             legacyClaudeUsage: nil,
             legacyClaudeAPIUsage: nil
         )
@@ -876,8 +886,13 @@ struct ProviderPopoverHeader: View {
     @ViewBuilder
     private var accountHealthRow: some View {
         HStack(spacing: 5) {
+            // The glyph carries both jobs: it says this row is about the
+            // account, and its tint says how the account is doing. A separate
+            // status dot beside it would repeat the colour and cost width
+            // that the longest translated verdicts do not have to spare.
             Image(systemName: "person.crop.circle")
-                .font(.system(size: 9))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(accountHealthColor)
                 .accessibilityHidden(true)
             Text(
                 NormalizedUsageStrings.localized(
@@ -888,13 +903,14 @@ struct ProviderPopoverHeader: View {
             .font(.system(size: 11, weight: .semibold))
             Text("·")
                 .font(PopoverDesign.metaFont)
-            Circle()
-                .fill(accountHealthColor)
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
             Text(accountHealthText)
                 .font(PopoverDesign.metaFont)
                 .lineLimit(1)
+                // Measured, every verdict fits in every shipped locale, with
+                // Japanese "unsupported account" the tightest at roughly 5pt
+                // to spare. A future translation that overruns shrinks by up
+                // to a tenth rather than losing its last word to an ellipsis.
+                .minimumScaleFactor(0.9)
                 .truncationMode(.tail)
         }
         .accessibilityElement(children: .combine)
@@ -1245,6 +1261,16 @@ struct NormalizedUsageView: View {
                 profileName: presentation.profileName
             )
         } else {
+            if let readAt = presentation.readAt {
+                Text(
+                    NormalizedUsageFormatter.age(readAt, now: now)
+                )
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityIdentifier("popover.usage.read_at")
+            }
             ForEach(presentation.groups) { group in
                 UsageLimitGroupView(
                     group: group,
@@ -1999,6 +2025,26 @@ enum NormalizedUsageFormatter {
                 arguments: [remaining, absolute]
             )
         }
+    }
+
+    /// "as of 4m ago" — how old the figures on screen are.
+    ///
+    /// Deliberately relative: an absolute timestamp makes the reader do the
+    /// subtraction, and the question being answered is "is this current",
+    /// not "what time was it".
+    static func age(_ date: Date, now: Date) -> String {
+        let interval = now.timeIntervalSince(date)
+        guard interval >= 60 else {
+            return NormalizedUsageStrings.localized(
+                "popover.normalized.age.just_now",
+                default: "as of just now"
+            )
+        }
+        return NormalizedUsageStrings.formatted(
+            "popover.normalized.age.ago",
+            default: "as of %@ ago",
+            arguments: [remainingTime(interval)]
+        )
     }
 
     static func day(

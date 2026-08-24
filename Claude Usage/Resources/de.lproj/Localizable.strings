@@ -1111,6 +1111,8 @@
 "notification.provider_usage.threshold" = "Nutzung hat %d%% überschritten (%.1f%%).%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "Konto";
+"popover.normalized.age.ago" = "Stand: vor %@";
+"popover.normalized.age.just_now" = "Stand: gerade jetzt";
 "popover.normalized.account_health.label" = "Konto";
 "popover.normalized.service_status.accessibility" = "Anthropic-Dienststatus";
 "popover.normalized.service_status.help" = "Anthropic-Dienststatus – zum Öffnen von status.claude.com klicken";

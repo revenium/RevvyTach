@@ -1087,6 +1087,8 @@
 "notification.provider_usage.threshold" = "사용량이 %d%%를 초과했습니다(%.1f%%).%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "계정";
+"popover.normalized.age.ago" = "%@ 전 기준";
+"popover.normalized.age.just_now" = "방금 기준";
 "popover.normalized.account_health.label" = "계정";
 "popover.normalized.service_status.accessibility" = "Anthropic 서비스 상태";
 "popover.normalized.service_status.help" = "Anthropic 서비스 상태 — 클릭하면 status.claude.com이 열립니다";

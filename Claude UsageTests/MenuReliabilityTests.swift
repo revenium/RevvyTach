@@ -170,6 +170,12 @@ final class MenuReliabilityTests: HostedAppTestCase {
         var usage = ClaudeUsage.empty
         usage.sessionPercentage = 92
         usage.weeklyPercentage = 82
+        // These are real readings, so the popover draws the full-height
+        // layout — two progress bars, two reset lines. Leaving them flagged
+        // unavailable would render the shorter "Unavailable" form and quietly
+        // turn this fit test into a test of a layout nobody sees.
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
         usage.sessionResetTime = Date().addingTimeInterval(3 * 60 * 60)
         usage.weeklyResetTime = Date().addingTimeInterval(24 * 60 * 60)
         let report = try ClaudeUsageProviderAdapter.makeReport(
@@ -258,6 +264,92 @@ final class MenuReliabilityTests: HostedAppTestCase {
             20,
             "Accounts footer should remain at the bottom of the laid-out popover; root=\(controller.view.bounds), accounts=\(accountsFrame), usage=\(usageScrollView.frame), range=\(usageRange)"
         )
+
+        // Worst case for height: everything this popover can say at once —
+        // the account-health header row, the age of the figures, both
+        // extra-usage groups, a credit balance, and the notice explaining a
+        // member figure that could not be read. The popover is a fixed size
+        // by design, so the test is that the Accounts footer stays anchored
+        // and the window keeps its height; surplus content scrolls.
+        var crowded = usage
+        crowded.costUsed = 26_118
+        crowded.costLimit = 100_000
+        crowded.costCurrency = "USD"
+        crowded.costScope = .organization
+        crowded.personalExtraUsageIssue = .signInExpired
+        crowded.overageBalance = 4_200
+        crowded.overageBalanceCurrency = "USD"
+        crowded.opusWeeklyTokensUsed = 1_000
+        crowded.opusWeeklyPercentage = 41
+        crowded.fableWeeklyLimitAvailable = true
+        crowded.fableWeeklyPercentage = 12
+        let crowdedReport = try ClaudeUsageProviderAdapter.makeReport(
+            from: crowded,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(status: .healthy, checkedAt: Date()),
+                fetchedAt: Date()
+            )
+        )
+        XCTAssertTrue(
+            runtime.presentationStore.publish(
+                makePresentationSnapshot(
+                    profileID: viewedProfile.id,
+                    profileName: viewedProfile.name,
+                    providerID: .claude,
+                    presentationEpoch: context.epoch,
+                    report: crowdedReport,
+                    claudeUsage: crowded,
+                    lastSuccessfulAt: Date()
+                ),
+                expected: context
+            )
+        )
+        window.setContentSize(size)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
+        controller.view.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(
+            controller.view.bounds.height,
+            size.height,
+            "The popover is a fixed size; content must never drive it."
+        )
+        let crowdedAccountsFrame = controller.view.convert(
+            accountsScrollView.bounds,
+            from: accountsScrollView
+        )
+        let crowdedDistanceToBottom = controller.view.isFlipped
+            ? controller.view.bounds.maxY - crowdedAccountsFrame.maxY
+            : crowdedAccountsFrame.minY - controller.view.bounds.minY
+        XCTAssertLessThanOrEqual(
+            crowdedDistanceToBottom,
+            20,
+            "The fullest popover pushed the Accounts footer off its anchor; "
+                + "root=\(controller.view.bounds), "
+                + "accounts=\(crowdedAccountsFrame)"
+        )
+        XCTAssertGreaterThan(
+            accountsScrollView.documentVisibleRect.height,
+            1,
+            "The fullest popover starved the Accounts footer"
+        )
+
+        // Back to the plain reading for the remaining height checks.
+        XCTAssertTrue(
+            runtime.presentationStore.publish(
+                makePresentationSnapshot(
+                    profileID: viewedProfile.id,
+                    profileName: viewedProfile.name,
+                    providerID: .claude,
+                    presentationEpoch: context.epoch,
+                    report: report,
+                    claudeUsage: usage,
+                    lastSuccessfulAt: Date()
+                ),
+                expected: context
+            )
+        )
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
+        controller.view.layoutSubtreeIfNeeded()
 
         let compactSize = Constants.WindowSizes.popoverSize(
             forVisibleScreenHeight: 680

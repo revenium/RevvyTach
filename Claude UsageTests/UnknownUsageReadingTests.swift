@@ -319,6 +319,62 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         XCTAssertEqual(report.health.issue, .authenticationRequired)
     }
 
+    // MARK: - Age of the figures
+
+    func testAgeIsRelativeAndCompact() {
+        let now = Date()
+        XCTAssertEqual(
+            NormalizedUsageFormatter.age(
+                now.addingTimeInterval(-30),
+                now: now
+            ),
+            "as of just now"
+        )
+        XCTAssertEqual(
+            NormalizedUsageFormatter.age(
+                now.addingTimeInterval(-4 * 60),
+                now: now
+            ),
+            "as of 4m ago"
+        )
+        XCTAssertEqual(
+            NormalizedUsageFormatter.age(
+                now.addingTimeInterval(-((3 * 60) + 5) * 60),
+                now: now
+            ),
+            "as of 3h 5m ago"
+        )
+        XCTAssertEqual(
+            NormalizedUsageFormatter.age(
+                now.addingTimeInterval(-2 * 24 * 3_600),
+                now: now
+            ),
+            "as of 2d ago"
+        )
+    }
+
+    func testTheAgeShownIsWhenTheFiguresWereRead() throws {
+        let read = Date(timeIntervalSince1970: 1_700_000_000)
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
+        usage.lastUpdated = read
+
+        let report = try ClaudeUsageProviderAdapter.makeReport(
+            from: usage,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(status: .healthy, checkedAt: Date()),
+                fetchedAt: read.addingTimeInterval(5)
+            )
+        )
+        XCTAssertEqual(
+            report.sourceUpdatedAt,
+            read,
+            "The age must come from when the figures were read, not from "
+                + "whenever the popover happens to be looking at them."
+        )
+    }
+
     // MARK: - Menu bar
 
     private func neverLoadedProfile() -> Profile {

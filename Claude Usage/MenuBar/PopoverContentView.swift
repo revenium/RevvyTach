@@ -1390,6 +1390,7 @@ extension NormalizedUsagePresentation {
             credits: credits,
             notices: notices.filter { $0.kind != kindToStrip },
             emptyState: emptyState,
+            readAt: readAt,
             legacyClaudeUsage: legacyClaudeUsage,
             legacyClaudeAPIUsage: legacyClaudeAPIUsage
         )
