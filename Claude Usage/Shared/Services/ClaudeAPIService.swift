@@ -633,7 +633,26 @@ class ClaudeAPIService: APIServiceProtocol {
     /// attempt permanently, so the one adoption attempt was normally already
     /// spent by the time the notice appeared, and the promised recovery could
     /// never actually happen without an app restart.
-    private var liveCLILoginAdoptionAttempts: [Int: Date] = [:]
+    private var liveCLILoginAdoptionAttempts: [AdoptionAttemptKey: Date] = [:]
+
+    /// One profile's attempt at one specific stored credential.
+    ///
+    /// The credential fingerprint alone is not a unique key. A historical
+    /// import stamped the same unusable credential blob into more than one
+    /// profile, so on a machine carrying that import several profiles present
+    /// an identical stale credential and refresh a second apart through this
+    /// one shared service. Keyed on the credential alone, the first profile
+    /// refreshed claimed the slot and every profile behind it was silently
+    /// denied its own look at the live login — one of them then sat
+    /// indefinitely on "sign in to Claude Code again" while a valid login was
+    /// a single Keychain read away, and no restart helped because the next
+    /// pass starved it again. Keying on the profile as well gives each
+    /// profile its own attempt regardless of which others share its
+    /// credential.
+    private struct AdoptionAttemptKey: Hashable {
+        let profileID: UUID
+        let credentialFingerprint: Int
+    }
 
     /// How long a stale credential's failed adoption attempt is honored
     /// before another Keychain read is allowed. Exposed for tests: the
@@ -839,8 +858,15 @@ class ClaudeAPIService: APIServiceProtocol {
         // The adoption attempt recorded against the retired credential goes
         // with it, for the same reason: if that credential is ever presented
         // again it deserves a fresh look at the CLI's live login rather than
-        // inheriting a verdict from a previous incarnation.
-        liveCLILoginAdoptionAttempts.removeValue(forKey: previous)
+        // inheriting a verdict from a previous incarnation. Scoped to this
+        // profile's own key — other profiles that still present the same
+        // fingerprint keep their own attempt records untouched.
+        liveCLILoginAdoptionAttempts.removeValue(
+            forKey: AdoptionAttemptKey(
+                profileID: profileID,
+                credentialFingerprint: previous
+            )
+        )
     }
 
     /// A CLI credential with a token that is actually usable right now.
@@ -950,9 +976,18 @@ class ClaudeAPIService: APIServiceProtocol {
     ///   never reported as a recovery.
     ///
     /// A live login that is *also* expired is left alone rather than renewed
-    /// here. Claude Code keeps its own copy current, so that state means the
-    /// account really is signed out, which is exactly what the notice should
-    /// then say.
+    /// here, and deliberately so: these refresh tokens rotate on use, and
+    /// the renewed token would be written only into this app's own storage,
+    /// never back into Claude Code's. Renewing a token Claude Code is still
+    /// relying on would therefore rotate it out from under the CLI and leave
+    /// that account needing a genuine re-login — a worse outcome than the
+    /// notice this recovery exists to avoid.
+    ///
+    /// What reaches this expiry check is the best candidate available rather
+    /// than merely the first one on disk: the read behind it prefers the
+    /// Keychain over the per-account credentials file whenever the file's
+    /// copy is stale, because that file is not kept current the way a live
+    /// Keychain login is.
     ///
     /// The account name is what scopes this read to the account this profile
     /// is actually linked to: `systemCredentialsReader` with a nil account
@@ -972,12 +1007,15 @@ class ClaudeAPIService: APIServiceProtocol {
     ) async -> (credentialsJSON: String, accessToken: String)? {
         guard let accountName = profile.cliAccountName else { return nil }
 
-        let fingerprint = stale.hashValue
-        if let lastAttempt = liveCLILoginAdoptionAttempts[fingerprint],
+        let key = AdoptionAttemptKey(
+            profileID: profile.id,
+            credentialFingerprint: stale.hashValue
+        )
+        if let lastAttempt = liveCLILoginAdoptionAttempts[key],
            Date().timeIntervalSince(lastAttempt) < liveCLILoginAdoptionRetryInterval {
             return nil
         }
-        liveCLILoginAdoptionAttempts[fingerprint] = Date()
+        liveCLILoginAdoptionAttempts[key] = Date()
 
         let live: String?
         do {

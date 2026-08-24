@@ -1119,6 +1119,111 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    /// The recovery throttle in `adoptLiveCLILogin` used to key its cooldown
+    /// on the stale credential's own text, not on which profile was asking.
+    /// On a real machine two profiles routinely carried the exact same
+    /// unusable stored blob — a historical import stamped it into every
+    /// profile alike — and the app refreshed both through one shared
+    /// service, a tick or two apart. Whichever profile refreshed second
+    /// within the retry window (60 seconds by default) found the cooldown
+    /// already spent by the first and was turned away without ever trying
+    /// the Keychain, even though a perfectly good live login was sitting
+    /// there. That profile kept showing the user a sign-in problem that the
+    /// other profile, refreshed a moment earlier, never saw. The cooldown is
+    /// now keyed on the profile as well as the credential, so each profile
+    /// gets its own attempt regardless of what other profiles share its
+    /// stored credential.
+    func testTwoProfilesSharingAStaleCredentialBothRecover() async throws {
+        let profileA = UUID()
+        let profileB = UUID()
+        let store = makeIsolatedProfileStore()
+        let staleCredential = Self.credentialsJSON(expiresAt: 1_000)
+        try seedProfile(
+            id: profileA,
+            organizationID: teamOrganizationID,
+            credentialsJSON: staleCredential,
+            in: store
+        )
+        // A second profile with the identical stale credential, appended
+        // alongside the first rather than through `seedProfile` again —
+        // that helper always creates the *initial* profile in the store,
+        // which only one profile in a store may be.
+        let profileBValue = Profile(
+            id: profileB,
+            name: "Fixture B",
+            claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            organizationIsPersonal: false,
+            cliCredentialsJSON: staleCredential,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account-b"
+        )
+        try store.appendProfile(
+            profileBValue,
+            expectedExistingIDs: [profileA]
+        )
+        try store.saveCLIProfileCredential(staleCredential, for: profileB)
+        let manager = ProfileManager(profileStore: store)
+        let a = try seededProfile(profileA)
+        let b = profileBValue
+        manager.profiles = [a, b]
+        manager.activeProfile = a
+        retained.append(manager)
+        retained.append(store)
+
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let renewals = RenewedCredentialRecorder()
+        // Left at the default: this test is about the interval the app
+        // actually ships with, not a zeroed-out stand-in for it.
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usageA = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: a
+        )
+        let usageB = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: b
+        )
+
+        XCTAssertNil(
+            usageA.personalExtraUsageIssue,
+            "the first profile refreshed should recover its live login"
+        )
+        XCTAssertNil(
+            usageB.personalExtraUsageIssue,
+            "a second profile with its own identical stale credential must "
+                + "recover too — instead the shared cooldown, keyed only on "
+                + "the credential text, denies it a Keychain read and it "
+                + "keeps reporting a sign-in problem the user cannot fix"
+        )
+        XCTAssertTrue(
+            renewals.writes.contains { $0.profileID == profileA },
+            "profile A's recovered login should have been written back"
+        )
+        XCTAssertTrue(
+            renewals.writes.contains { $0.profileID == profileB },
+            "profile B's recovered login should have been written back too"
+        )
+    }
+
     // MARK: - The credentials file that is not a login
 
     /// The defect behind every profile showing an organization figure with no
@@ -1165,6 +1270,37 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertTrue(
             ClaudeCodeSyncService.containsClaudeCodeLogin(realLogin)
         )
+    }
+
+    /// The per-account credentials file is not kept current the way the
+    /// Keychain is — Claude Code can leave a stale copy sitting in
+    /// `~/.claude-accounts/<account>/.credentials.json` for weeks after the
+    /// Keychain item for the same account has moved on to a fresh login.
+    /// The file used to win the fallback chain on JSON validity and a login
+    /// shape alone, so on a machine where these files exist and are stale,
+    /// every profile linked to those accounts showed a sign-in notice while
+    /// a valid login sat one step down the chain in the Keychain. The same
+    /// code on a machine with no such files behaved correctly, which is why
+    /// this hid for so long — nothing exercised the case where the file
+    /// exists, parses, and looks like a login, but is simply too old.
+    func testAnExpiredCredentialsFileDoesNotPreemptTheKeychain() {
+        let sync = ClaudeCodeSyncService.shared
+
+        let expired = Self.credentialsJSON(expiresAt: 1_000)
+        XCTAssertFalse(sync.fileLoginPreemptsKeychain(expired))
+
+        let future = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        XCTAssertTrue(sync.fileLoginPreemptsKeychain(future))
+
+        let mcpOnly = #"{"mcpOAuth":{"some-server":{"accessToken":"x"}}}"#
+        XCTAssertFalse(sync.fileLoginPreemptsKeychain(mcpOnly))
+
+        let blankToken = #"{"claudeAiOauth":{"accessToken":""}}"#
+        XCTAssertFalse(sync.fileLoginPreemptsKeychain(blankToken))
     }
 
     // MARK: - Importing a login that carries no token

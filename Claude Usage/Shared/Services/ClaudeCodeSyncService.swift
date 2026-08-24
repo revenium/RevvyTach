@@ -125,11 +125,19 @@ class ClaudeCodeSyncService {
             return try systemCredentialsReader()
         }
 
-        // 1. Try credentials file first (most reliable)
-        if let fileJSON = readCredentialsFile(forAccountNamed: accountName) {
+        // 1. Try credentials file first (most reliable) — but only when its
+        // login actually pre-empts the Keychain. A file login that has
+        // itself gone stale must not win here just for being first in the
+        // chain: it is held back as a last resort (below) so the Keychain,
+        // which Claude Code keeps current, gets a real look first.
+        let fileLogin = readCredentialsFile(forAccountNamed: accountName)
+        if let fileLogin, fileLoginPreemptsKeychain(fileLogin) {
             LoggingService.shared.log("Read credentials from .credentials.json file")
-            return fileJSON
+            return fileLogin
         }
+        // Held back rather than discarded — the last-resort returns below
+        // hand it back if the Keychain turns out to have nothing better.
+        let expiredFileFallback = fileLogin
 
         // 2. Try keychain
         let keychainData = try readKeychainCredentials(
@@ -137,8 +145,11 @@ class ClaudeCodeSyncService {
         )
 
         guard let rawJSON = keychainData else {
-            // No credentials anywhere
-            return nil
+            // No credentials in the Keychain. An expired file login is still
+            // better than nothing — it is the last resort, not the first
+            // choice — so behavior never regresses from "expired login" to
+            // "no login at all".
+            return expiredFileFallback
         }
 
         // 3. Validate keychain JSON, and that it actually holds a login.
@@ -146,8 +157,9 @@ class ClaudeCodeSyncService {
         // Syntactic validity was the only check here, which is how an item
         // carrying `claudeAiOauth` with an empty `accessToken` — the shape
         // Claude Code leaves behind for a configuration directory with no
-        // login — was imported over a working credential. `nil` sends the
-        // caller down the "no login found" path, which is the truth.
+        // login — was imported over a working credential. Falling back to
+        // the expired file login sends the caller down the "no login found"
+        // path only when there is truly nothing else to offer.
         if let data = rawJSON.data(using: .utf8),
            let object = try? JSONSerialization.jsonObject(with: data)
             as? [String: Any] {
@@ -158,7 +170,7 @@ class ClaudeCodeSyncService {
                     + "token; treating it as absent rather than importing a "
                     + "credential that cannot authenticate"
                 )
-                return nil
+                return expiredFileFallback
             }
             return rawJSON
         }
@@ -171,7 +183,11 @@ class ClaudeCodeSyncService {
             return minimalJSON
         }
 
-        // 5. All attempts failed
+        // 5. All attempts failed — except an expired file login remains a
+        // valid last resort; only throw once that too is unavailable.
+        if let expiredFileFallback {
+            return expiredFileFallback
+        }
         throw ClaudeCodeError.invalidJSON
     }
 
@@ -194,6 +210,38 @@ class ClaudeCodeSyncService {
         return true
     }
 
+    /// Whether a credentials file's login may pre-empt the Keychain.
+    ///
+    /// A file that parses and carries a login is not automatically the
+    /// better source: the per-account file is a snapshot Claude Code does
+    /// not keep current the way it keeps the Keychain item current, so a
+    /// file can sit expired for weeks while the Keychain a step below it
+    /// holds a login that is valid the same day. Measured on a real machine:
+    /// file logins expired 5 and 7 August, Keychain logins for the same
+    /// accounts valid on the day they were checked. Returning `true` here
+    /// used to be "parses and has a login"; that let a stale file win over a
+    /// current Keychain and left the account reporting a false sign-out.
+    ///
+    /// This predicate is also the seam a unit test can exercise: the real
+    /// chain in `readSystemCredentials` touches both the filesystem and the
+    /// Keychain, neither of which a test can stage, so the tested surface is
+    /// this pure function rather than the chain around it — using it from
+    /// both `readCredentialsFile` and `readSystemCredentials` keeps the
+    /// tested predicate and the one actually deciding from drifting apart.
+    /// The last-resort path this predicate enables — falling back to an
+    /// expired file login when the Keychain has nothing — is NOT covered by
+    /// a unit test: it needs a real filesystem and a real Keychain, neither
+    /// of which this test target can fabricate.
+    func fileLoginPreemptsKeychain(_ json: String) -> Bool {
+        guard
+            let data = json.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+            Self.containsClaudeCodeLogin(object)
+        else { return false }
+        return !isTokenExpired(json)
+    }
+
     /// Whether a credential blob is safe to store against a profile.
     ///
     /// The one rule every import path shares: never replace a stored
@@ -212,7 +260,16 @@ class ClaudeCodeSyncService {
         return containsClaudeCodeLogin(object)
     }
 
-    /// Reads credentials from ~/.claude/.credentials.json or ~/.claude/credentials.json file
+    /// Reads credentials from ~/.claude/.credentials.json or ~/.claude/credentials.json file.
+    ///
+    /// Returns whatever login the file holds without ruling on whether it
+    /// should win: a login can parse, carry a token, and still be weeks past
+    /// its expiry, and that verdict belongs to `fileLoginPreemptsKeychain`,
+    /// which the caller also consults — one decision point rather than two
+    /// that can drift. This function used to return an expired login
+    /// indistinguishably from a fresh one, and the chain accepted it, used
+    /// it, then discarded it as expired, while a valid Keychain login for
+    /// the same account went unread.
     private func readCredentialsFile(
         forAccountNamed accountName: String? = nil
     ) -> String? {
@@ -260,7 +317,13 @@ class ClaudeCodeSyncService {
                 continue
             }
 
-            LoggingService.shared.log("Read credentials from \(fileURL.lastPathComponent)")
+            if !fileLoginPreemptsKeychain(jsonString) {
+                LoggingService.shared.log(
+                    "\(fileURL.lastPathComponent) holds an expired login; "
+                    + "holding it back in favor of the Keychain rather than "
+                    + "returning it as the answer"
+                )
+            }
             return jsonString
         }
 
