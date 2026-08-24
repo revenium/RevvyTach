@@ -84,6 +84,56 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         XCTAssertNotNil(window.resetTime)
     }
 
+    /// A present-but-garbage `utilization` must be treated the same as a
+    /// missing one, not as a measured zero. This is the present-but-unusable
+    /// case the missing-key tests above don't cover: an explicit JSON `null`
+    /// (`JSONSerialization` hands that back as `NSNull`, not an absent key),
+    /// a non-numeric string, a value of the wrong type entirely, and a
+    /// non-finite number all had the same bug — `parseUtilization`'s
+    /// fallback-to-zero made every one of them read as "0% used".
+    func testUnparseableUtilizationIsUnavailableRatherThanZero() {
+        let cases: [(name: String, utilization: Any)] = [
+            ("explicit null", NSNull()),
+            ("non-numeric string", "not-a-number"),
+            ("wrong type (array)", [1, 2, 3]),
+            ("non-finite", Double.nan)
+        ]
+
+        for testCase in cases {
+            let window = UsageLimitParsing.parsePrimaryWindow(
+                from: ["five_hour": ["utilization": testCase.utilization]],
+                key: "five_hour"
+            )
+            XCTAssertNil(
+                window.percentage,
+                "\(testCase.name) must not report a figure."
+            )
+            XCTAssertFalse(
+                window.isAvailable,
+                "\(testCase.name) must not be reported as available."
+            )
+        }
+    }
+
+    /// A genuine zero must survive this same path, in both its numeric and
+    /// string forms — the fix above must not overcorrect into treating every
+    /// zero as unavailable.
+    func testGenuineZeroUtilizationStillReadsAsAvailable() {
+        let numericZero = UsageLimitParsing.parsePrimaryWindow(
+            from: ["five_hour": ["utilization": 0]],
+            key: "five_hour"
+        )
+        let stringZero = UsageLimitParsing.parsePrimaryWindow(
+            from: ["five_hour": ["utilization": "0%"]],
+            key: "five_hour"
+        )
+
+        XCTAssertEqual(numericZero.percentage, 0)
+        XCTAssertTrue(numericZero.isAvailable)
+        XCTAssertEqual(stringZero.percentage, 0)
+        XCTAssertTrue(stringZero.isAvailable)
+    }
+
     // MARK: - Model
 
     func testEmptyUsageReportsNoReadingForEitherWindow() {

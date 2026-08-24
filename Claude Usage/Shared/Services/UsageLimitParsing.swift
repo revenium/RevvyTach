@@ -35,7 +35,7 @@ enum UsageLimitParsing {
         guard let window = json[key] as? [String: Any] else {
             return PrimaryWindow(percentage: nil, resetTime: nil)
         }
-        let percentage = window["utilization"].map(parseUtilization(_:))
+        let percentage = window["utilization"].flatMap(parseUtilizationIfAvailable(_:))
         return PrimaryWindow(
             percentage: percentage,
             resetTime: parseResetTime(window["resets_at"])
@@ -113,6 +113,37 @@ enum UsageLimitParsing {
         }
 
         guard raw.isFinite else { return 0.0 }
+        return min(max(raw, 0.0), 100.0)
+    }
+
+    /// Same parsing as `parseUtilization`, but for callers that must tell
+    /// "no usable figure" apart from "measured zero" — `PrimaryWindow` in
+    /// particular. `parseUtilization`'s fallback-to-zero is correct for
+    /// callers with no availability concept of their own, but it is wrong
+    /// here: an explicit JSON `null` (parsed by `JSONSerialization` as
+    /// `NSNull`, not a missing key), a non-numeric string, or a value of the
+    /// wrong type would otherwise report a confident, measured 0% for a
+    /// figure the API never actually sent. A genuine `0` or `"0%"` still
+    /// parses as an available measured zero; only the unparseable path
+    /// changes to nil instead of 0.
+    static func parseUtilizationIfAvailable(_ value: Any) -> Double? {
+        if value is NSNull { return nil }
+
+        let raw: Double
+        if let intValue = value as? Int {
+            raw = Double(intValue)
+        } else if let doubleValue = value as? Double {
+            raw = doubleValue
+        } else if let stringValue = value as? String {
+            let cleaned = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "%", with: "")
+            guard let parsed = Double(cleaned) else { return nil }
+            raw = parsed
+        } else {
+            return nil
+        }
+
+        guard raw.isFinite else { return nil }
         return min(max(raw, 0.0), 100.0)
     }
 

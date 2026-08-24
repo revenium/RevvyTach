@@ -24,9 +24,18 @@ struct ClaudeUsage: Codable, Equatable {
 
     /// The session figure, or nil when no session figure was ever received.
     ///
-    /// Prefer this over `effectiveSessionPercentage` anywhere the value is
+    /// Prefer this over the raw `sessionPercentage` anywhere the value is
     /// shown to a person: nil has to reach the UI as "no reading" rather than
     /// being flattened into a reassuring zero.
+    ///
+    /// This still goes through `effectiveSessionPercentage`, which checks
+    /// window expiry against `Date()` at call time — fine for a one-off
+    /// read, but not for anything that must stay deterministic against a
+    /// fixed "as of" instant. `ClaudeUsageProviderAdapter.makeReport` is
+    /// exactly that case: it renders against `context.fetchedAt`, so it
+    /// reimplements this expiry check against that timestamp instead of
+    /// calling through here. A caller with the same determinism requirement
+    /// should do the same rather than adopt this property.
     var readableSessionPercentage: Double? {
         sessionPercentageAvailable ? effectiveSessionPercentage : nil
     }
