@@ -2047,12 +2047,27 @@ class MenuBarManager: NSObject, ObservableObject {
         guard let profileID else {
             return popoverActionTarget()
         }
-        guard let profile = profileManager.profiles.first(
+        return Self.claudeAIAccountTarget(
+            forDisplayedProfile: profileID,
+            in: profileManager.profiles
+        )
+    }
+
+    /// Pulled out as a static, non-UI function so the "which profile the
+    /// credential banner targets" logic is testable without a live
+    /// `MenuBarManager`/`ProfileManager`. See the instance method above for
+    /// the `profileID == nil` fallback to `popoverActionTarget()`, which
+    /// stays there since it depends on live popover/click state.
+    static func claudeAIAccountTarget(
+        forDisplayedProfile profileID: UUID,
+        in profiles: [Profile]
+    ) -> ProviderStatusItemIdentity? {
+        guard let profile = profiles.first(
             where: { $0.id == profileID }
         ) else {
             // The chip-selected profile was removed or invalidated while the
-            // popover stayed open. Falling back to popoverActionTarget()
-            // here would route to a DIFFERENT profile's settings with false
+            // popover stayed open. Falling back to a different profile here
+            // would route to a DIFFERENT profile's settings with false
             // confidence, so decline the navigation instead — matching how
             // openPopoverClaudeAIAccount(target: nil) already no-ops.
             return nil

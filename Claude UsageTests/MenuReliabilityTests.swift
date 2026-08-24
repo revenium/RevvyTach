@@ -2693,6 +2693,46 @@ final class MenuReliabilityTests: HostedAppTestCase {
             )
         ))
     }
+
+    // The credential banner's profile-target resolution was corrected three
+    // times during review — it first routed to `popoverActionTarget()`
+    // regardless of which profile the popover was displaying (wrong account
+    // after an in-popover chip switch), then guessed a fallback profile when
+    // the displayed one had vanished (wrong account with false confidence),
+    // before landing on the current decline-rather-than-guess behavior. This
+    // is the regression test.
+    func testClaudeAIAccountTargetResolvesTheDisplayedProfileNotTheActiveOne()
+    {
+        let first = Profile(name: "first@example.com")
+        let second = Profile(name: "second@example.com")
+        let third = Profile(name: "third@example.com")
+
+        let target = MenuBarManager.claudeAIAccountTarget(
+            forDisplayedProfile: second.id,
+            in: [first, second, third]
+        )
+
+        XCTAssertEqual(target?.profileID, second.id)
+        XCTAssertEqual(target?.providerID, second.providerID)
+        XCTAssertEqual(target?.providerRevision, second.providerRevision)
+        XCTAssertNotEqual(target?.profileID, first.id)
+        XCTAssertNil(target?.metricID)
+    }
+
+    func testClaudeAIAccountTargetDeclinesWhenDisplayedProfileIsGone() {
+        let remaining = Profile(name: "remaining@example.com")
+
+        // The displayed profile was removed while the popover stayed open.
+        // Falling back to any other profile here would route the user to
+        // the wrong account's settings with false confidence, so this must
+        // decline rather than guess.
+        let target = MenuBarManager.claudeAIAccountTarget(
+            forDisplayedProfile: UUID(),
+            in: [remaining]
+        )
+
+        XCTAssertNil(target)
+    }
 }
 
 private enum LocalizedDeletionError: LocalizedError {
