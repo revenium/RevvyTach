@@ -140,9 +140,25 @@ class ClaudeCodeSyncService {
         let expiredFileFallback = fileLogin
 
         // 2. Try keychain
-        let keychainData = try readKeychainCredentials(
-            forAccountNamed: accountName
-        )
+        //
+        // A thrown Keychain read (e.g. the `security` process failing to
+        // launch) must not turn into "no login found" when an expired file
+        // login is available as the documented last resort — that would
+        // regress from "expired login" to "no login at all", the exact
+        // outcome this fallback chain exists to avoid.
+        let keychainData: String?
+        do {
+            keychainData = try readKeychainCredentials(
+                forAccountNamed: accountName
+            )
+        } catch {
+            LoggingService.shared.log(
+                "Keychain read threw for account "
+                + "'\(accountName ?? "default")': \(error). Falling back to "
+                + "the held file login rather than reporting no login found"
+            )
+            return expiredFileFallback
+        }
 
         guard let rawJSON = keychainData else {
             // No credentials in the Keychain. An expired file login is still
