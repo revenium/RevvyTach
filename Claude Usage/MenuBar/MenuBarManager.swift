@@ -4315,7 +4315,9 @@ extension MenuBarManager: NSPopoverDelegate {
                     onCredentialsBannerTap: { [weak self] profileID in
                         guard let self else { return }
                         self.openPopoverClaudeAIAccount(
-                            target: self.claudeAIAccountTarget(forDisplayedProfile: profileID) ?? target
+                            target: self.claudeAIAccountTarget(
+                                forDisplayedProfile: profileID
+                            )
                         )
                     }
                 )
