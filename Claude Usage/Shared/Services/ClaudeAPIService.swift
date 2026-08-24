@@ -619,12 +619,27 @@ class ClaudeAPIService: APIServiceProtocol {
     private var expiredCLILogins: Set<Int> = []
 
     /// Stored credentials this run has already tried to replace with the
-    /// CLI's own live login, so the Keychain read behind
-    /// `adoptLiveCLILogin(for:replacing:)` happens once per dead credential
-    /// rather than on every refresh tick. A successful adoption changes the
-    /// stored credential, so the next credential to go stale has a different
-    /// fingerprint and gets its own attempt.
-    private var liveCLILoginAdoptionAttempts: Set<Int> = []
+    /// CLI's own live login, keyed to when that attempt happened, so the
+    /// Keychain read behind `adoptLiveCLILogin(for:replacing:)` is throttled
+    /// per dead credential rather than repeated on every refresh tick. A
+    /// successful adoption changes the stored credential, so the next
+    /// credential to go stale has a different fingerprint and gets its own
+    /// attempt.
+    ///
+    /// This is throttled by time, not blocked forever after one try: the
+    /// notice shown once adoption fails tells the user that signing in to
+    /// Claude Code is enough for usage to reappear on its own, and that is
+    /// only true if a later refresh gets to look again. A `Set` recorded the
+    /// attempt permanently, so the one adoption attempt was normally already
+    /// spent by the time the notice appeared, and the promised recovery could
+    /// never actually happen without an app restart.
+    private var liveCLILoginAdoptionAttempts: [Int: Date] = [:]
+
+    /// How long a stale credential's failed adoption attempt is honored
+    /// before another Keychain read is allowed. Exposed for tests: the
+    /// default makes a live back-to-back refresh over the same dead
+    /// credential read once, and a zero interval makes every refresh retry.
+    var liveCLILoginAdoptionRetryInterval: TimeInterval = 60
 
     /// Credentials renewed during this app run, keyed by profile, each paired
     /// with the fingerprint of the stored credential it was renewed *from*.
@@ -825,7 +840,7 @@ class ClaudeAPIService: APIServiceProtocol {
         // with it, for the same reason: if that credential is ever presented
         // again it deserves a fresh look at the CLI's live login rather than
         // inheriting a verdict from a previous incarnation.
-        liveCLILoginAdoptionAttempts.remove(previous)
+        liveCLILoginAdoptionAttempts.removeValue(forKey: previous)
     }
 
     /// A CLI credential with a token that is actually usable right now.
@@ -846,7 +861,16 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         let fingerprint = credentialsJSON.hashValue
-        guard !expiredCLILogins.contains(fingerprint) else { return nil }
+        // A credential already recorded as dead cannot be renewed — that
+        // verdict does not change — but Claude Code may have been signed
+        // back in since the verdict was recorded, and adoption is the only
+        // thing left that could still recover it. Without this, a known-dead
+        // credential returned early forever, and the notice's promise that
+        // signing back in was enough was false for exactly the credentials
+        // it was shown for.
+        guard !expiredCLILogins.contains(fingerprint) else {
+            return await adoptLiveCLILogin(for: profile, replacing: credentialsJSON)
+        }
 
         let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
             from: credentialsJSON
@@ -929,16 +953,35 @@ class ClaudeAPIService: APIServiceProtocol {
     /// here. Claude Code keeps its own copy current, so that state means the
     /// account really is signed out, which is exactly what the notice should
     /// then say.
+    ///
+    /// The account name is what scopes this read to the account this profile
+    /// is actually linked to: `systemCredentialsReader` with a nil account
+    /// name answers with whichever account happens to own the shared
+    /// Keychain item, which on a multi-account machine can be a different
+    /// person's login entirely. A profile can hold a stored credential with
+    /// no linked account name — a legacy decode of an older persisted format
+    /// sets `cliCredentialsJSON` without requiring `cliAccountName` — and
+    /// this function persists whatever it reads via `renewedCredentialWriter`,
+    /// so an unscoped read here would write another local account's OAuth
+    /// token into this profile's storage. A nil account name is therefore
+    /// treated as adoption already having failed, never as a reason to fall
+    /// back to the unscoped read.
     private func adoptLiveCLILogin(
         for profile: Profile,
         replacing stale: String
     ) async -> (credentialsJSON: String, accessToken: String)? {
-        guard liveCLILoginAdoptionAttempts.insert(stale.hashValue).inserted
-        else { return nil }
+        guard let accountName = profile.cliAccountName else { return nil }
+
+        let fingerprint = stale.hashValue
+        if let lastAttempt = liveCLILoginAdoptionAttempts[fingerprint],
+           Date().timeIntervalSince(lastAttempt) < liveCLILoginAdoptionRetryInterval {
+            return nil
+        }
+        liveCLILoginAdoptionAttempts[fingerprint] = Date()
 
         let live: String?
         do {
-            live = try systemCredentialsReader(profile.cliAccountName)
+            live = try systemCredentialsReader(accountName)
         } catch {
             LoggingService.shared.logDebug(
                 "Could not read the live Claude Code login for profile "
