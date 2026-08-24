@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.8] - 2026-08-24
+
+### Fixed
+
+- **The app no longer shows a figure it could not read as though everything were
+  fine.** Where a usage figure was missing, the app used to display a confident
+  zero or simply leave the row out — and an absent row looks exactly like
+  "nothing to report", which is the normal, healthy state. A window whose figure
+  could not be read now shows a dash rather than a percentage, so "no reading"
+  and "nothing used yet" are never mistaken for each other.
+
+- **A profile whose usage has never loaded no longer appears in the menu bar as
+  an untouched account.** It previously showed as `0 · 0` in the same colour as
+  a healthy account with its full allowance intact.
+
+- **When your own extra-usage figure cannot be read, the app now says so and
+  why.** It already worked out the reason — a Claude Code sign-in that has
+  expired, holds no token, or was never linked — but could only show that
+  explanation when it also had a company-wide figure to display beside it. With
+  neither figure available it said nothing at all.
+
+- **An organisation figure that failed to load is no longer indistinguishable
+  from extra usage simply being switched off.**
+
+- **Claude accounts now show whether the account itself is working**, separately
+  from Anthropic's service status. The line reading "All Systems Operational" is
+  Anthropic's public status page and has never had anything to do with your
+  account — it now sits beside a verdict that does.
+
+- **Figures show how recently they were read**, so a stale number is no longer
+  indistinguishable from a fresh one.
+
+- **Japanese:** the "unsupported account" verdict was too long for the popover
+  and would have been clipped.
+
 ## [4.0.7] - 2026-08-24
 
 ### Fixed
