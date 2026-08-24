@@ -1291,8 +1291,8 @@
 "menubar.overage_balance" = "Guthaben";
 "menubar.overage_balance_organization" = "Guthaben · Organisation";
 "popover.extra_usage.cli_not_linked" = "Dies ist die Gesamtsumme Ihrer Organisation. Ihre eigene Zusatznutzung stammt aus Claude Code, das mit diesem Konto noch nicht verknüpft ist – fügen Sie es unter Einstellungen → CLI-Konto hinzu.";
-"popover.extra_usage.cli_sign_in_expired" = "Dies ist die Gesamtsumme Ihrer Organisation. Die für dieses Konto gespeicherte Claude Code-Anmeldung ist abgelaufen. Melden Sie sich erneut bei Claude Code an und synchronisieren Sie sie dann unter Einstellungen → CLI-Konto – die Anmeldung allein erreicht die App nicht.";
-"popover.extra_usage.cli_sign_in_has_no_token" = "Dies ist die Gesamtsumme Ihrer Organisation. Claude Code ist bei dem hier verknüpften Konto abgemeldet, es gibt also keine Anmeldung, mit der Ihre eigene Zusatznutzung gelesen werden könnte. Melden Sie sich dort an und synchronisieren Sie dann unter Einstellungen → CLI-Konto.";
+"popover.extra_usage.cli_sign_in_expired" = "Dies ist die Gesamtsumme Ihrer Organisation. Die Claude Code-Anmeldung für dieses Konto ist abgelaufen. Melden Sie sich erneut bei Claude Code an – Ihre eigene Zusatznutzung erscheint dann von selbst.";
+"popover.extra_usage.cli_sign_in_has_no_token" = "Dies ist die Gesamtsumme Ihrer Organisation. Claude Code ist bei dem hier verknüpften Konto abgemeldet, es gibt also keine Anmeldung, mit der Ihre eigene Zusatznutzung gelesen werden könnte. Melden Sie sich dort an – der Wert erscheint dann von selbst.";
 "popover.extra_usage.cli_sign_in_unusable" = "Dies ist die Gesamtsumme Ihrer Organisation. Ihre eigene Zusatznutzung konnte gerade nicht gelesen werden – synchronisieren Sie Ihr Claude Code-Konto unter Einstellungen → CLI-Konto erneut.";
 "cli.login_expired_title" = "Anmeldung abgelaufen";
 "cli.login_expired_explain" = "Erneutes Synchronisieren hilft nicht: Es kopiert die Anmeldung dieses Kontos, und diese ist abgelaufen. Führen Sie dies im Terminal aus, um sich erneut anzumelden.";

@@ -618,6 +618,14 @@ class ClaudeAPIService: APIServiceProtocol {
     /// is what the popover reported.
     private var expiredCLILogins: Set<Int> = []
 
+    /// Stored credentials this run has already tried to replace with the
+    /// CLI's own live login, so the Keychain read behind
+    /// `adoptLiveCLILogin(for:replacing:)` happens once per dead credential
+    /// rather than on every refresh tick. A successful adoption changes the
+    /// stored credential, so the next credential to go stale has a different
+    /// fingerprint and gets its own attempt.
+    private var liveCLILoginAdoptionAttempts: Set<Int> = []
+
     /// Credentials renewed during this app run, keyed by profile, each paired
     /// with the fingerprint of the stored credential it was renewed *from*.
     /// The durable store holds the same value; this keeps the run from
@@ -714,20 +722,38 @@ class ClaudeAPIService: APIServiceProtocol {
         // token because an empty string is not nil, so the request went out as
         // a bare `Bearer `, 401ed, and was reported as "couldn't be read just
         // now — re-sync", the one action that re-imports it.
-        guard ClaudeCodeSyncService.carriesLogin(stored) else {
-            LoggingService.shared.logWarning(
-                "The Claude Code login stored for profile '\(profile.name)' "
-                + "carries no access token; the member's own extra usage "
-                + "cannot be read until that account is signed in again."
-            )
-            return .issue(.signInHasNoToken)
+        // A tokenless stored copy is recoverable for the same reason an
+        // unrenewable one is: Claude Code may be signed in to this account
+        // perfectly well, and only our snapshot of it is useless. Asking
+        // someone to sign in again when they already are is the annoyance
+        // this whole recovery path exists to remove, so consult the live
+        // login before concluding the account is signed out.
+        var presented = stored
+        if !ClaudeCodeSyncService.carriesLogin(presented) {
+            guard let adopted = await adoptLiveCLILogin(
+                for: profile,
+                replacing: presented
+            ) else {
+                LoggingService.shared.logWarning(
+                    "The Claude Code login stored for profile "
+                    + "'\(profile.name)' carries no access token, and Claude "
+                    + "Code holds no usable login for that account either; "
+                    + "the member's own extra usage cannot be read until it "
+                    + "is signed in again."
+                )
+                return .issue(.signInHasNoToken)
+            }
+            presented = adopted.credentialsJSON
         }
 
         guard let credential = await usableCLICredential(
             for: profile,
-            credentialsJSON: stored
+            credentialsJSON: presented
         ) else {
-            let expired = expiredCLILogins.contains(stored.hashValue)
+            // Keyed on what was actually presented to the renewal path, which
+            // is the adopted login when one was taken up — the verdict was
+            // recorded against that, not against the copy we started with.
+            let expired = expiredCLILogins.contains(presented.hashValue)
             LoggingService.shared.logDebug(
                 "Profile '\(profile.name)' has a Claude Code credential that "
                 + "could not be made usable; skipping the member's own extra "
@@ -795,6 +821,11 @@ class ClaudeAPIService: APIServiceProtocol {
         lastSeenCredentialFingerprints[profileID] = fingerprint
         guard let previous, previous != fingerprint else { return }
         expiredCLILogins.remove(previous)
+        // The adoption attempt recorded against the retired credential goes
+        // with it, for the same reason: if that credential is ever presented
+        // again it deserves a fresh look at the CLI's live login rather than
+        // inheriting a verdict from a previous incarnation.
+        liveCLILoginAdoptionAttempts.remove(previous)
     }
 
     /// A CLI credential with a token that is actually usable right now.
@@ -824,6 +855,15 @@ class ClaudeAPIService: APIServiceProtocol {
             case .renewed(let refreshed) = outcome,
             let accessToken = sync.extractAccessToken(from: refreshed)
         else {
+            // Our own snapshot cannot be renewed. Before telling anyone their
+            // sign-in expired, look at the login Claude Code itself is
+            // holding — the remedy the message used to ask for by hand.
+            if let adopted = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON
+            ) {
+                return adopted
+            }
             if case .failed(.expired) = outcome {
                 expiredCLILogins.insert(fingerprint)
             }
@@ -857,6 +897,94 @@ class ClaudeAPIService: APIServiceProtocol {
             cliOrganizationCredentialHashes[profile.id] = refreshed.hashValue
         }
         return (refreshed, accessToken)
+    }
+
+    /// Adopts the login Claude Code itself is holding, when the app's own
+    /// snapshot of it can no longer be renewed.
+    ///
+    /// The stored credential is a copy taken at sync time, and its *refresh*
+    /// token rotates: Claude Code renews on its own schedule, and once it
+    /// has, the refresh token in our copy is no longer accepted. Renewal then
+    /// fails as `.expired`, which is indistinguishable — from inside this
+    /// function — from a genuinely dead login. The member's own extra usage
+    /// therefore reported "sign in to Claude Code again, then re-sync", when
+    /// Claude Code had been signed in the whole time and pressing Re-sync on
+    /// its own fixed it. That asked for the one step that was not needed, and
+    /// asked it of someone whose app already held everything required to
+    /// recover unaided.
+    ///
+    /// This is deliberately the same read Re-sync performs, scoped to the
+    /// account the profile is linked to, and it adopts the result only when
+    /// that result is demonstrably better than what we hold:
+    ///
+    /// - it must parse and carry an actual token (`carriesLogin`), because a
+    ///   credential write here validates shape, and a blob without a token
+    ///   would otherwise overwrite a working login and read back as valid;
+    /// - it must not itself be expired, so a dead login is never swapped for
+    ///   another dead login;
+    /// - it must differ from the credential that just failed, so a failure is
+    ///   never reported as a recovery.
+    ///
+    /// A live login that is *also* expired is left alone rather than renewed
+    /// here. Claude Code keeps its own copy current, so that state means the
+    /// account really is signed out, which is exactly what the notice should
+    /// then say.
+    private func adoptLiveCLILogin(
+        for profile: Profile,
+        replacing stale: String
+    ) async -> (credentialsJSON: String, accessToken: String)? {
+        guard liveCLILoginAdoptionAttempts.insert(stale.hashValue).inserted
+        else { return nil }
+
+        let live: String?
+        do {
+            live = try systemCredentialsReader(profile.cliAccountName)
+        } catch {
+            LoggingService.shared.logDebug(
+                "Could not read the live Claude Code login for profile "
+                + "'\(profile.name)' while trying to recover from a failed "
+                + "renewal: \(error.localizedDescription)."
+            )
+            return nil
+        }
+
+        let sync = ClaudeCodeSyncService.shared
+        guard let live,
+              live != stale,
+              ClaudeCodeSyncService.carriesLogin(live),
+              !sync.isTokenExpired(live),
+              let accessToken = sync.extractAccessToken(from: live)
+        else { return nil }
+
+        do {
+            try renewedCredentialWriter(live, profile.id)
+        } catch {
+            // Same reasoning as the renewal path: the adopted login works for
+            // this run, so a persistence failure is not a reason to discard
+            // it and go on reporting an expired sign-in.
+            LoggingService.shared.logWarning(
+                "Could not store the live Claude Code login adopted for "
+                + "profile '\(profile.name)': \(error.localizedDescription). "
+                + "The saved credential is unchanged."
+            )
+        }
+
+        LoggingService.shared.log(
+            "Recovered the member's own extra usage for profile "
+            + "'\(profile.name)' by adopting the login Claude Code is "
+            + "currently holding; the stored copy could no longer be renewed."
+        )
+
+        renewedCLICredentials[profile.id] = (
+            base: profile.cliCredentialsJSON?.hashValue ?? stale.hashValue,
+            credentialsJSON: live
+        )
+        // Deliberately NOT carried over from the stale credential the way a
+        // rotated token's is. A renewal is provably the same login; an
+        // adopted one only provably belongs to the same account *name*, so
+        // the organization is re-resolved rather than assumed, and the
+        // existing organization guard downstream stays meaningful.
+        return (live, accessToken)
     }
 
     /// The organization the CLI login belongs to.

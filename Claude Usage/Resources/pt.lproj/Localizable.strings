@@ -1291,8 +1291,8 @@
 "menubar.overage_balance" = "Saldo de Créditos";
 "menubar.overage_balance_organization" = "Saldo de Créditos · Organização";
 "popover.extra_usage.cli_not_linked" = "Este é o total da sua organização. O seu uso adicional vem do Claude Code, que ainda não está vinculado a esta conta — adicione-o em Configurações → Conta CLI.";
-"popover.extra_usage.cli_sign_in_expired" = "Este é o total da sua organização. O login do Claude Code guardado para esta conta expirou. Entre novamente no Claude Code e depois sincronize-o em Configurações → Conta CLI — entrar apenas não chega à app.";
-"popover.extra_usage.cli_sign_in_has_no_token" = "Este é o total da sua organização. O Claude Code está desconectado da conta vinculada aqui, portanto não há login com que ler o seu uso adicional. Entre nessa conta e depois sincronize em Configurações → Conta CLI.";
+"popover.extra_usage.cli_sign_in_expired" = "Este é o total da sua organização. O login do Claude Code para esta conta expirou. Entre novamente no Claude Code e o seu uso adicional voltará a aparecer sozinho.";
+"popover.extra_usage.cli_sign_in_has_no_token" = "Este é o total da sua organização. O Claude Code está desconectado da conta vinculada aqui, portanto não há login com que ler o seu uso adicional. Entre nessa conta e o valor aparecerá sozinho.";
 "popover.extra_usage.cli_sign_in_unusable" = "Este é o total da sua organização. Não foi possível ler o seu uso adicional agora — sincronize novamente a sua conta do Claude Code em Configurações → Conta CLI.";
 "cli.login_expired_title" = "Login expirado";
 "cli.login_expired_explain" = "Sincronizar novamente não resolve: isso copia o login desta conta, e esse login expirou. Execute isto no Terminal para entrar de novo.";

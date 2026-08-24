@@ -1305,8 +1305,8 @@
 "menubar.overage_balance" = "Credit Balance";
 "menubar.overage_balance_organization" = "Credit Balance · Organization";
 "popover.extra_usage.cli_not_linked" = "This is your organization's total. Your own extra usage comes from Claude Code, which isn't linked to this account yet — add it in Settings → CLI Account.";
-"popover.extra_usage.cli_sign_in_expired" = "This is your organization's total. The Claude Code sign-in stored for this account has expired. Sign in to Claude Code again, then re-sync it in Settings → CLI Account — signing in alone doesn't reach the app.";
-"popover.extra_usage.cli_sign_in_has_no_token" = "This is your organization's total. Claude Code is signed out of the account linked here, so there's no sign-in to read your own extra usage with. Sign in to it, then re-sync in Settings → CLI Account.";
+"popover.extra_usage.cli_sign_in_expired" = "This is your organization's total. Claude Code's sign-in for this account has expired. Sign in to Claude Code again and your own extra usage will reappear on its own.";
+"popover.extra_usage.cli_sign_in_has_no_token" = "This is your organization's total. Claude Code is signed out of the account linked here, so there's no sign-in to read your own extra usage with. Sign in to it and this will fill in on its own.";
 "popover.extra_usage.cli_sign_in_unusable" = "This is your organization's total. Your own extra usage couldn't be read just now — re-sync your Claude Code account in Settings → CLI Account.";
 "cli.login_expired_title" = "Sign-in expired";
 "cli.login_expired_explain" = "Re-syncing won't help: it copies this account's sign-in, and that sign-in has expired. Run this in Terminal to sign in again.";

@@ -1232,10 +1232,10 @@ private struct PersonalExtraUsageNoticeView: View {
         case .signInExpired:
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.cli_sign_in_expired",
-                default: "This is your organization's total. The Claude Code "
-                    + "sign-in stored for this account has expired. Sign in "
-                    + "to Claude Code again, then re-sync it in Settings → "
-                    + "CLI Account — signing in alone doesn't reach the app."
+                default: "This is your organization's total. Claude Code's "
+                    + "sign-in for this account has expired. Sign in to "
+                    + "Claude Code again and your own extra usage will "
+                    + "reappear on its own."
             )
         case .signInHasNoToken:
             return NormalizedUsageStrings.localized(
@@ -1243,7 +1243,7 @@ private struct PersonalExtraUsageNoticeView: View {
                 default: "This is your organization's total. Claude Code is "
                     + "signed out of the account linked here, so there's no "
                     + "sign-in to read your own extra usage with. Sign in to "
-                    + "it, then re-sync in Settings → CLI Account."
+                    + "it and this will fill in on its own."
             )
         case .signInUnusable:
             return NormalizedUsageStrings.localized(
