@@ -890,7 +890,7 @@
 "feedback.role_other" = "其他";
 
 // MARK: - Status Banners
-"popover.banner.credentials_expired" = "凭证已过期。请在设置中更新。";
+"popover.banner.credentials_expired" = "claude.ai 拒绝了会话密钥。请在“设置 → Claude.ai”中更新。";
 "popover.banner.refresh_failed" = "刷新失败 %d 次";
 "popover.banner.updated_ago" = "%d分钟前更新";
 "popover.banner.last_success" = "上次成功刷新：%@";

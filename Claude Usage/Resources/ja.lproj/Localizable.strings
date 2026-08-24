@@ -892,7 +892,7 @@
 "feedback.role_other" = "その他";
 
 // MARK: - Status Banners
-"popover.banner.credentials_expired" = "認証情報が期限切れです。設定で更新してください。";
+"popover.banner.credentials_expired" = "claude.ai がセッションキーを拒否しました。「設定 → Claude.ai」で更新。";
 "popover.banner.refresh_failed" = "更新が%d回失敗しました";
 "popover.banner.updated_ago" = "%d分前に更新";
 "popover.banner.last_success" = "前回の更新成功: %@";

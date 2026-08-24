@@ -870,7 +870,7 @@
 "feedback.role_other" = "기타";
 
 // MARK: - Status Banners
-"popover.banner.credentials_expired" = "인증 정보가 만료되었습니다. 설정에서 업데이트하세요.";
+"popover.banner.credentials_expired" = "claude.ai에서 세션 키를 거부했습니다. 설정 → Claude.ai에서 업데이트하세요.";
 "popover.banner.refresh_failed" = "새로고침이 %d회 실패했습니다";
 "popover.banner.updated_ago" = "%d분 전에 업데이트됨";
 "popover.banner.last_success" = "마지막 성공한 업데이트: %@";

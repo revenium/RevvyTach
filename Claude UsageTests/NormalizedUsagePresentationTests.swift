@@ -327,7 +327,17 @@ final class NormalizedUsagePresentationTests: HostedAppTestCase {
             ),
             .credentialError
         )
+        // REGRESSION: this used to be `.preferences`, which opened Settings
+        // with no section selected. `hasCredentialError` is reachable only
+        // from the claude.ai session-key failures, so a user with a healthy
+        // claude.ai key and a stale CLI login would land in Settings, re-sync
+        // the CLI account, watch it succeed, and find the banner unchanged —
+        // because re-syncing the CLI can never clear a claude.ai 401.
         XCTAssertEqual(
+            LegacyPopoverBanner.credentialError.action,
+            .claudeAIAccount
+        )
+        XCTAssertNotEqual(
             LegacyPopoverBanner.credentialError.action,
             .preferences
         )

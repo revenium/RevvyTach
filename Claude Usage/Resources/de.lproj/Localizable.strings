@@ -892,7 +892,7 @@
 "feedback.role_other" = "Andere";
 
 // MARK: - Status Banners
-"popover.banner.credentials_expired" = "Anmeldedaten abgelaufen. In Einstellungen aktualisieren.";
+"popover.banner.credentials_expired" = "claude.ai hat den Sitzungsschlüssel abgelehnt. Einstellungen → Claude.ai.";
 "popover.banner.refresh_failed" = "Aktualisierung %d-mal fehlgeschlagen";
 "popover.banner.updated_ago" = "Vor %dm aktualisiert";
 "popover.banner.last_success" = "Letzte erfolgreiche Aktualisierung: %@";

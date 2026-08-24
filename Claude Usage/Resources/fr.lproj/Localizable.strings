@@ -872,7 +872,7 @@
 "feedback.role_other" = "Autre";
 
 // MARK: - Status Banners
-"popover.banner.credentials_expired" = "Identifiants expirés. Mettre à jour dans Réglages.";
+"popover.banner.credentials_expired" = "claude.ai a refusé la clé de session. Réglages → Claude.ai.";
 "popover.banner.refresh_failed" = "Échec de l'actualisation %d fois";
 "popover.banner.updated_ago" = "Mis à jour il y a %dm";
 "popover.banner.last_success" = "Dernière actualisation réussie : %@";
