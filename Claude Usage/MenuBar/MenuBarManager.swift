@@ -2039,23 +2039,30 @@ class MenuBarManager: NSObject, ObservableObject {
     /// Resolves the claude.ai account target for the credential banner using
     /// the profile currently displayed in the popover (which can diverge
     /// from `popoverActionTarget()` after an in-popover account-chip switch),
-    /// falling back to the standard target resolution when no specific
-    /// profile id is supplied or it can't be found.
+    /// falling back to the standard target resolution only when no specific
+    /// profile id is supplied at all.
     private func claudeAIAccountTarget(
         forDisplayedProfile profileID: UUID?
     ) -> ProviderStatusItemIdentity? {
-        if let profileID,
-           let profile = profileManager.profiles.first(
-               where: { $0.id == profileID }
-           ) {
-            return ProviderStatusItemIdentity(
-                profileID: profile.id,
-                providerID: profile.providerID,
-                providerRevision: profile.providerRevision,
-                metricID: nil
-            )
+        guard let profileID else {
+            return popoverActionTarget()
         }
-        return popoverActionTarget()
+        guard let profile = profileManager.profiles.first(
+            where: { $0.id == profileID }
+        ) else {
+            // The chip-selected profile was removed or invalidated while the
+            // popover stayed open. Falling back to popoverActionTarget()
+            // here would route to a DIFFERENT profile's settings with false
+            // confidence, so decline the navigation instead — matching how
+            // openPopoverClaudeAIAccount(target: nil) already no-ops.
+            return nil
+        }
+        return ProviderStatusItemIdentity(
+            profileID: profile.id,
+            providerID: profile.providerID,
+            providerRevision: profile.providerRevision,
+            metricID: nil
+        )
     }
 
     private func refreshPopover(
