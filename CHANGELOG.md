@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.7] - 2026-08-24
+
+### Fixed
+
+- **The app no longer tells you to sign in to Claude Code on an account that is
+  already signed in.** It keeps its own copy of that sign-in, and Claude Code
+  replaces the underlying token on its own schedule, after which the copy stops
+  working. Rather than reporting that as a signed-out account, the app now reads
+  the sign-in Claude Code is currently holding and carries on. On one machine
+  with seven profiles, three of the accounts showing this warning held sign-ins
+  that were valid the same day.
+
+- **A leftover sign-in file no longer hides a working one.** Where an account
+  had both a per-account file and a system Keychain entry, the file was consulted
+  first and accepted even when its sign-in had expired weeks earlier, so the
+  valid Keychain entry was never reached. An expired file is now held back until
+  everything else has been tried, and still used as a last resort rather than
+  reporting nothing at all.
+
+- **Accounts that share a stored sign-in each get their own retry.** Two profiles
+  carrying identical stored credentials previously shared a single retry slot, so
+  only whichever refreshed first was given a chance to recover and the other
+  could sit on the warning indefinitely.
+
+- **"Credentials expired" now names the sign-in that is actually failing.** There
+  are two separate sign-ins per profile — a claude.ai web session and a Claude
+  Code sign-in — and the warning pointed at the wrong one, sending people to
+  re-authenticate something that was working.
+
+- **The popover no longer crashes when it is resized** while showing an
+  organisation figure.
+
+- **A profile no longer picks up a different account's Claude Code sign-in.**
+  A named account whose own entry was missing could fall through to the shared
+  one, which then got saved into that profile.
+
+- **A sign-in file with no usable token is no longer imported as though it were
+  valid.** The import checked only that the file was well-formed, so an empty
+  token could overwrite a working sign-in and read back as fine afterwards.
+
+- **The popover explains the case where it shows an organisation's figure with
+  no accompanying notice**, instead of leaving it unexplained.
+
+### Internal
+
+- The test suite no longer reads the developer's own login Keychain while
+  running.
+
 ## [4.0.6] - 2026-08-22
 
 ### Fixed
