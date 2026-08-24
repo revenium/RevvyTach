@@ -115,9 +115,11 @@ class ClaudeCodeSyncService {
     // MARK: - System Credentials Access (Fallback Chain)
 
     /// Reads Claude Code credentials using a fallback chain:
-    /// 1. ~/.claude/.credentials.json (always complete, not subject to keychain truncation)
+    /// 1. ~/.claude/.credentials.json, but only when its login is unexpired —
+    ///    an expired file login is held back rather than returned here
     /// 2. System Keychain (may be truncated for large payloads >2KB)
-    /// 3. Regex extraction of accessToken from truncated keychain data (last resort)
+    /// 3. Regex extraction of accessToken from truncated keychain data
+    /// 4. The held-back expired file login from step 1, as the true last resort
     func readSystemCredentials(
         forAccountNamed accountName: String? = nil
     ) throws -> String? {
