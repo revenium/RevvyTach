@@ -1126,6 +1126,9 @@
 "notification.provider_usage.threshold" = "Usage crossed %d%% (%.1f%%).%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "Account";
+"popover.normalized.account_health.label" = "Account";
+"popover.normalized.service_status.accessibility" = "Anthropic service status";
+"popover.normalized.service_status.help" = "Anthropic service status — click to open status.claude.com";
 "popover.normalized.action.refresh" = "Refresh usage";
 "popover.normalized.action.settings" = "Open settings";
 "popover.normalized.credits.read_only" = "Read only";

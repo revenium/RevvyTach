@@ -199,6 +199,126 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         XCTAssertEqual(windows.map(\.usedPercentage), [0, 0])
     }
 
+    // MARK: - Account health
+
+    private func health(
+        for usage: ClaudeUsage,
+        base: ProviderHealthStatus = .healthy
+    ) -> ProviderHealth {
+        ClaudeUsageProviderAdapter.accountHealth(
+            from: usage,
+            base: ProviderHealth(status: base, checkedAt: Date())
+        )
+    }
+
+    private func fullyReadUsage() -> ClaudeUsage {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentageAvailable = true
+        usage.weeklyPercentageAvailable = true
+        return usage
+    }
+
+    func testAFullyReadAccountIsHealthy() {
+        XCTAssertEqual(health(for: fullyReadUsage()).status, .healthy)
+    }
+
+    func testAnAccountWithNoCapacityReadingIsNotHealthy() {
+        // The report carries no usable figure at all, so this is not a
+        // partial answer — it is no answer.
+        XCTAssertEqual(health(for: .empty).status, .unavailable)
+    }
+
+    func testOneMissingWindowIsPartialRatherThanFine() {
+        var usage = fullyReadUsage()
+        usage.weeklyPercentageAvailable = false
+        XCTAssertEqual(health(for: usage).status, .degraded)
+    }
+
+    /// The state from the screenshot that started this: claude.ai answers
+    /// fine, the Claude Code sign-in is functionally dead, and the header
+    /// reported nothing but Anthropic's public service status.
+    func testABrokenClaudeCodeSignInDegradesAccountHealth() {
+        for issue in [
+            ClaudeUsage.PersonalExtraUsageIssue.signInExpired,
+            .signInHasNoToken,
+            .signInUnusable,
+            .claudeAccountUnresolved
+        ] {
+            var usage = fullyReadUsage()
+            usage.personalExtraUsageIssue = issue
+            XCTAssertEqual(
+                health(for: usage).status,
+                .degraded,
+                "\(issue) leaves a connection that exists and is broken, so "
+                    + "the account is not in good order."
+            )
+        }
+    }
+
+    func testAnUnconnectedOrForeignAccountIsNotReportedAsBroken() {
+        // Nothing is broken in either: one was never connected, the other is
+        // a settled fact about a separate account. Reporting them as degraded
+        // would leave a permanent complaint on a correct configuration.
+        for issue in [
+            ClaudeUsage.PersonalExtraUsageIssue.notLinked,
+            .differentOrganization
+        ] {
+            var usage = fullyReadUsage()
+            usage.personalExtraUsageIssue = issue
+            XCTAssertEqual(
+                health(for: usage).status,
+                .healthy,
+                "\(issue) must not read as a fault."
+            )
+        }
+    }
+
+    func testAFailedExtraUsageLookupDegradesAccountHealth() {
+        var usage = fullyReadUsage()
+        usage.organizationExtraUsageIssue = .lookupFailed
+        XCTAssertEqual(health(for: usage).status, .degraded)
+
+        var notEnabled = fullyReadUsage()
+        notEnabled.organizationExtraUsageIssue = .notEnabled
+        XCTAssertEqual(
+            health(for: notEnabled).status,
+            .healthy,
+            "Extra usage being switched off is not a fault."
+        )
+    }
+
+    func testAccountHealthOnlyEverLowersTheCallersVerdict() {
+        // A transport-level failure stays one; this mapping must never
+        // promote it just because the record happens to look complete.
+        for base in [
+            ProviderHealthStatus.unauthenticated,
+            .unavailable,
+            .unsupported,
+            .degraded
+        ] {
+            XCTAssertEqual(
+                health(for: fullyReadUsage(), base: base).status,
+                base,
+                "\(base) was overwritten."
+            )
+        }
+    }
+
+    func testTheReportCarriesTheDerivedHealthRatherThanAnAssumedOne() throws {
+        var usage = fullyReadUsage()
+        usage.personalExtraUsageIssue = .signInExpired
+
+        let report = try ClaudeUsageProviderAdapter.makeReport(
+            from: usage,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(status: .healthy, checkedAt: Date()),
+                fetchedAt: Date()
+            )
+        )
+        XCTAssertEqual(report.health.status, .degraded)
+        XCTAssertEqual(report.health.issue, .authenticationRequired)
+    }
+
     // MARK: - Menu bar
 
     private func neverLoadedProfile() -> Profile {

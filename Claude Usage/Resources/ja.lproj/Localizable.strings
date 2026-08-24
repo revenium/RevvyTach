@@ -1111,6 +1111,9 @@
 "notification.provider_usage.threshold" = "使用量が%d%%（%.1f%%）を超えました。%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "アカウント";
+"popover.normalized.account_health.label" = "アカウント";
+"popover.normalized.service_status.accessibility" = "Anthropic のサービス稼働状況";
+"popover.normalized.service_status.help" = "Anthropic のサービス稼働状況 — クリックして status.claude.com を開く";
 "popover.normalized.action.refresh" = "使用状況を更新";
 "popover.normalized.action.settings" = "設定を開く";
 "popover.normalized.credits.read_only" = "読み取り専用";

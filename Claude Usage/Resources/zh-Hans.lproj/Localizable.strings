@@ -1107,6 +1107,9 @@
 "notification.provider_usage.threshold" = "用量已超过 %d%%（%.1f%%）。%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "账户";
+"popover.normalized.account_health.label" = "账户";
+"popover.normalized.service_status.accessibility" = "Anthropic 服务状态";
+"popover.normalized.service_status.help" = "Anthropic 服务状态 — 点击打开 status.claude.com";
 "popover.normalized.action.refresh" = "刷新用量";
 "popover.normalized.action.settings" = "打开设置";
 "popover.normalized.credits.read_only" = "只读";

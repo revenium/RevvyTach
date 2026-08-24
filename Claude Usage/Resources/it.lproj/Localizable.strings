@@ -1109,6 +1109,9 @@
 "notification.provider_usage.threshold" = "L'utilizzo ha superato il %d%% (%.1f%%).%@";
 "notification.provider_usage.title" = "%@ – %@";
 "popover.normalized.accessibility.account" = "Account";
+"popover.normalized.account_health.label" = "Account";
+"popover.normalized.service_status.accessibility" = "Stato del servizio Anthropic";
+"popover.normalized.service_status.help" = "Stato del servizio Anthropic: fai clic per aprire status.claude.com";
 "popover.normalized.action.refresh" = "Aggiorna utilizzo";
 "popover.normalized.action.settings" = "Apri impostazioni";
 "popover.normalized.credits.read_only" = "Sola lettura";

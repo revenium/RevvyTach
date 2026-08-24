@@ -178,13 +178,74 @@ enum ClaudeUsageProviderAdapter {
         return try UsageReport(
             providerID: .claude,
             account: context.account,
-            health: context.health,
+            health: accountHealth(from: usage, base: context.health),
             limitGroups: groups,
             credits: credits,
             sourceUpdatedAt: usage.lastUpdated,
             fetchedAt: context.fetchedAt,
             staleAt: context.staleAt
         )
+    }
+
+    /// The account's own health, as the fetched record actually evidences it.
+    ///
+    /// A completed request used to be reported as `.healthy` unconditionally,
+    /// which made the value tautological: it said the fetch had returned, not
+    /// that the account behind it was in good order. A profile whose Claude
+    /// Code sign-in was functionally dead reported perfect health, and the
+    /// header had nothing to show but Anthropic's public service status —
+    /// which is about Anthropic, not about you.
+    ///
+    /// This only ever lowers the caller's verdict. A transport-level failure
+    /// stays a transport-level failure; what is added is the case where the
+    /// request succeeded and still came back missing something.
+    static func accountHealth(
+        from usage: ClaudeUsage,
+        base: ProviderHealth
+    ) -> ProviderHealth {
+        guard base.status == .healthy else { return base }
+
+        func degraded(_ issue: ProviderHealthIssue) -> ProviderHealth {
+            ProviderHealth(
+                status: .degraded,
+                checkedAt: base.checkedAt,
+                issue: issue
+            )
+        }
+
+        // No capacity figure at all. The one thing the app exists to show is
+        // missing, so this is not a partial answer — it is no answer.
+        if !usage.sessionPercentageAvailable,
+           !usage.weeklyPercentageAvailable {
+            return ProviderHealth(
+                status: .unavailable,
+                checkedAt: base.checkedAt,
+                issue: .responseInvalid
+            )
+        }
+        if !usage.sessionPercentageAvailable
+            || !usage.weeklyPercentageAvailable {
+            return degraded(.responseInvalid)
+        }
+
+        // A connection that exists and is broken. `notLinked` and
+        // `differentOrganization` are deliberately absent: nothing is broken
+        // in either — one was never connected, the other is a settled fact
+        // about a separate account — and reporting them as degraded would
+        // leave a permanent complaint on a correctly configured profile.
+        switch usage.personalExtraUsageIssue {
+        case .signInExpired, .signInHasNoToken, .signInUnusable,
+             .claudeAccountUnresolved:
+            return degraded(.authenticationRequired)
+        case .notLinked, .differentOrganization, nil:
+            break
+        }
+
+        if usage.organizationExtraUsageIssue == .lookupFailed {
+            return degraded(.optionalUsageUnavailable)
+        }
+
+        return base
     }
 
     /// Why the popover should explain a missing personal figure, if it should.

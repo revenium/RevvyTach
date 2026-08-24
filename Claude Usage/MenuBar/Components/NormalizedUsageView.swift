@@ -804,10 +804,19 @@ struct ProviderPopoverHeader: View {
         }
     }
 
+    /// The one thing the top meta row says. For Claude it is Anthropic's
+    /// public service status, which is not a statement about this account —
+    /// `accountHealthText` below is, and both are shown.
     private var providerStatusText: String {
         if presentation.providerID == .claude {
             return claudeStatus.description
         }
+        return accountHealthText
+    }
+
+    /// This account's own health, in the same words every other provider's
+    /// header already uses.
+    private var accountHealthText: String {
         switch presentation.healthStatus {
         case .healthy:
             return NormalizedUsageStrings.localized(
@@ -842,6 +851,63 @@ struct ProviderPopoverHeader: View {
         }
     }
 
+    private var accountHealthColor: Color {
+        switch presentation.healthStatus {
+        case .healthy:
+            return .adaptiveGreen
+        case .degraded:
+            return .orange
+        case .unavailable, .unauthenticated:
+            return .red
+        case .unsupported, nil:
+            return .gray
+        }
+    }
+
+    /// This account's health, shown only for Claude — every other provider's
+    /// header already carries it on the row above, and a second copy would
+    /// just be the same sentence twice.
+    ///
+    /// It sits beneath the service-status row rather than replacing it: the
+    /// service status is genuinely useful, it just is not an answer to "is my
+    /// account working". The two are told apart by saying which is which —
+    /// this row is labelled "Account" and carries a person glyph, and the row
+    /// above leads with the provider's name and opens status.claude.com.
+    @ViewBuilder
+    private var accountHealthRow: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: 9))
+                .accessibilityHidden(true)
+            Text(
+                NormalizedUsageStrings.localized(
+                    "popover.normalized.account_health.label",
+                    default: "Account"
+                )
+            )
+            .font(.system(size: 11, weight: .semibold))
+            Text("·")
+                .font(PopoverDesign.metaFont)
+            Circle()
+                .fill(accountHealthColor)
+                .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+            Text(accountHealthText)
+                .font(PopoverDesign.metaFont)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            NormalizedUsageStrings.localized(
+                "popover.normalized.account_health.label",
+                default: "Account"
+            )
+            + ": \(accountHealthText)"
+        )
+        .accessibilityIdentifier("popover.provider.account_health")
+    }
+
     @ViewBuilder
     private var statusRow: some View {
         let content = HStack(spacing: 5) {
@@ -867,7 +933,20 @@ struct ProviderPopoverHeader: View {
                 content
             }
             .buttonStyle(.plain)
-            .help("Click to open status.claude.com")
+            .accessibilityLabel(
+                NormalizedUsageStrings.localized(
+                    "popover.normalized.service_status.accessibility",
+                    default: "Anthropic service status"
+                )
+                + ": \(providerStatusText)"
+            )
+            .help(
+                NormalizedUsageStrings.localized(
+                    "popover.normalized.service_status.help",
+                    default: "Anthropic service status — click to open "
+                        + "status.claude.com"
+                )
+            )
         } else {
             content
         }
@@ -1028,6 +1107,11 @@ struct ProviderPopoverHeader: View {
                         presentation
                             .providerHeaderAccessibilityIdentifier
                     )
+
+                if presentation.providerID == .claude {
+                    accountHealthRow
+                        .foregroundColor(.secondary)
+                }
 
                 if showsAccountLine {
                     Text(accountDescription)
