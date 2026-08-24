@@ -1964,6 +1964,12 @@ class MenuBarManager: NSObject, ObservableObject {
                 self.openPopoverClaudeAIAccount(
                     target: self.popoverActionTarget()
                 )
+            },
+            onCredentialsBannerTap: { [weak self] profileID in
+                guard let self else { return }
+                self.openPopoverClaudeAIAccount(
+                    target: self.claudeAIAccountTarget(forDisplayedProfile: profileID)
+                )
             }
         )
 
@@ -2028,6 +2034,28 @@ class MenuBarManager: NSObject, ObservableObject {
             providerRevision: profile.providerRevision,
             metricID: nil
         )
+    }
+
+    /// Resolves the claude.ai account target for the credential banner using
+    /// the profile currently displayed in the popover (which can diverge
+    /// from `popoverActionTarget()` after an in-popover account-chip switch),
+    /// falling back to the standard target resolution when no specific
+    /// profile id is supplied or it can't be found.
+    private func claudeAIAccountTarget(
+        forDisplayedProfile profileID: UUID?
+    ) -> ProviderStatusItemIdentity? {
+        if let profileID,
+           let profile = profileManager.profiles.first(
+               where: { $0.id == profileID }
+           ) {
+            return ProviderStatusItemIdentity(
+                profileID: profile.id,
+                providerID: profile.providerID,
+                providerRevision: profile.providerRevision,
+                metricID: nil
+            )
+        }
+        return popoverActionTarget()
     }
 
     private func refreshPopover(
@@ -4276,6 +4304,12 @@ extension MenuBarManager: NSPopoverDelegate {
                     },
                     onClaudeAIAccount: { [weak self] in
                         self?.openPopoverClaudeAIAccount(target: target)
+                    },
+                    onCredentialsBannerTap: { [weak self] profileID in
+                        guard let self else { return }
+                        self.openPopoverClaudeAIAccount(
+                            target: self.claudeAIAccountTarget(forDisplayedProfile: profileID) ?? target
+                        )
                     }
                 )
                 let hostingController = NSHostingController(

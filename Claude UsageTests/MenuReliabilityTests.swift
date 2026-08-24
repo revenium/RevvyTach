@@ -203,7 +203,8 @@ final class MenuReliabilityTests: HostedAppTestCase {
             onManageProfiles: {},
             onPreferences: {},
             onCLIAccount: {},
-            onClaudeAIAccount: {}
+            onClaudeAIAccount: {},
+            onCredentialsBannerTap: { _ in }
         )
         let controller = retain(NSHostingController(rootView: content))
         let size = Constants.WindowSizes.popoverSize

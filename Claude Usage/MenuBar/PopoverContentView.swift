@@ -218,6 +218,7 @@ struct PopoverContentView: View {
     @ObservedObject var manager: MenuBarManager
     let onRefresh: () -> Void
     let navigationActions: PopoverNavigationActions
+    let onCredentialsBannerTap: (UUID?) -> Void
 
     @State private var isRefreshing = false
     // Replaces NSPopover's native resize animation, which can recurse indefinitely
@@ -232,7 +233,8 @@ struct PopoverContentView: View {
         onManageProfiles: @escaping () -> Void,
         onPreferences: @escaping () -> Void,
         onCLIAccount: @escaping () -> Void,
-        onClaudeAIAccount: @escaping () -> Void
+        onClaudeAIAccount: @escaping () -> Void,
+        onCredentialsBannerTap: @escaping (UUID?) -> Void
     ) {
         self.manager = manager
         _profileManager = ObservedObject(
@@ -245,6 +247,7 @@ struct PopoverContentView: View {
             cliAccount: onCLIAccount,
             claudeAIAccount: onClaudeAIAccount
         )
+        self.onCredentialsBannerTap = onCredentialsBannerTap
     }
 
     private var displayedProfile: Profile? {
@@ -476,7 +479,7 @@ struct PopoverContentView: View {
                     message:
                         "popover.banner.credentials_expired".localized,
                     color: .orange,
-                    onTap: navigationActions.claudeAIAccount
+                    onTap: { onCredentialsBannerTap(displayedProfile?.id) }
                 )
             case .refreshFailed:
                 ExpandableStatusBanner(
