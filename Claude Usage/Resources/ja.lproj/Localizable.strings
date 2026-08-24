@@ -1126,7 +1126,7 @@
 "popover.normalized.health.healthy" = "利用可能";
 "popover.normalized.health.sign_in" = "サインインが必要です";
 "popover.normalized.health.unavailable" = "利用不可";
-"popover.normalized.health.unsupported" = "サポートされていないアカウント";
+"popover.normalized.health.unsupported" = "非対応";
 "popover.normalized.notice.configuration" = "更新する前に、このプロファイルの確認が必要です。";
 "popover.normalized.notice.degraded" = "一部の使用状況の詳細が利用できません。";
 "popover.normalized.notice.rate_limited" = "Claude によってレート制限されました。自動的に再試行します。";
