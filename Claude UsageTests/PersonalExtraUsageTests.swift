@@ -259,6 +259,141 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    // MARK: - The absence statement
+
+    /// The reconciliation notice above only ever fires when a figure is on
+    /// screen. When none is, the extra-usage row simply does not render and
+    /// the app used to say nothing at all — while holding the exact reason.
+    func testAMissingFigureWithAKnownReasonIsExplained() {
+        var noFigure = ClaudeUsage.empty
+        noFigure.personalExtraUsageIssue = .signInExpired
+
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .personalExtraUsageIssueToExplain(for: noFigure),
+            "There is no organization figure to reconcile, so the "
+                + "reconciliation notice must stay quiet."
+        )
+        XCTAssertEqual(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: noFigure),
+            .unreadablePersonalFigure(.signInExpired),
+            "...and the absence statement must take its place, naming the "
+                + "reason the app already knew."
+        )
+    }
+
+    /// Every reason survives the trip, because their remedies differ and a
+    /// single collapsed message sent people to the wrong screen once already.
+    func testEveryReasonReachesTheAbsenceStatement() {
+        let issues: [ClaudeUsage.PersonalExtraUsageIssue] = [
+            .notLinked, .signInExpired, .signInHasNoToken,
+            .signInUnusable, .differentOrganization,
+            .claudeAccountUnresolved
+        ]
+        for issue in issues {
+            var usage = ClaudeUsage.empty
+            usage.personalExtraUsageIssue = issue
+            XCTAssertEqual(
+                ClaudeUsageProviderAdapter
+                    .extraUsageAbsenceToExplain(for: usage),
+                .unreadablePersonalFigure(issue),
+                "\(issue) was dropped on the way to the popover."
+            )
+        }
+    }
+
+    /// A failed request and extra usage being switched off both used to leave
+    /// the same three nil fields. Only one of them is worth saying anything
+    /// about, so they have to be distinguishable first.
+    func testAFailedLookupIsDistinguishableFromExtraUsageBeingOff() {
+        var lookupFailed = ClaudeUsage.empty
+        lookupFailed.organizationExtraUsageIssue = .lookupFailed
+        XCTAssertEqual(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: lookupFailed),
+            .unreadableOrganizationFigure
+        )
+
+        var notEnabled = ClaudeUsage.empty
+        notEnabled.organizationExtraUsageIssue = .notEnabled
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: notEnabled),
+            "Switched off is a settled answer with nothing to fix; a notice "
+                + "about it would be noise on every refresh."
+        )
+
+        XCTAssertNotEqual(
+            lookupFailed.organizationExtraUsageIssue,
+            notEnabled.organizationExtraUsageIssue
+        )
+    }
+
+    /// The two statements are mutually exclusive: a reader must never be told
+    /// both "this is your organization's total" and "no figure could be read".
+    func testTheTwoStatementsNeverAppearTogether() {
+        var organizationFigure = ClaudeUsage.empty
+        organizationFigure.costUsed = 26_118
+        organizationFigure.costLimit = 100_000
+        organizationFigure.costCurrency = "USD"
+        organizationFigure.costScope = .organization
+        organizationFigure.personalExtraUsageIssue = .notLinked
+
+        XCTAssertNotNil(
+            ClaudeUsageProviderAdapter
+                .personalExtraUsageIssueToExplain(for: organizationFigure)
+        )
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: organizationFigure)
+        )
+    }
+
+    /// A personal Max/Pro subscription's organization figure *is* that
+    /// person's own, so the deliberate silence there is preserved.
+    func testASinglePersonOrganizationFigureStaysSilent() {
+        var singlePerson = ClaudeUsage.empty
+        singlePerson.costUsed = 1_000
+        singlePerson.costLimit = 5_000
+        singlePerson.costCurrency = "USD"
+        singlePerson.costScope = .personal
+        singlePerson.personalExtraUsageIssue = .notLinked
+
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .personalExtraUsageIssueToExplain(for: singlePerson)
+        )
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: singlePerson),
+            "The figure on screen already is this person's own."
+        )
+    }
+
+    /// Their own number is on screen, so nothing is missing regardless of
+    /// what else failed.
+    func testAPresentPersonalFigureSilencesBothStatements() {
+        var withPersonal = ClaudeUsage.empty
+        withPersonal.personalCostUsed = 0
+        withPersonal.personalCostLimit = 5_000
+        withPersonal.personalCostCurrency = "USD"
+        withPersonal.organizationExtraUsageIssue = .lookupFailed
+
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: withPersonal)
+        )
+    }
+
+    /// Nothing failed and nothing was asked for: silence, as before.
+    func testAnUntouchedRecordSaysNothing() {
+        XCTAssertNil(
+            ClaudeUsageProviderAdapter
+                .extraUsageAbsenceToExplain(for: .empty)
+        )
+    }
+
     // MARK: - The organization guard
 
     /// The defect this guard exists for: one person, one email, two Claude

@@ -1313,4 +1313,11 @@
 "cli.login_expired_then_resync" = "Once you're signed in, come back and press Re-sync.";
 "popover.extra_usage.cli_other_organization" = "This is your organization's total. Your linked Claude Code account belongs to a different organization, so its usage isn't shown here.";
 "popover.extra_usage.claude_account_unresolved" = "This is your organization's total. Your own usage couldn't be matched to this organization — reconnect your account in Settings → Claude.ai.";
+"popover.extra_usage.absent.cli_not_linked" = "Your extra usage comes from Claude Code, which isn't linked to this account yet — add it in Settings → CLI Account.";
+"popover.extra_usage.absent.cli_sign_in_expired" = "Your extra usage can't be read: Claude Code's sign-in for this account has expired. Sign in to Claude Code again and it will reappear on its own.";
+"popover.extra_usage.absent.cli_sign_in_has_no_token" = "Your extra usage can't be read: Claude Code is signed out of the account linked here. Sign in to it and this will fill in on its own.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Your extra usage couldn't be read just now — re-sync your Claude Code account in Settings → CLI Account.";
+"popover.extra_usage.absent.cli_other_organization" = "Your extra usage isn't shown: the linked Claude Code account belongs to a different organization.";
+"popover.extra_usage.absent.claude_account_unresolved" = "Your extra usage couldn't be matched to this organization — reconnect your account in Settings → Claude.ai.";
+"popover.extra_usage.organization_lookup_failed" = "Your extra usage couldn't be read just now. Refresh to try again.";
 "cli.connect_extra_usage_hint" = "Connect your Claude Code account to see your own extra usage. If you're an admin, you'll see your organization's by default.";

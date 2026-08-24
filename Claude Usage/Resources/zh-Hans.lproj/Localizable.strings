@@ -1295,4 +1295,11 @@
 "cli.login_expired_then_resync" = "登录完成后，回到这里点击“重新同步”。";
 "popover.extra_usage.cli_other_organization" = "这是您所在组织的总量。已关联的 Claude Code 账号属于其他组织，因此不会在此显示其用量。";
 "popover.extra_usage.claude_account_unresolved" = "这是您所在组织的总量。无法将您自己的用量与此组织匹配 — 请在“设置 → Claude.ai”中重新连接您的账号。";
+"popover.extra_usage.absent.cli_not_linked" = "您自己的额外用量来自 Claude Code，但尚未关联到此账号 — 请在“设置 → CLI 账号”中添加。";
+"popover.extra_usage.absent.cli_sign_in_expired" = "无法读取您自己的额外用量：此账号的 Claude Code 登录已过期。请重新登录 Claude Code，该数值会自动重新显示。";
+"popover.extra_usage.absent.cli_sign_in_has_no_token" = "无法读取您自己的额外用量：Claude Code 已从此处关联的账号退出登录。请登录该账号，该数值会自动显示。";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "此次未能读取您自己的额外用量 — 请在“设置 → CLI 账号”中重新同步您的 Claude Code 账号。";
+"popover.extra_usage.absent.cli_other_organization" = "不会显示您自己的额外用量：已关联的 Claude Code 账号属于其他组织。";
+"popover.extra_usage.absent.claude_account_unresolved" = "无法将您自己的额外用量与此组织匹配 — 请在“设置 → Claude.ai”中重新连接您的账号。";
+"popover.extra_usage.organization_lookup_failed" = "此次未能读取您自己的额外用量。请刷新后重试。";
 "cli.connect_extra_usage_hint" = "连接您的 Claude Code 账号即可查看自己的额外用量。如果您是管理员，默认显示的是组织的用量。";

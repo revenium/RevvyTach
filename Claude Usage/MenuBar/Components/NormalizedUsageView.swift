@@ -1099,17 +1099,26 @@ struct NormalizedUsageView: View {
     /// existing call sites that only wire the CLI action keep working.
     var onConnectClaudeAIAccount: (() -> Void)?
 
-    /// The organization's extra usage is on screen and the viewer's own is
-    /// not, so the popover explains whose number this is and what is missing.
-    /// Claude-specific, and driven by the data rather than by provider
-    /// identity.
-    private var personalExtraUsageIssue: ClaudeUsage.PersonalExtraUsageIssue? {
+    /// What the popover says about extra usage, if anything.
+    ///
+    /// Two mutually exclusive statements: reconciling a company-wide figure
+    /// the reader cannot map to themselves, or reporting that no figure could
+    /// be read at all. Claude-specific, and driven by the data rather than by
+    /// provider identity.
+    private var extraUsageNotice: ExtraUsageNotice? {
         guard onConnectCLIAccount != nil,
               let usage = presentation.legacyClaudeUsage else {
             return nil
         }
-        return ClaudeUsageProviderAdapter
-            .personalExtraUsageIssueToExplain(for: usage)
+        if let issue = ClaudeUsageProviderAdapter
+            .personalExtraUsageIssueToExplain(for: usage) {
+            return .unexplainedOrganizationFigure(issue)
+        }
+        if let absence = ClaudeUsageProviderAdapter
+            .extraUsageAbsenceToExplain(for: usage) {
+            return .absence(absence)
+        }
+        return nil
     }
 
     var body: some View {
@@ -1160,9 +1169,9 @@ struct NormalizedUsageView: View {
                     now: now
                 )
             }
-            if let personalExtraUsageIssue, let onConnectCLIAccount {
-                PersonalExtraUsageNoticeView(
-                    issue: personalExtraUsageIssue,
+            if let extraUsageNotice, let onConnectCLIAccount {
+                ExtraUsageNoticeView(
+                    notice: extraUsageNotice,
                     cliAccountAction: onConnectCLIAccount,
                     claudeAIAccountAction: onConnectClaudeAIAccount ?? onConnectCLIAccount
                 )
@@ -1185,11 +1194,25 @@ struct NormalizedUsageView: View {
     }
 }
 
-/// Sits directly beneath the organization's extra-usage row, in the same
-/// inline-notice style as the empty states, and opens the screen where a
-/// Claude Code account gets connected.
-private struct PersonalExtraUsageNoticeView: View {
-    let issue: ClaudeUsage.PersonalExtraUsageIssue
+/// What the popover is saying about extra usage, and in which voice.
+///
+/// Two different statements, deliberately kept apart. One reconciles a
+/// company-wide figure that is on screen and cannot be mapped to the reader;
+/// the other says a figure could not be read at all. Sharing one wording made
+/// the second impossible to say — every sentence opened by explaining a
+/// number that, in this case, is not there.
+enum ExtraUsageNotice: Equatable {
+    /// The organization's figure is on screen and the reader's own is not.
+    case unexplainedOrganizationFigure(ClaudeUsage.PersonalExtraUsageIssue)
+    /// No figure reached the screen, and this is why.
+    case absence(ClaudeUsageProviderAdapter.ExtraUsageAbsence)
+}
+
+/// Sits where the extra-usage row would be — beneath it when there is one, in
+/// its place when there is not — in the same inline-notice style as the empty
+/// states, and opens the screen where the missing connection gets fixed.
+private struct ExtraUsageNoticeView: View {
+    let notice: ExtraUsageNotice
     /// Settings → CLI Account, for the cases whose remedy is a Claude Code
     /// sign-in.
     let cliAccountAction: () -> Void
@@ -1206,12 +1229,21 @@ private struct PersonalExtraUsageNoticeView: View {
     /// remove — the point of the notice is that a case nobody decided about
     /// must not quietly look decided.
     private var action: () -> Void {
-        switch issue {
-        case .claudeAccountUnresolved:
+        switch notice {
+        case .absence(.unreadableOrganizationFigure):
+            // Nothing to connect: the claude.ai request itself failed. The
+            // account screen is still the only place with anything to do
+            // about a credential, so it stays the destination.
             return claudeAIAccountAction
-        case .notLinked, .signInExpired, .signInUnusable,
-             .signInHasNoToken, .differentOrganization:
-            return cliAccountAction
+        case .unexplainedOrganizationFigure(let issue),
+             .absence(.unreadablePersonalFigure(let issue)):
+            switch issue {
+            case .claudeAccountUnresolved:
+                return claudeAIAccountAction
+            case .notLinked, .signInExpired, .signInUnusable,
+                 .signInHasNoToken, .differentOrganization:
+                return cliAccountAction
+            }
         }
     }
 
@@ -1221,6 +1253,26 @@ private struct PersonalExtraUsageNoticeView: View {
     /// which is the only source of the member's own. Saying just "connect
     /// your account" left people unable to tell which of the two was meant.
     private var message: String {
+        switch notice {
+        case .unexplainedOrganizationFigure(let issue):
+            return reconciliationMessage(for: issue)
+        case .absence(.unreadablePersonalFigure(let issue)):
+            return absenceMessage(for: issue)
+        case .absence(.unreadableOrganizationFigure):
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.organization_lookup_failed",
+                default: "Your extra usage couldn't be read just now. "
+                    + "Refresh to try again."
+            )
+        }
+    }
+
+    /// The reconciliation voice: a company-wide figure is on screen and the
+    /// reader's own is not, so every sentence starts by saying whose number
+    /// they are looking at.
+    private func reconciliationMessage(
+        for issue: ClaudeUsage.PersonalExtraUsageIssue
+    ) -> String {
         switch issue {
         case .notLinked:
             return NormalizedUsageStrings.localized(
@@ -1269,16 +1321,84 @@ private struct PersonalExtraUsageNoticeView: View {
         }
     }
 
-    private var icon: String {
+    /// The absence voice: no figure is on screen, so there is no number to
+    /// explain — only a reading that could not be taken, and its remedy.
+    private func absenceMessage(
+        for issue: ClaudeUsage.PersonalExtraUsageIssue
+    ) -> String {
         switch issue {
         case .notLinked:
-            return "person.crop.circle.badge.plus"
-        case .signInExpired, .signInUnusable, .signInHasNoToken:
-            return "exclamationmark.triangle"
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_not_linked",
+                default: "Your extra usage comes from Claude Code, which "
+                    + "isn't linked to this account yet — add it in "
+                    + "Settings → CLI Account."
+            )
+        case .signInExpired:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_sign_in_expired",
+                default: "Your extra usage can't be read: Claude Code's "
+                    + "sign-in for this account has expired. Sign in to "
+                    + "Claude Code again and it will reappear on its own."
+            )
+        case .signInHasNoToken:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_sign_in_has_no_token",
+                default: "Your extra usage can't be read: Claude Code is "
+                    + "signed out of the account linked here. Sign in to it "
+                    + "and this will fill in on its own."
+            )
+        case .signInUnusable:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_sign_in_unusable",
+                default: "Your extra usage couldn't be read just now — "
+                    + "re-sync your Claude Code account in Settings → "
+                    + "CLI Account."
+            )
         case .differentOrganization:
-            return "person.2.slash"
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_other_organization",
+                default: "Your extra usage isn't shown: the linked Claude "
+                    + "Code account belongs to a different organization."
+            )
         case .claudeAccountUnresolved:
-            return "person.crop.circle.badge.questionmark"
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.claude_account_unresolved",
+                default: "Your extra usage couldn't be matched to this "
+                    + "organization — reconnect your account in "
+                    + "Settings → Claude.ai."
+            )
+        }
+    }
+
+    private var icon: String {
+        switch notice {
+        case .absence(.unreadableOrganizationFigure):
+            return "exclamationmark.triangle"
+        case .unexplainedOrganizationFigure(let issue),
+             .absence(.unreadablePersonalFigure(let issue)):
+            switch issue {
+            case .notLinked:
+                return "person.crop.circle.badge.plus"
+            case .signInExpired, .signInUnusable, .signInHasNoToken:
+                return "exclamationmark.triangle"
+            case .differentOrganization:
+                return "person.2.slash"
+            case .claudeAccountUnresolved:
+                return "person.crop.circle.badge.questionmark"
+            }
+        }
+    }
+
+    /// Distinct identifiers so a UI test can tell which of the two statements
+    /// is on screen — they are mutually exclusive by construction and a
+    /// shared identifier would hide a regression that swapped them.
+    private var accessibilityIdentifier: String {
+        switch notice {
+        case .unexplainedOrganizationFigure:
+            return "popover.extra_usage.personal_notice"
+        case .absence:
+            return "popover.extra_usage.absent_notice"
         }
     }
 
@@ -1298,7 +1418,7 @@ private struct PersonalExtraUsageNoticeView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("popover.extra_usage.personal_notice")
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 

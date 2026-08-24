@@ -1299,4 +1299,11 @@
 "cli.login_expired_then_resync" = "Sobald Sie angemeldet sind, kehren Sie zurück und klicken Sie auf Erneut synchronisieren.";
 "popover.extra_usage.cli_other_organization" = "Dies ist die Gesamtsumme Ihrer Organisation. Ihr verknüpftes Claude Code-Konto gehört zu einer anderen Organisation, daher wird dessen Nutzung hier nicht angezeigt.";
 "popover.extra_usage.claude_account_unresolved" = "Dies ist die Gesamtsumme Ihrer Organisation. Ihre eigene Nutzung konnte dieser Organisation nicht zugeordnet werden – verbinden Sie Ihr Konto erneut unter Einstellungen → Claude.ai.";
+"popover.extra_usage.absent.cli_not_linked" = "Ihre Zusatznutzung stammt aus Claude Code, das mit diesem Konto noch nicht verknüpft ist – fügen Sie es unter Einstellungen → CLI-Konto hinzu.";
+"popover.extra_usage.absent.cli_sign_in_expired" = "Ihre Zusatznutzung ist nicht lesbar: Die Claude Code-Anmeldung für dieses Konto ist abgelaufen. Melden Sie sich erneut bei Claude Code an – der Wert erscheint dann von selbst.";
+"popover.extra_usage.absent.cli_sign_in_has_no_token" = "Ihre Zusatznutzung ist nicht lesbar: Claude Code ist bei dem hier verknüpften Konto abgemeldet. Melden Sie sich dort an – der Wert erscheint dann von selbst.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Ihre Zusatznutzung konnte gerade nicht gelesen werden – synchronisieren Sie Ihr Claude Code-Konto unter Einstellungen → CLI-Konto erneut.";
+"popover.extra_usage.absent.cli_other_organization" = "Ihre Zusatznutzung wird nicht angezeigt: Das verknüpfte Claude Code-Konto gehört zu einer anderen Organisation.";
+"popover.extra_usage.absent.claude_account_unresolved" = "Ihre Zusatznutzung konnte dieser Organisation nicht zugeordnet werden – verbinden Sie Ihr Konto erneut unter Einstellungen → Claude.ai.";
+"popover.extra_usage.organization_lookup_failed" = "Ihre Zusatznutzung konnte gerade nicht gelesen werden. Aktualisieren Sie, um es erneut zu versuchen.";
 "cli.connect_extra_usage_hint" = "Verbinden Sie Ihr Claude Code-Konto, um Ihre eigene zusätzliche Nutzung zu sehen. Als Administrator sehen Sie standardmäßig die Ihrer Organisation.";

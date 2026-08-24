@@ -210,6 +210,58 @@ enum ClaudeUsageProviderAdapter {
         return usage.personalExtraUsageIssue
     }
 
+    /// What the popover should say about extra usage, when there is no figure
+    /// on screen to say it about.
+    ///
+    /// `personalExtraUsageIssueToExplain` above answers a different question:
+    /// it reconciles a company-wide figure the viewer cannot map to
+    /// themselves, and only fires when that figure is present. When no figure
+    /// reaches the screen at all the extra-usage row simply does not render,
+    /// and the app went silent — while holding the exact reason, in six
+    /// finished cases, that it could not display.
+    enum ExtraUsageAbsence: Equatable {
+        /// The viewer's own figure is missing for a known, usually actionable
+        /// reason, and no organization figure is standing in front of it.
+        case unreadablePersonalFigure(ClaudeUsage.PersonalExtraUsageIssue)
+        /// The organization-scoped request did not come back this time. Not
+        /// the same as extra usage being switched off, which stays silent.
+        case unreadableOrganizationFigure
+    }
+
+    static func extraUsageAbsenceToExplain(
+        for usage: ClaudeUsage
+    ) -> ExtraUsageAbsence? {
+        let hasPersonalFigure = usage.personalCostUsed != nil
+            && (usage.personalCostLimit ?? 0) > 0
+            && usage.personalCostCurrency != nil
+        // Their own number is on screen; nothing is missing.
+        if hasPersonalFigure { return nil }
+
+        let hasOrganizationFigure = usage.costUsed != nil
+            && (usage.costLimit ?? 0) > 0
+            && usage.costCurrency != nil
+        // A figure is on screen. Either it is this person's own (a personal
+        // Max/Pro subscription, where the organization *is* them, and the
+        // existing silence there is correct) or it is the company's and
+        // `personalExtraUsageIssueToExplain` already reconciles it. Either
+        // way this statement would be a second, contradictory voice.
+        if hasOrganizationFigure { return nil }
+
+        // Nothing on screen. The member-scoped reason leads when there is
+        // one: it names something the reader can act on.
+        if let issue = usage.personalExtraUsageIssue {
+            return .unreadablePersonalFigure(issue)
+        }
+        switch usage.organizationExtraUsageIssue {
+        case .lookupFailed:
+            return .unreadableOrganizationFigure
+        case .notEnabled, nil:
+            // Switched off, or never asked for. Settled answers with nothing
+            // to fix, and a notice about them would be noise on every refresh.
+            return nil
+        }
+    }
+
     /// One extra-usage group, or nil when the figure is absent or unusable.
     private static func extraUsageGroup(
         id: String,

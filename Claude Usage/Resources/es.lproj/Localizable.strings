@@ -1282,4 +1282,11 @@
 "cli.login_expired_then_resync" = "Cuando hayas iniciado sesión, vuelve y pulsa Volver a sincronizar.";
 "popover.extra_usage.cli_other_organization" = "Este es el total de tu organización. Tu cuenta de Claude Code vinculada pertenece a otra organización, por lo que su uso no se muestra aquí.";
 "popover.extra_usage.claude_account_unresolved" = "Este es el total de tu organización. Tu propio uso no se pudo asociar a esta organización: vuelve a conectar tu cuenta en Ajustes → Claude.ai.";
+"popover.extra_usage.absent.cli_not_linked" = "Tu uso adicional proviene de Claude Code, que aún no está vinculado a esta cuenta: añádelo en Ajustes → Cuenta CLI.";
+"popover.extra_usage.absent.cli_sign_in_expired" = "No se puede leer tu uso adicional: el inicio de sesión de Claude Code para esta cuenta ha caducado. Vuelve a iniciar sesión en Claude Code y el dato reaparecerá por sí solo.";
+"popover.extra_usage.absent.cli_sign_in_has_no_token" = "No se puede leer tu uso adicional: Claude Code tiene la sesión cerrada en la cuenta vinculada aquí. Inicia sesión en ella y el dato aparecerá por sí solo.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "No se ha podido leer tu uso adicional ahora mismo: vuelve a sincronizar tu cuenta de Claude Code en Ajustes → Cuenta CLI.";
+"popover.extra_usage.absent.cli_other_organization" = "Tu uso adicional no se muestra: la cuenta de Claude Code vinculada pertenece a otra organización.";
+"popover.extra_usage.absent.claude_account_unresolved" = "Tu uso adicional no se pudo asociar a esta organización: vuelve a conectar tu cuenta en Ajustes → Claude.ai.";
+"popover.extra_usage.organization_lookup_failed" = "No se ha podido leer tu uso adicional ahora mismo. Actualiza para volver a intentarlo.";
 "cli.connect_extra_usage_hint" = "Conecta tu cuenta de Claude Code para ver tu propio uso extra. Si eres administrador, verás el de tu organización de forma predeterminada.";

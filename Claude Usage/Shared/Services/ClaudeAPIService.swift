@@ -1244,22 +1244,42 @@ class ClaudeAPIService: APIServiceProtocol {
         )
         var claudeUsage = try parseUsageResponse(usageData)
 
-        if checkOverageLimitEnabled,
-           let data = try? await performRequest(
+        if checkOverageLimitEnabled {
+            // One `if let ... try? ...` chain used to collapse three
+            // different outcomes into "the fields stay nil": the request
+            // failing, the body not decoding, and extra usage genuinely being
+            // switched off. Only the last of those is a settled answer, so
+            // they are separated here and the difference is recorded.
+            let data = try? await performRequest(
                 endpoint: "/organizations/\(organizationId)/overage_spend_limit",
                 sessionKey: sessionKey
-           ),
-           let overage = try? JSONDecoder().decode(OverageSpendLimitResponse.self, from: data),
-           overage.isEnabled == true {
-            claudeUsage.costUsed = overage.usedCredits
-            claudeUsage.costLimit = overage.monthlyCreditLimit
-            claudeUsage.costCurrency = overage.currency
-            // The endpoint is organization-scoped: these amounts are the whole
-            // organization's unless that organization has one member.
-            claudeUsage.costScope = await resolveExtraUsageScope(
-                organizationId: organizationId,
-                sessionKey: sessionKey
             )
+            let overage = data.flatMap {
+                try? JSONDecoder().decode(OverageSpendLimitResponse.self, from: $0)
+            }
+            if let overage {
+                if overage.isEnabled == true {
+                    claudeUsage.costUsed = overage.usedCredits
+                    claudeUsage.costLimit = overage.monthlyCreditLimit
+                    claudeUsage.costCurrency = overage.currency
+                    // The endpoint is organization-scoped: these amounts are
+                    // the whole organization's unless that organization has
+                    // one member.
+                    claudeUsage.costScope = await resolveExtraUsageScope(
+                        organizationId: organizationId,
+                        sessionKey: sessionKey
+                    )
+                } else {
+                    claudeUsage.organizationExtraUsageIssue = .notEnabled
+                }
+            } else {
+                claudeUsage.organizationExtraUsageIssue = .lookupFailed
+                LoggingService.shared.logWarning(
+                    "Extra usage for organization \(organizationId) could "
+                    + "not be read on this refresh; reporting it as "
+                    + "unavailable rather than as not applicable."
+                )
+            }
         }
 
         // The member's own figure, from a CLI-authenticated endpoint. Still

@@ -1299,4 +1299,11 @@
 "cli.login_expired_then_resync" = "Una volta effettuato l'accesso, torna qui e premi Risincronizza.";
 "popover.extra_usage.cli_other_organization" = "Questo è il totale della tua organizzazione. L'account Claude Code collegato appartiene a un'altra organizzazione, quindi il suo utilizzo non viene mostrato qui.";
 "popover.extra_usage.claude_account_unresolved" = "Questo è il totale della tua organizzazione. Non è stato possibile abbinare il tuo utilizzo a questa organizzazione: ricollega il tuo account in Impostazioni → Claude.ai.";
+"popover.extra_usage.absent.cli_not_linked" = "Il tuo utilizzo aggiuntivo proviene da Claude Code, che non è ancora collegato a questo account: aggiungilo in Impostazioni → Account CLI.";
+"popover.extra_usage.absent.cli_sign_in_expired" = "Non è possibile leggere il tuo utilizzo aggiuntivo: l'accesso a Claude Code per questo account è scaduto. Accedi di nuovo a Claude Code e il valore ricomparirà da sé.";
+"popover.extra_usage.absent.cli_sign_in_has_no_token" = "Non è possibile leggere il tuo utilizzo aggiuntivo: Claude Code è disconnesso dall'account collegato qui. Accedi a quell'account e il valore comparirà da sé.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento: risincronizza il tuo account Claude Code in Impostazioni → Account CLI.";
+"popover.extra_usage.absent.cli_other_organization" = "Il tuo utilizzo aggiuntivo non viene mostrato: l'account Claude Code collegato appartiene a un'altra organizzazione.";
+"popover.extra_usage.absent.claude_account_unresolved" = "Non è stato possibile abbinare il tuo utilizzo aggiuntivo a questa organizzazione: ricollega il tuo account in Impostazioni → Claude.ai.";
+"popover.extra_usage.organization_lookup_failed" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento. Aggiorna per riprovare.";
 "cli.connect_extra_usage_hint" = "Collega il tuo account Claude Code per vedere il tuo utilizzo extra. Se sei un amministratore, per impostazione predefinita vedrai quello della tua organizzazione.";

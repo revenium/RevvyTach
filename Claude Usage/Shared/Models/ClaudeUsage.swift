@@ -147,6 +147,27 @@ struct ClaudeUsage: Codable, Equatable {
     /// organization figure for it to sit beneath.
     var personalExtraUsageIssue: PersonalExtraUsageIssue?
 
+    /// Why the organization's extra-usage figure is absent, when it is.
+    ///
+    /// The figure comes from a second request that was wrapped in `try?`, so
+    /// a network failure, a 401, and a rate limit all left the amount, the
+    /// limit and the currency nil with no signal — indistinguishable from the
+    /// organization having extra usage switched off. One of those is a settled
+    /// answer with nothing to fix; the other is a figure that exists and could
+    /// not be reached, and only the second is worth telling anyone about.
+    enum OrganizationExtraUsageIssue: String, Codable, Equatable {
+        /// The request did not come back usable — offline, refused, rate
+        /// limited, or a body that would not decode.
+        case lookupFailed
+        /// Extra usage is switched off for this organization. Settled, and
+        /// deliberately silent in the UI.
+        case notEnabled
+    }
+
+    /// Nil when the organization's figure was obtained, or when it was never
+    /// asked for (the per-profile extra-usage preference is off).
+    var organizationExtraUsageIssue: OrganizationExtraUsageIssue?
+
     // Overage credit grant balance
     var overageBalance: Double?
     var overageBalanceCurrency: String?
@@ -187,6 +208,7 @@ struct ClaudeUsage: Codable, Equatable {
         personalCostLimit: Double? = nil,
         personalCostCurrency: String? = nil,
         personalExtraUsageIssue: PersonalExtraUsageIssue? = nil,
+        organizationExtraUsageIssue: OrganizationExtraUsageIssue? = nil,
         overageBalance: Double? = nil,
         overageBalanceCurrency: String? = nil,
         lastUpdated: Date,
@@ -219,6 +241,7 @@ struct ClaudeUsage: Codable, Equatable {
         self.personalCostLimit = personalCostLimit
         self.personalCostCurrency = personalCostCurrency
         self.personalExtraUsageIssue = personalExtraUsageIssue
+        self.organizationExtraUsageIssue = organizationExtraUsageIssue
         self.overageBalance = overageBalance
         self.overageBalanceCurrency = overageBalanceCurrency
         self.lastUpdated = lastUpdated
@@ -274,6 +297,10 @@ struct ClaudeUsage: Codable, Equatable {
         personalExtraUsageIssue = try container.decodeIfPresent(
             PersonalExtraUsageIssue.self,
             forKey: .personalExtraUsageIssue
+        )
+        organizationExtraUsageIssue = try container.decodeIfPresent(
+            OrganizationExtraUsageIssue.self,
+            forKey: .organizationExtraUsageIssue
         )
         overageBalance = try container.decodeIfPresent(Double.self, forKey: .overageBalance)
         overageBalanceCurrency = try container.decodeIfPresent(String.self, forKey: .overageBalanceCurrency)
