@@ -152,6 +152,14 @@ class ClaudeCodeSyncService {
                 forAccountNamed: accountName
             )
         } catch {
+            // Only fall back when there is something to fall back to. With
+            // no held file login, this rethrow preserves today's behavior
+            // for both callers that key off a thrown error here:
+            // `resyncBeforeSwitching` treats `nil` as "nothing found, skip
+            // silently" and `syncCredentials` turns `nil` into
+            // `.noCredentialsFound` ("not signed in") — neither should
+            // absorb a genuine Keychain failure as if it were simply absent.
+            guard let expiredFileFallback else { throw error }
             LoggingService.shared.log(
                 "Keychain read threw for account "
                 + "'\(accountName ?? "default")': \(error). Falling back to "
