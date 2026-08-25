@@ -1552,9 +1552,18 @@ class ClaudeAPIService: APIServiceProtocol {
         /// A 200 whose body decoded. Says nothing yet about whether extra
         /// usage is switched on — that is `isEnabled`'s job.
         case figure(OverageSpendLimitResponse)
-        /// HTTP 200 carrying no extra-usage record at all — an empty body,
-        /// or a JSON value that is not an object. The server answered, and
-        /// the answer is that there is nothing here.
+        /// HTTP 200 carrying no extra-usage record at all — a zero-byte
+        /// body, or a literal `null`. The server answered, and the answer is
+        /// that there is nothing here.
+        ///
+        /// Deliberately only those two shapes. The other non-object bodies —
+        /// an array, a bare scalar, or something that is not JSON at all —
+        /// are failures, not answers: a 200 carrying an HTML page is what a
+        /// proxy, a WAF challenge, or a captive portal returns in
+        /// claude.ai's place, and an array or scalar is not a record and not
+        /// a statement that there is no record. Calling any of those settled
+        /// would hide a real failure permanently, because a settled answer
+        /// is silent and is never retried.
         ///
         /// Measured, not assumed: across 10,421 logged responses on the
         /// maintainer's machine every single `overage_spend_limit` reply was
@@ -1613,46 +1622,69 @@ class ClaudeAPIService: APIServiceProtocol {
         // A 200 that decoded to nothing. Every property of
         // `OverageSpendLimitResponse` is optional, so *any* JSON object
         // decodes — `{}` included. Reaching here means the body was not an
-        // object at all: empty, `null`, or some other bare value.
+        // object, and which non-object it is decides everything.
         //
-        // That is a successful answer meaning "there is no extra-usage record
-        // for this organization", and it is what two of the maintainer's
+        // Exactly two shapes are plausible ways for this server to say "there
+        // is no extra-usage record for this organization": a zero-byte body,
+        // and a literal `null`. That is what two of the maintainer's
         // organizations return on every single refresh while every other
         // organization returns a decodable object. Reproducible across days
         // and app versions is the signature of deliberate server behaviour,
         // not of a malformed response — so it is settled, and silent, exactly
         // as a member's `is_enabled: false` already is.
         //
-        // A body that IS an object and still will not decode is kept in the
-        // failure bucket. That cannot happen while every field is optional,
-        // but it is what a genuine shape change would look like, and it must
-        // not be mistaken for the organization having nothing to report.
+        // Every other shape stays in the failure bucket, because being
+        // settled here is permanent silence: nothing retries it and nothing
+        // says a word on screen. A body that IS an object and still will not
+        // decode cannot happen while every field is optional, but it is what
+        // a genuine shape change would look like. An array or a bare scalar
+        // is neither a record nor a statement that there is none. And a 200
+        // whose body is not JSON at all is the signature of something
+        // answering in claude.ai's place — a proxy, a WAF challenge, a
+        // captive portal login page — which is precisely the class of masked
+        // failure this classification exists to stop hiding. The switch is
+        // exhaustive on purpose: a `JSONShape` case added later has to be
+        // placed deliberately instead of inheriting the silent bucket.
         let shape = Self.jsonShape(of: data)
-        guard shape != .object else {
+        switch shape {
+        case .empty, .null:
+            // Byte count and top-level JSON kind only — never any content.
+            // This is the line that makes the exact shape recoverable next
+            // time: it was not, when this was written, from any source the
+            // app persists.
+            LoggingService.shared.logDebug(
+                "Extra usage for organization \(organizationId): HTTP 200 with "
+                + "no extra-usage record (\(data.count) bytes, top level "
+                + "\(shape.description)). Treating it as a settled 'nothing "
+                + "here' answer rather than as a reading that failed."
+            )
+            return .noRecord
+        case .object:
             LoggingService.shared.logWarning(
                 "Extra usage for organization \(organizationId) came back as "
-                + "HTTP 200 with a JSON object that no longer decodes; the "
-                + "response shape has changed."
+                + "HTTP 200 with a JSON object that no longer decodes "
+                + "(\(data.count) bytes, top level \(shape.description)); "
+                + "the response shape has changed."
+            )
+            return .unreadable
+        case .array, .scalar, .notJSON:
+            LoggingService.shared.logWarning(
+                "Extra usage for organization \(organizationId) came back as "
+                + "HTTP 200 that is not an extra-usage record at all "
+                + "(\(data.count) bytes, top level \(shape.description)). "
+                + "Reported as a reading that failed, not as the "
+                + "organization having nothing to report."
             )
             return .unreadable
         }
-        // Byte count and top-level JSON kind only — never any content. This
-        // is the line that makes the exact shape recoverable next time: it
-        // was not, when this was written, from any source the app persists.
-        LoggingService.shared.logDebug(
-            "Extra usage for organization \(organizationId): HTTP 200 with "
-            + "no extra-usage record (\(data.count) bytes, top level "
-            + "\(shape.description)). Treating it as a settled 'nothing "
-            + "here' answer rather than as a reading that failed."
-        )
-        return .noRecord
     }
 
     /// The top-level kind of a JSON payload — never its content.
     ///
     /// Used only to tell "the server sent no record" apart from "the record's
-    /// shape changed", and to make the former diagnosable without putting a
-    /// response body anywhere near a log.
+    /// shape changed" and from "something other than claude.ai answered", and
+    /// to make all three diagnosable without putting a response body anywhere
+    /// near a log.
     enum JSONShape: Equatable {
         case empty
         case object

@@ -597,6 +597,19 @@ class MenuBarManager: NSObject, ObservableObject {
         self?.refreshRuntime.refresh(profiles: profiles, trigger: trigger)
     }
 
+    /// Whether there is a network for a fan-out to go out on, read at the
+    /// moment the fan-out is dispatched.
+    ///
+    /// Defaults to the live monitor. Exposed as a seam for the same reason
+    /// `dispatchUsageRefresh` is: in a unit test `NetworkMonitor.shared` has
+    /// never seen a path update and reports disconnected, so reading the
+    /// singleton directly would make "a dispatch records the debounce"
+    /// untestable — the connectivity precondition the behaviour now depends
+    /// on could not be supplied.
+    var isNetworkConnectedForRefreshDebounce: () -> Bool = {
+        NetworkMonitor.shared.isConnected
+    }
+
     /// The single place a fan-out leaves this manager, so the count above
     /// cannot drift from what was actually dispatched.
     ///
@@ -632,7 +645,27 @@ class MenuBarManager: NSObject, ObservableObject {
         // and returns twice in quick succession — which is how a real stall
         // recovery looks — would otherwise fan out once per path update, each
         // one cancelling the last.
-        lastRefreshTriggerTime = Date()
+        //
+        // Only a fan-out that had a link to go out on may debounce that
+        // guard, though. A fan-out dispatched while the machine is offline is
+        // doomed before it leaves — every request in it fails and the usage
+        // on screen stays stale — so letting it stamp would suppress the
+        // recovery refresh that is the whole point of `onNetworkAvailable`,
+        // and the stale figures would sit there until the next timer tick or
+        // a manual refresh. That would be a regression introduced by the very
+        // change that made this guard live.
+        //
+        // The case the stamp was added for survives intact, because the
+        // monitor fires `onNetworkAvailable` only on a disconnected→connected
+        // transition: a Wi-Fi link that drops and returns twice in quick
+        // succession dispatches its first recovery refresh while connected,
+        // so that one does stamp, and the second transition inside the
+        // debounce window is suppressed as intended. What no longer
+        // suppresses anything is a fan-out that went out with no link at all,
+        // because it accomplished nothing worth debouncing against.
+        if isNetworkConnectedForRefreshDebounce() {
+            lastRefreshTriggerTime = Date()
+        }
         dispatchUsageRefresh(profiles, trigger)
     }
     private var refreshEventObserver: UUID?

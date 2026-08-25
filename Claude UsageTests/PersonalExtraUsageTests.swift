@@ -449,9 +449,10 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// dropped it into `lookupFailed` and the header said "Some usage details
     /// are unavailable" on two profiles where nothing was wrong.
     ///
-    /// Both shapes a bodyless 200 can take are pinned, because the fix turns
-    /// on the body not being a JSON *object* and either one alone would let
-    /// the other regress.
+    /// Both shapes a bodyless 200 can take are pinned, because these two —
+    /// a zero-byte body and a literal `null` — are the only ones the app
+    /// accepts as a settled answer, and either one alone would let the other
+    /// regress into the failure bucket.
     func testASuccessfulAnswerWithNoExtraUsageRecordIsSettledNotFailed()
         async throws
     {
@@ -552,6 +553,124 @@ final class PersonalExtraUsageTests: XCTestCase {
             .object,
             "an object stays an object, and the object branch reports a "
                 + "failure rather than going quiet"
+        )
+    }
+
+    /// A JSON array is not a record, and is not the server saying there is no
+    /// record either.
+    ///
+    /// The settled answer is narrow on purpose: a zero-byte body or a literal
+    /// `null`. An array is neither, and reading it as "this organization has
+    /// nothing to report" would be permanent — a settled answer is silent, is
+    /// never retried, and leaves no notice for anyone to act on. Whatever an
+    /// array from this endpoint would mean, the honest report is that the
+    /// figure could not be read.
+    func testAJSONArrayFromTheOrganizationEndpointStaysAVisibleFailure()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            overageSpendLimitBody: "[]"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertEqual(
+            usage.organizationExtraUsageIssue,
+            .lookupFailed,
+            "an array is not an extra-usage record and not an absence of "
+                + "one; it stays reported rather than going quiet"
+        )
+    }
+
+    /// The same for a bare scalar. Pinned separately from the array because
+    /// the two arrive by different branches of the shape classifier, and
+    /// because a scalar is the shape most easily mistaken for "nothing" —
+    /// a `0` or a `false` reads like an absence to a human eye and is
+    /// nothing of the sort to this endpoint.
+    func testABareScalarFromTheOrganizationEndpointStaysAVisibleFailure()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            overageSpendLimitBody: "0"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertEqual(
+            usage.organizationExtraUsageIssue,
+            .lookupFailed,
+            "a bare scalar says nothing about this organization, so the app "
+                + "must not claim it said there is nothing here"
+        )
+    }
+
+    /// The case that makes the narrowing worth having: an HTML page served
+    /// under HTTP 200.
+    ///
+    /// This is what a corporate proxy, a WAF challenge, or a hotel captive
+    /// portal returns in claude.ai's place — a 200 that never reached
+    /// Anthropic at all. Every profile behind that network would have gone
+    /// permanently silent about extra usage if any non-object body counted as
+    /// settled, and the app would have looked healthy while reporting nothing.
+    /// It is a reading that did not happen, and it must say so.
+    func testAnHTMLPageServedUnderHTTP200StaysAVisibleFailure() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            overageSpendLimitBody:
+                "<html><body>Access denied by network policy</body></html>"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertEqual(
+            usage.organizationExtraUsageIssue,
+            .lookupFailed,
+            "a proxy answering in claude.ai's place is a failure to read the "
+                + "figure, never a statement that there is no figure"
         )
     }
 

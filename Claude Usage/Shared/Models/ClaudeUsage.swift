@@ -194,9 +194,15 @@ struct ClaudeUsage: Codable, Equatable {
         /// deliberately silent in the UI.
         case notEnabled
         /// claude.ai answered HTTP 200 carrying no extra-usage record at
-        /// all — an empty body, or a JSON value that is not an object. There
-        /// is nothing to show for this organization, which is as settled as
-        /// having extra usage switched off, and just as silent.
+        /// all — a zero-byte body, or a literal `null`. There is nothing to
+        /// show for this organization, which is as settled as having extra
+        /// usage switched off, and just as silent.
+        ///
+        /// Only those two shapes reach here. A 200 whose body is an array, a
+        /// bare scalar, or not JSON at all is a failure to read the figure
+        /// and stays `lookupFailed`, because being settled is permanent
+        /// silence and a proxy or WAF page answering in claude.ai's place
+        /// must not buy it.
         ///
         /// Kept apart from `notEnabled` even though both render as nothing.
         /// They are different facts: one is a preference the organization set

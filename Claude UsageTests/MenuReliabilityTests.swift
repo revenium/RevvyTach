@@ -2939,6 +2939,12 @@ final class MenuReliabilityTests: HostedAppTestCase {
     func testADispatchRecordsTheDebounceTheNetworkPathReadsFrom() {
         let (manager, _) = makeMultiProfileManagerForLaunchSequence()
         manager.dispatchUsageRefresh = { _, _ in }
+        // Only a fan-out that had a link to go out on debounces the recovery
+        // refresh, so being connected is a precondition of the behaviour under
+        // test. `NetworkMonitor.shared` has never seen a path update in a unit
+        // test and reports disconnected, which is why this is supplied here
+        // rather than left to the real monitor.
+        manager.isNetworkConnectedForRefreshDebounce = { true }
 
         XCTAssertEqual(
             manager.lastRefreshTriggerTime,
@@ -2984,6 +2990,58 @@ final class MenuReliabilityTests: HostedAppTestCase {
         manager.dispatchRefresh(profiles: [], trigger: .startup)
 
         XCTAssertEqual(manager.lastRefreshTriggerTime, .distantPast)
+    }
+
+    /// The symmetric case: a fan-out dispatched while the machine is offline
+    /// refreshed nothing either, so it must not move the debounce.
+    ///
+    /// Every request in such a fan-out fails before it leaves, and the usage
+    /// on screen stays stale. Were it allowed to stamp
+    /// `lastRefreshTriggerTime`, a link returning within the two-second
+    /// debounce window would find the guard closed, `onNetworkAvailable`
+    /// would decline to refresh, and the stale figures would sit there until
+    /// the next periodic timer tick or a manual refresh — a regression
+    /// created by the change that made the guard live in the first place.
+    ///
+    /// Only the stamp is withheld. The fan-out itself still goes out and is
+    /// still counted, because whether the requests are worth attempting is
+    /// not this function's call to make.
+    func testAnOfflineFanOutDoesNotMoveTheDebounce() {
+        let (manager, profileManager) =
+            makeMultiProfileManagerForLaunchSequence()
+        var dispatched: [[Profile]] = []
+        manager.dispatchUsageRefresh = { profiles, _ in
+            dispatched.append(profiles)
+        }
+        manager.isNetworkConnectedForRefreshDebounce = { false }
+
+        let before = manager.dispatchedUsageFanOuts
+        manager.dispatchRefresh(
+            profiles: profileManager.profiles,
+            trigger: .timer
+        )
+
+        XCTAssertEqual(
+            manager.lastRefreshTriggerTime,
+            .distantPast,
+            "a fan-out with no link to go out on refreshed nothing, so it "
+                + "may not debounce the refresh that recovery will need"
+        )
+        XCTAssertTrue(
+            RefreshTimingPolicy.shouldRefreshForNetworkAvailability(
+                hasRefreshableProfile: true,
+                elapsedSinceLastTrigger: Date().timeIntervalSince(
+                    manager.lastRefreshTriggerTime
+                )
+            ),
+            "so a link returning a moment later still refreshes"
+        )
+        XCTAssertEqual(
+            dispatched.count,
+            1,
+            "the fan-out itself is unaffected — only the stamp is withheld"
+        )
+        XCTAssertEqual(manager.dispatchedUsageFanOuts, before + 1)
     }
 
     /// Two profiles selected for display, both refreshable, in multi-profile
