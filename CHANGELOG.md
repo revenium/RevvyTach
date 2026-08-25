@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.9] - 2026-08-24
+
+### Fixed
+
+- **A successful "no extra usage here" answer is no longer reported as
+  unreadable.** When claude.ai answers that an organization simply has no
+  extra-usage record, that's a settled fact, not a failure — the app now shows
+  it silently instead of displaying "Some usage details are unavailable" on an
+  account where nothing actually went wrong.
+
+- **A refresh the app itself replaced with a newer one is no longer recorded
+  as a failed lookup.**
+
+- **A refresh attempted while the machine was offline no longer blocks the
+  refresh that runs once the network comes back.**
+
+- **Requests cancelled by the app's own routine housekeeping are no longer
+  logged as API errors.**
+
 ## [4.0.8] - 2026-08-24
 
 ### Fixed
