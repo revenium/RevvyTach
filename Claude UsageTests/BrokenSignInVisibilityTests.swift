@@ -738,10 +738,10 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// the icon and rebuilds the label every render, so it is the one place
     /// this fact must reach both surfaces.
     ///
-    /// It has to name the credential here more than anywhere else: the shape
-    /// distinction the icon carries is worth nothing to someone reading a
-    /// tooltip, and "sign-in needs attention" sends half of them to the
-    /// wrong Settings screen.
+    /// It has to name the credential here more than anywhere else: the icon
+    /// carries one dot for both credentials by design, so a tooltip saying
+    /// only "sign-in needs attention" leaves nothing anywhere that says
+    /// which — and sends half of them to the wrong Settings screen.
     func testAttentionLabelNamesWhichCredentialIsBroken() {
         for credential: MenuBarAttentionSignal.Credential in [
             .claudeAI, .claudeCode
@@ -893,5 +893,261 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             activeMarked.image.tiffRepresentation,
             active.image.tiffRepresentation
         )
+    }
+
+    // MARK: - The single-profile label and tooltip
+
+    /// These tests exercise `legacyMetricAccessibilityLabel` directly rather
+    /// than through `updateAllButtons`, which is not safe to drive from a
+    /// unit test for two reasons. It reads `ProfileManager.shared`, the
+    /// process-wide singleton holding the tester's real profiles; and the
+    /// status items it needs carry the SHIPPING autosave names
+    /// (`claude-usage-tracker.session` and friends, not the per-UUID names
+    /// the multi-profile tests create), so creating and tearing them down in
+    /// a test would discard AppKit's saved menu-bar position for the real
+    /// app's own items. The label builder is the whole of what changed, and
+    /// the two production call sites pass it straight through.
+    private func singleProfileUsage(
+        sessionAvailable: Bool = true,
+        weekAvailable: Bool = true
+    ) -> ClaudeUsage {
+        var usage = ClaudeUsage.empty
+        usage.sessionPercentage = 42
+        usage.sessionPercentageAvailable = sessionAvailable
+        usage.sessionResetTime = Date().addingTimeInterval(3_600)
+        usage.weeklyPercentage = 13
+        usage.weeklyPercentageAvailable = weekAvailable
+        return usage
+    }
+
+    private func singleProfileAPIUsage() -> APIUsage {
+        APIUsage(
+            currentSpendCents: 25,
+            resetsAt: now.addingTimeInterval(86_400),
+            prepaidCreditsCents: 75,
+            currency: "USD",
+            apiTokenCostCents: nil,
+            apiCostByModel: nil,
+            costBySource: nil,
+            dailyCostCents: nil
+        )
+    }
+
+    private func singleProfileLabel(
+        for metricType: MenuBarMetricType,
+        attention: MenuBarAttentionSignal.Credential? = nil,
+        usage: ClaudeUsage? = nil
+    ) -> String {
+        StatusBarUIManager.legacyMetricAccessibilityLabel(
+            for: metricType,
+            profileName: "Work",
+            usage: usage ?? singleProfileUsage(),
+            apiUsage: singleProfileAPIUsage(),
+            showRemaining: false,
+            attention: attention
+        )
+    }
+
+    /// Single-profile mode puts one status item on screen per enabled
+    /// metric — up to three at once. A label that named only the provider
+    /// and the profile would be the same sentence three times over, which
+    /// identifies none of them and is worse than the silence it replaces.
+    func testSingleProfileLabelNamesItsMetricAndItsProfile() {
+        let labels = MenuBarMetricType.allCases.map {
+            singleProfileLabel(for: $0)
+        }
+        for (metricType, label) in zip(MenuBarMetricType.allCases, labels) {
+            XCTAssertTrue(
+                label.contains(
+                    StatusBarUIManager.legacyMetricName(for: metricType)
+                ),
+                "the \(metricType) label did not name its metric: \(label)"
+            )
+            XCTAssertTrue(
+                label.contains("Work"),
+                "the \(metricType) label did not name the profile: \(label)"
+            )
+        }
+        XCTAssertEqual(
+            Set(labels).count,
+            MenuBarMetricType.allCases.count,
+            "two menu bar items would announce themselves identically"
+        )
+    }
+
+    /// The point of the whole change: the dot is deliberately one dot for
+    /// both credentials, so if the words do not name which one, nothing
+    /// does — and half the people who read it go to the wrong Settings
+    /// screen.
+    func testSingleProfileLabelNamesWhichCredentialIsBroken() {
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let other: MenuBarAttentionSignal.Credential =
+                credential == .claudeAI ? .claudeCode : .claudeAI
+            for metricType in MenuBarMetricType.allCases {
+                let label = singleProfileLabel(
+                    for: metricType,
+                    attention: credential
+                )
+                XCTAssertTrue(
+                    label.contains(
+                        StatusBarUIManager.attentionStateText(credential)
+                    ),
+                    "the \(metricType) label did not name \(credential): "
+                        + label
+                )
+                XCTAssertFalse(
+                    label.contains(
+                        StatusBarUIManager.attentionStateText(other)
+                    ),
+                    "the \(metricType) label blamed the credential that is "
+                        + "working: " + label
+                )
+            }
+        }
+    }
+
+    /// The two credentials really do produce two different labels here, not
+    /// just two code paths that end up saying the same thing.
+    func testTheTwoCredentialsProduceDifferentSingleProfileLabels() {
+        for metricType in MenuBarMetricType.allCases {
+            XCTAssertNotEqual(
+                singleProfileLabel(for: metricType, attention: .claudeAI),
+                singleProfileLabel(for: metricType, attention: .claudeCode)
+            )
+        }
+    }
+
+    /// The mirror: a profile with nothing wrong must not gain the wording
+    /// just because the render pass ran again. A permanent complaint on a
+    /// working profile is the same crying-wolf failure the marker avoids,
+    /// and there are now two ways to commit it.
+    func testUnmarkedSingleProfileLabelNamesNeitherCredential() {
+        for metricType in MenuBarMetricType.allCases {
+            let label = singleProfileLabel(for: metricType)
+            for credential: MenuBarAttentionSignal.Credential in [
+                .claudeAI, .claudeCode
+            ] {
+                XCTAssertFalse(
+                    label.contains(
+                        StatusBarUIManager.attentionStateText(credential)
+                    ),
+                    "a working profile was told \(credential) needs "
+                        + "attention: " + label
+                )
+            }
+        }
+    }
+
+    /// Every label resolves to real text rather than falling through to a
+    /// localization key, which is how a missing translation would reach a
+    /// tooltip.
+    func testSingleProfileLabelIsTranslatedNotAKey() {
+        for metricType in MenuBarMetricType.allCases {
+            let label = singleProfileLabel(
+                for: metricType,
+                attention: .claudeCode
+            )
+            XCTAssertFalse(label.isEmpty)
+            for fragment in ["appearance.metric.", "menubar.accessibility."] {
+                XCTAssertFalse(
+                    label.contains(fragment),
+                    "\(label) fell through to a localization key"
+                )
+            }
+        }
+    }
+
+    /// A window nobody read is said in words. The legacy single-profile ICON
+    /// still draws `0%` in that case, which is a separate defect in
+    /// `MenuBarIconRenderer.getMetricData`; the label is not the place to
+    /// repeat it, and doing so would have hidden it.
+    func testSingleProfileValueSaysNoReadingRatherThanZeroPercent() {
+        let unread = StatusBarUIManager.legacyMetricAccessibilityValue(
+            for: .session,
+            usage: singleProfileUsage(sessionAvailable: false),
+            apiUsage: singleProfileAPIUsage(),
+            showRemaining: false
+        )
+        let measured = StatusBarUIManager.legacyMetricAccessibilityValue(
+            for: .session,
+            usage: singleProfileUsage(),
+            apiUsage: singleProfileAPIUsage(),
+            showRemaining: false
+        )
+        XCTAssertFalse(
+            unread.contains("0%"),
+            "VoiceOver must not read a fabricated 0% for a window nobody "
+                + "measured. Got: " + unread
+        )
+        XCTAssertTrue(measured.contains("42%"))
+        XCTAssertNotEqual(unread, measured)
+    }
+
+    /// An unlinked API console is the one unknown the icon also refuses —
+    /// it draws "N/A" — so the label says so rather than the 0% that
+    /// `getMetricData` substitutes to keep the drawing code total.
+    func testSingleProfileCreditsValueSaysNoReadingWithNoAPIUsage() {
+        let value = StatusBarUIManager.legacyMetricAccessibilityValue(
+            for: .api,
+            usage: singleProfileUsage(),
+            apiUsage: nil,
+            showRemaining: false
+        )
+        XCTAssertFalse(value.contains("0%"), value)
+        XCTAssertFalse(value.isEmpty)
+    }
+
+    /// The default-logo item — no usage credentials, or every metric
+    /// switched off — is named too, because an unlabelled status item is
+    /// announced as nothing at all and this is the item a person meets
+    /// before the app has any data.
+    ///
+    /// It never carries the attention wording, and takes no credential to
+    /// carry: that branch returns before the marker is stamped, so a spoken
+    /// complaint there would be a claim the icon does not make.
+    func testDefaultLogoItemIsNamedAndBlamesNoCredential() {
+        let label = StatusBarUIManager.legacyDefaultLogoAccessibilityLabel(
+            profileName: "Work"
+        )
+        XCTAssertTrue(label.contains("Work"), label)
+        XCTAssertFalse(label.isEmpty)
+        XCTAssertFalse(
+            label.contains("menubar.accessibility."),
+            "\(label) fell through to a localization key"
+        )
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            XCTAssertFalse(
+                label.contains(
+                    StatusBarUIManager.attentionStateText(credential)
+                ),
+                "the unmarked default logo blamed \(credential): " + label
+            )
+        }
+    }
+
+    /// A profile that has not loaded yet degrades to "Claude, …" rather than
+    /// announcing an empty clause between two commas.
+    func testSingleProfileLabelSurvivesAMissingProfileName() {
+        for name in [nil, ""] as [String?] {
+            let label = StatusBarUIManager.legacyMetricAccessibilityLabel(
+                for: .session,
+                profileName: name,
+                usage: singleProfileUsage(),
+                apiUsage: singleProfileAPIUsage(),
+                showRemaining: false,
+                attention: nil
+            )
+            XCTAssertFalse(label.contains(", , "), label)
+            XCTAssertTrue(
+                label.contains(
+                    StatusBarUIManager.legacyMetricName(for: .session)
+                ),
+                label
+            )
+        }
     }
 }

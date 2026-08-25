@@ -212,10 +212,11 @@ final class StatusBarUIManager {
     /// VoiceOver and a tooltip have in common with the visual marker is what
     /// they must say, not how they say it.
     ///
-    /// It names WHICH credential for the same reason the marker has two
-    /// shapes: the shape distinction is worth nothing to someone who reaches
-    /// this icon through VoiceOver or a tooltip, and "sign-in needs
-    /// attention" sends half of them to the wrong Settings screen.
+    /// It names WHICH credential because nothing else does. The marker is
+    /// deliberately one dot for both — a 4pt mark is a poor place to encode
+    /// two states — so these words are the entire distinction, and
+    /// "sign-in needs attention" on its own sends half the people who read
+    /// it to the wrong Settings screen.
     static func profileAccessibilityLabel(
         _ baseLabel: String,
         isActive: Bool,
@@ -280,6 +281,163 @@ final class StatusBarUIManager {
                 : "popover.normalized.value.used",
             fallback: showRemaining ? "remaining" : "used"
         )
+    }
+
+    /// The name of one of the three metrics a single-profile menu bar can
+    /// show, taken from the catalogue the provider-neutral path already
+    /// speaks (`ProviderAppearance.claudeCatalog` builds its descriptors from
+    /// these same three keys, and the single non-Claude status item says them
+    /// through `providerMetricVisualLabel`).
+    ///
+    /// Single-profile mode puts up to three status items on screen at once,
+    /// one per enabled metric. Without the name all three would announce the
+    /// same sentence and identify none of them, which is worse than the
+    /// silence it replaces. Borrowing the existing names rather than adding a
+    /// fourth vocabulary also keeps someone from hearing "Session" for a
+    /// figure in one mode and a different word for the same figure in the
+    /// other.
+    static func legacyMetricName(
+        for metricType: MenuBarMetricType
+    ) -> String {
+        switch metricType {
+        case .session:
+            return ProviderUILocalization.text(
+                "appearance.metric.name.session",
+                fallback: "Session"
+            )
+        case .week:
+            return ProviderUILocalization.text(
+                "appearance.metric.name.week",
+                fallback: "Week"
+            )
+        case .api:
+            return ProviderUILocalization.text(
+                "appearance.metric.name.credits",
+                fallback: "Credits"
+            )
+        }
+    }
+
+    /// What the single-profile label says about one metric's figure.
+    ///
+    /// A percentage for all three, credits included, where the icon itself
+    /// draws a currency amount: three items read in a row are comparable by
+    /// ear only if they answer the same question, and the percentage is the
+    /// figure the rest of the app already attributes to this metric
+    /// (`ProviderAppearance.claudeCatalog` reports `usagePercentage` for it).
+    ///
+    /// A window with no reading behind it is stated in words, the same
+    /// judgement `sessionAccessibilityValue` makes: a fabricated "0% used"
+    /// is a claim about an account nobody measured. Note that the legacy
+    /// single-profile ICON does still draw `0%` there —
+    /// `MenuBarIconRenderer.getMetricData` has no unknown-window handling,
+    /// unlike the multi-profile renderers — so for that one case the spoken
+    /// label is more honest than the picture beside it. Correcting the
+    /// picture means changing what is drawn, which is a separate change;
+    /// repeating its mistake here would only have made the defect harder to
+    /// find.
+    static func legacyMetricAccessibilityValue(
+        for metricType: MenuBarMetricType,
+        usage: ClaudeUsage,
+        apiUsage: APIUsage?,
+        showRemaining: Bool
+    ) -> String {
+        let usedPercentage: Double?
+        switch metricType {
+        case .session:
+            usedPercentage = usage.readableSessionPercentage
+        case .week:
+            usedPercentage = usage.readableWeeklyPercentage
+        case .api:
+            // No API reading at all is the one unknown the icon also
+            // refuses: it draws "N/A" rather than a number.
+            usedPercentage = apiUsage?.usagePercentage
+        }
+        guard let usedPercentage else {
+            return ProviderUILocalization.text(
+                "menubar.accessibility.state.no_data",
+                fallback: "no usage data"
+            )
+        }
+        let display = UsageStatusCalculator.getDisplayPercentage(
+            usedPercentage: usedPercentage,
+            showRemaining: showRemaining
+        )
+        return "\(Int(display.rounded()))% "
+            + usageModeText(showRemaining: showRemaining)
+    }
+
+    /// The whole label and tooltip for one single-profile Claude status item.
+    ///
+    /// These items had neither, and never have: `updateAllButtons` and
+    /// `updateButton` set an image and stopped. Every other status item in
+    /// the app names itself, so a person running one Claude profile — the
+    /// common case — saw the attention dot and had nothing anywhere telling
+    /// them which of the profile's two credentials it was about. Hovering
+    /// said nothing and VoiceOver said nothing, which for that person is the
+    /// same as the feature not existing: the dot is deliberately one dot for
+    /// both credentials, so the words carry the entire distinction.
+    ///
+    /// Assembled in the multi-profile label's order — provider, profile,
+    /// figure, then state — so the two modes read alike, with the metric
+    /// name inserted before the figure because this mode shows up to three
+    /// items at once.
+    static func legacyMetricAccessibilityLabel(
+        for metricType: MenuBarMetricType,
+        profileName: String?,
+        usage: ClaudeUsage,
+        apiUsage: APIUsage?,
+        showRemaining: Bool,
+        attention: MenuBarAttentionSignal.Credential?
+    ) -> String {
+        let base = legacyLabelPrefix(profileName: profileName)
+            + legacyMetricName(for: metricType) + ", "
+            + legacyMetricAccessibilityValue(
+                for: metricType,
+                usage: usage,
+                apiUsage: apiUsage,
+                showRemaining: showRemaining
+            )
+        return profileAccessibilityLabel(
+            base,
+            isActive: true,
+            attention: attention
+        )
+    }
+
+    /// The label for the default-logo item, which stands in when the profile
+    /// has no usage credentials or every metric is switched off.
+    ///
+    /// It gets a name for the same reason the metric items do — an
+    /// unlabelled status item is announced as nothing at all — and this is
+    /// the one item a person meets before the app has any data, which is
+    /// exactly when they are trying to work out what it is.
+    ///
+    /// It never carries the attention wording, and takes no credential to
+    /// carry. That branch returns before `marked` and so draws no dot; a
+    /// spoken complaint with no visible counterpart would be this surface
+    /// making a claim the icon does not.
+    static func legacyDefaultLogoAccessibilityLabel(
+        profileName: String?
+    ) -> String {
+        let base = legacyLabelPrefix(profileName: profileName)
+            + ProviderUILocalization.text(
+                "menubar.accessibility.state.no_data",
+                fallback: "no usage data"
+            )
+        return profileAccessibilityLabel(base, isActive: true)
+    }
+
+    /// "Claude, Work, " — the provider and, when there is one, the profile.
+    /// The name is omitted rather than replaced when no profile is loaded,
+    /// so the label degrades to "Claude, …" instead of announcing an empty
+    /// clause.
+    private static func legacyLabelPrefix(profileName: String?) -> String {
+        let provider = ProviderAppearance.forProvider(.claude).displayName
+        guard let profileName, !profileName.isEmpty else {
+            return "\(provider), "
+        }
+        return "\(provider), \(profileName), "
     }
 
     static func autosaveName(
@@ -1938,18 +2096,22 @@ final class StatusBarUIManager {
 
     /// Updates all status bar buttons based on current usage data
     ///
-    /// `needsAttention` marks the single-profile Claude icons the same way
-    /// the multi-profile path marks its own, decided by the same
+    /// `attention` marks the single-profile Claude icons the same way the
+    /// multi-profile path marks its own, decided by the same
     /// `MenuBarAttentionSignal`. Without it the marker would exist only for
     /// people running several profiles, and a signed-out account would still
     /// be invisible for everyone else.
     ///
-    /// A `Bool` rather than the credential: these paths paint an image and
-    /// nothing else, and the dot is the same dot for both credentials.
+    /// The credential and not a `Bool`, even though the drawing is identical
+    /// either way: this path also writes the label and the tooltip, and on
+    /// this surface those words are the only thing that distinguishes the
+    /// two credentials. One dot for both is a deliberate choice — a 4pt mark
+    /// is a poor place to encode two states — which is exactly what makes
+    /// the wording load-bearing rather than decorative.
     func updateAllButtons(
         usage: ClaudeUsage,
         apiUsage: APIUsage?,
-        needsAttention: Bool = false
+        attention: MenuBarAttentionSignal.Credential? = nil
     ) {
         // Get config from active profile
         let profile = ProfileManager.shared.activeClaudeProfile
@@ -1966,6 +2128,11 @@ final class StatusBarUIManager {
                 let logoImage = renderer.createDefaultAppLogo(isDarkMode: menuBarIsDark)
                 logoImage.isTemplate = true  // Let macOS handle the color
                 setButtonImage(button, image: logoImage)
+                let label = Self.legacyDefaultLogoAccessibilityLabel(
+                    profileName: profile?.name
+                )
+                button.setAccessibilityLabel(label)
+                button.toolTip = label
             }
             return
         }
@@ -2006,19 +2173,34 @@ final class StatusBarUIManager {
                 && !badgeStyle.showsTint
             button.image = Self.marked(
                 badged,
-                needsAttention: needsAttention,
+                needsAttention: attention != nil,
                 renderer: renderer,
                 isDarkMode: menuBarIsDark
             )
+            let label = Self.legacyMetricAccessibilityLabel(
+                for: metricConfig.metricType,
+                profileName: profile?.name,
+                usage: usage,
+                apiUsage: apiUsage,
+                showRemaining: config.showRemainingPercentage,
+                attention: attention
+            )
+            button.setAccessibilityLabel(label)
+            button.toolTip = label
         }
     }
 
     /// Updates a specific metric's button
+    ///
+    /// Takes the credential for the same reason `updateAllButtons` does:
+    /// this path repaints one item on its own, and a label rebuilt without
+    /// the fact would silently drop the complaint the other path had just
+    /// put there.
     func updateButton(
         for metricType: MenuBarMetricType,
         usage: ClaudeUsage,
         apiUsage: APIUsage?,
-        needsAttention: Bool = false
+        attention: MenuBarAttentionSignal.Credential? = nil
     ) {
         let metricID: MenuBarMetricID
         switch metricType {
@@ -2066,10 +2248,20 @@ final class StatusBarUIManager {
             && !badgeStyle.showsTint
         button.image = Self.marked(
             badged,
-            needsAttention: needsAttention,
+            needsAttention: attention != nil,
             renderer: renderer,
             isDarkMode: menuBarIsDark
         )
+        let label = Self.legacyMetricAccessibilityLabel(
+            for: metricType,
+            profileName: ProfileManager.shared.activeClaudeProfile?.name,
+            usage: usage,
+            apiUsage: apiUsage,
+            showRemaining: config.showRemainingPercentage,
+            attention: attention
+        )
+        button.setAccessibilityLabel(label)
+        button.toolTip = label
     }
 
     /// Stamps the attention marker when there is something to mark, and

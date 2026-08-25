@@ -2923,7 +2923,7 @@ class MenuBarManager: NSObject, ObservableObject {
                 statusBarUIManager?.updateAllButtons(
                     usage: usage,
                     apiUsage: apiUsage,
-                    needsAttention: attention(for: profile) != nil
+                    attention: attention(for: profile)
                 )
                 statusBarUIManager?.bindLegacySingleProfile(profile)
             } else {
@@ -3006,8 +3006,8 @@ class MenuBarManager: NSObject, ObservableObject {
             for: metricType,
             usage: usage,
             apiUsage: apiUsage,
-            needsAttention: profileManager.activeClaudeProfile
-                .flatMap { attention(for: $0) } != nil
+            attention: profileManager.activeClaudeProfile
+                .flatMap { attention(for: $0) }
         )
     }
 
