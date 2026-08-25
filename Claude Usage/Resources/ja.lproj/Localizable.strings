@@ -1125,6 +1125,9 @@
 "popover.normalized.credits.title" = "クレジット";
 "popover.normalized.group.empty" = "このグループの上限は報告されませんでした。";
 "popover.normalized.health.checking" = "使用状況を確認中";
+"popover.normalized.health.claude_ai_sign_in" = "Claude.ai サインインが必要";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Claude.ai サインイン要確認";
+"popover.normalized.health.claude_code_sign_in_problem" = "Claude Code サインイン要確認";
 "popover.normalized.health.degraded" = "一部のデータのみ";
 "popover.normalized.health.healthy" = "利用可能";
 "popover.normalized.health.sign_in" = "サインインが必要です";
@@ -1252,7 +1255,8 @@
 "menubar.accessibility.state.no_data" = "使用状況データなし";
 "menubar.accessibility.profile.active" = "%@、アクティブなプロファイル";
 "menubar.accessibility.profile.inactive" = "%@、非アクティブなプロファイル";
-"menubar.accessibility.state.sign_in_needs_attention" = "サインインの確認が必要";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "Claude.ai のサインインの確認が必要";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "Claude Code のサインインの確認が必要";
 "menubar.overflow.header" = "その他のプロファイル";
 "menubar.overflow.accessibility_label" = "他に%@個のプロファイル";
 "menu.provider.open_profile" = "%@を開く";

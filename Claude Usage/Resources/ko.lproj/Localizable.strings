@@ -1101,6 +1101,9 @@
 "popover.normalized.credits.title" = "크레딧";
 "popover.normalized.group.empty" = "이 그룹에 대해 보고된 한도가 없습니다.";
 "popover.normalized.health.checking" = "사용량 확인 중";
+"popover.normalized.health.claude_ai_sign_in" = "Claude.ai 로그인 필요";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Claude.ai 로그인 확인 필요";
+"popover.normalized.health.claude_code_sign_in_problem" = "Claude Code 로그인 확인 필요";
 "popover.normalized.health.degraded" = "일부 데이터만 사용 가능";
 "popover.normalized.health.healthy" = "사용 가능";
 "popover.normalized.health.sign_in" = "로그인 필요";
@@ -1228,7 +1231,8 @@
 "menubar.accessibility.state.no_data" = "사용량 데이터 없음";
 "menubar.accessibility.profile.active" = "%@, 활성 프로필";
 "menubar.accessibility.profile.inactive" = "%@, 비활성 프로필";
-"menubar.accessibility.state.sign_in_needs_attention" = "로그인 확인 필요";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "Claude.ai 로그인 확인 필요";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "Claude Code 로그인 확인 필요";
 "menubar.overflow.header" = "추가 프로필";
 "menubar.overflow.accessibility_label" = "%@개의 추가 프로필";
 "menu.provider.open_profile" = "%@ 열기";

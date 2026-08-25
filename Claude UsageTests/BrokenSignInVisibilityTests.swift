@@ -259,24 +259,202 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
+    /// The verdict names the credential for the same reason the icon does:
+    /// the two are repaired on different Settings screens, so "Sign-in needs
+    /// attention" sends half the people who read it to the wrong one.
+    func testDegradedVerdictNamesWhichCredentialFailed() {
+        let claudeAI = ProviderPopoverHeader.accountHealthText(
+            status: .degraded,
+            issue: .authenticationRequired,
+            credential: .claudeAI
+        )
+        let claudeCode = ProviderPopoverHeader.accountHealthText(
+            status: .degraded,
+            issue: .authenticationRequired,
+            credential: .claudeCode
+        )
+        let generic = ProviderPopoverHeader.accountHealthText(
+            status: .degraded,
+            issue: .authenticationRequired
+        )
+        XCTAssertNotEqual(
+            claudeAI,
+            claudeCode,
+            "both credentials got the same verdict, which is the defect "
+                + "this names its way out of"
+        )
+        XCTAssertNotEqual(claudeAI, generic)
+        XCTAssertNotEqual(claudeCode, generic)
+        for verdict in [claudeAI, claudeCode, generic] {
+            XCTAssertFalse(
+                verdict.hasPrefix("popover.normalized."),
+                "\(verdict) fell through to its localization key"
+            )
+        }
+    }
+
+    /// The more severe claude.ai verdict is named too. Leaving the worse
+    /// failure — the session key rejected outright, so every figure below is
+    /// gone rather than one row of it — as the vaguer sentence would be
+    /// exactly backwards.
+    func testSignInRequiredNamesClaudeAIWhenItIsKnownToBeClaudeAI() {
+        let named = ProviderPopoverHeader.accountHealthText(
+            status: .unauthenticated,
+            issue: nil,
+            credential: .claudeAI
+        )
+        let generic = ProviderPopoverHeader.accountHealthText(
+            status: .unauthenticated,
+            issue: nil
+        )
+        XCTAssertNotEqual(named, generic)
+        XCTAssertEqual(
+            generic,
+            NormalizedUsageStrings.localized(
+                "popover.normalized.health.sign_in",
+                default: "Sign-in required"
+            ),
+            "a provider with one credential has nothing to name, and must "
+                + "keep the wording it always had"
+        )
+        XCTAssertEqual(
+            named,
+            NormalizedUsageStrings.localized(
+                "popover.normalized.health.claude_ai_sign_in",
+                default: "Claude.ai sign-in required"
+            )
+        )
+    }
+
+    /// Naming a credential must not leak into verdicts that are not about
+    /// one. A degraded account with a missing optional figure is still
+    /// "Partial data" whoever is passed alongside it.
+    func testCredentialDoesNotChangeVerdictsThatAreNotAboutSignIn() {
+        for credential: MenuBarAttentionSignal.Credential? in [
+            .claudeAI, .claudeCode, nil
+        ] {
+            XCTAssertEqual(
+                ProviderPopoverHeader.accountHealthText(
+                    status: .degraded,
+                    issue: .optionalUsageUnavailable,
+                    credential: credential
+                ),
+                NormalizedUsageStrings.localized(
+                    "popover.normalized.health.degraded",
+                    default: "Partial data"
+                )
+            )
+            XCTAssertEqual(
+                ProviderPopoverHeader.accountHealthText(
+                    status: .healthy,
+                    issue: nil,
+                    credential: credential
+                ),
+                NormalizedUsageStrings.localized(
+                    "popover.normalized.health.healthy",
+                    default: "Available"
+                )
+            )
+        }
+    }
+
+    /// The wiring between the popover's own data and the verdict, which is
+    /// the part no string comparison above can catch: the header reads the
+    /// Claude Code verdict off the profile's usage record, and it must not
+    /// name a Claude credential on a profile that has none.
+    func testHeaderReadsTheCredentialFromTheProfilesOwnRecord() {
+        var usage = ClaudeUsage.empty
+        usage.personalExtraUsageIssue = .signInHasNoToken
+
+        XCTAssertEqual(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: usage,
+                healthStatus: .degraded
+            ),
+            .claudeCode
+        )
+        XCTAssertEqual(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: nil,
+                healthStatus: .unauthenticated
+            ),
+            .claudeAI
+        )
+        XCTAssertNil(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: nil,
+                healthStatus: .healthy
+            )
+        )
+
+        // A Codex profile has one credential, so there is nothing to name and
+        // "Claude.ai" would simply be false.
+        XCTAssertNil(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .codex,
+                claudeUsage: usage,
+                healthStatus: .unauthenticated
+            ),
+            "a non-Claude profile was told which of Claude's two "
+                + "credentials had failed"
+        )
+    }
+
+    /// `claudeAccountUnresolved` degrades the account to
+    /// `.authenticationRequired` but is deliberately not a marker, so the
+    /// header has nothing to attribute and keeps the generic wording rather
+    /// than guessing. Pinned because the two rules live in different files
+    /// and a future edit could quietly make this profile blame Claude Code.
+    func testUnresolvedClaudeAccountKeepsTheGenericVerdict() {
+        var usage = ClaudeUsage.empty
+        usage.personalExtraUsageIssue = .claudeAccountUnresolved
+        let credential = ProviderPopoverHeader.attentionCredential(
+            providerID: .claude,
+            claudeUsage: usage,
+            healthStatus: .degraded
+        )
+        XCTAssertNil(credential)
+        XCTAssertEqual(
+            ProviderPopoverHeader.accountHealthText(
+                status: .degraded,
+                issue: .authenticationRequired,
+                credential: credential
+            ),
+            NormalizedUsageStrings.localized(
+                "popover.normalized.health.sign_in_problem",
+                default: "Sign-in needs attention"
+            )
+        )
+    }
+
     // MARK: - The menu bar marker
 
-    func testMarkerIsRaisedForEveryBrokenSignIn() {
+    /// A profile has two credentials that fail independently, and the first
+    /// pass at this surface gave both of them the same "sign-in needs
+    /// attention" tooltip. The verdict has to say WHICH, or the menu bar is
+    /// telling someone that something they cannot identify is broken. The
+    /// dot itself stays one dot; the kind is what the wording is built from.
+    func testEveryBrokenSignInRaisesTheClaudeCodeKind() {
         for issue in Self.raising {
-            XCTAssertTrue(
-                MenuBarAttentionSignal.needsAttention(
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
                     hasCredentialError: false,
                     healthStatus: .degraded
                 ),
-                "\(issue) left the menu bar saying nothing at all"
+                .claudeCode,
+                "\(issue) is a Claude Code sign-in failure and the icon "
+                    + "must say so rather than blaming claude.ai"
             )
         }
     }
 
     func testMarkerIsAbsentForAHealthyProfile() {
-        XCTAssertFalse(
-            MenuBarAttentionSignal.needsAttention(
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
                 hasCredentialError: false,
                 healthStatus: .healthy
@@ -286,8 +464,8 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
 
     func testMarkerIsAbsentForSettledAndTransientStates() {
         for issue in Self.quiet {
-            XCTAssertFalse(
-                MenuBarAttentionSignal.needsAttention(
+            XCTAssertNil(
+                MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
                     hasCredentialError: false,
                     healthStatus: .degraded
@@ -302,8 +480,8 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// optional figure degrades the account too, and a dot that never goes
     /// away is a dot nobody reads.
     func testDegradedAloneDoesNotRaiseTheMarker() {
-        XCTAssertFalse(
-            MenuBarAttentionSignal.needsAttention(
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
                 hasCredentialError: false,
                 healthStatus: .degraded
@@ -312,21 +490,70 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     }
 
     /// The claude.ai half, from both signals that carry it.
-    func testMarkerIsRaisedForARejectedClaudeAICredential() {
-        XCTAssertTrue(
-            MenuBarAttentionSignal.needsAttention(
+    func testRejectedClaudeAICredentialRaisesTheClaudeAIKind() {
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
                 hasCredentialError: true,
                 healthStatus: .healthy
-            )
+            ),
+            .claudeAI
         )
-        XCTAssertTrue(
-            MenuBarAttentionSignal.needsAttention(
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
                 hasCredentialError: false,
                 healthStatus: .unauthenticated
-            )
+            ),
+            .claudeAI
         )
+    }
+
+    /// The same precedence the banner already applies, for the same reason:
+    /// the claude.ai credential produces every number on screen, the Claude
+    /// Code one produces a single row. Two surfaces disagreeing about which
+    /// failure matters more would be worse than either ordering.
+    func testClaudeAIOutranksClaudeCodeWhenBothAreBroken() {
+        for issue in Self.raising {
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: issue,
+                    hasCredentialError: true,
+                    healthStatus: .degraded
+                ),
+                .claudeAI,
+                "\(issue) with a rejected session key must name the bigger "
+                    + "loss, as the popover banner does"
+            )
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: issue,
+                    hasCredentialError: false,
+                    healthStatus: .unauthenticated
+                ),
+                .claudeAI
+            )
+        }
+    }
+
+    /// The menu-bar wording and the banner agree about which credential
+    /// comes first, not just about whether something is wrong. Asserted
+    /// against the banner itself so the two orderings cannot drift.
+    func testWordingAndBannerNameTheSameCredentialFirst() {
+        for issue in Self.raising {
+            XCTAssertEqual(
+                banner(for: issue, hasCredentialError: true),
+                .credentialError
+            )
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: issue,
+                    hasCredentialError: true,
+                    healthStatus: .degraded
+                ),
+                .claudeAI
+            )
+        }
     }
 
     /// The marker and the banner must never disagree about which states are
@@ -335,11 +562,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     func testMarkerAndBannerAgreeOnEveryState() {
         for issue in Self.raising.map(Optional.some) + Self.quiet {
             XCTAssertEqual(
-                MenuBarAttentionSignal.needsAttention(
+                MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
                     hasCredentialError: false,
                     healthStatus: .degraded
-                ),
+                ) != nil,
                 banner(for: issue) != nil,
                 "\(String(describing: issue)) is treated differently by the "
                     + "menu bar and the popover"
@@ -510,46 +737,77 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// icon. `updateMultiProfileButtons` is the one path that both marks
     /// the icon and rebuilds the label every render, so it is the one place
     /// this fact must reach both surfaces.
-    func testAttentionProfileAccessibilityLabelNamesTheProblem() {
-        let manager = retain(StatusBarUIManager())
-        defer { manager.cleanup() }
-        let profile = makeProfile(issue: .signInExpired)
-        manager.setupMultiProfile(
-            profiles: [profile],
-            target: manager,
-            action: #selector(NSObject.description)
-        )
+    ///
+    /// It has to name the credential here more than anywhere else: the shape
+    /// distinction the icon carries is worth nothing to someone reading a
+    /// tooltip, and "sign-in needs attention" sends half of them to the
+    /// wrong Settings screen.
+    func testAttentionLabelNamesWhichCredentialIsBroken() {
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let manager = retain(StatusBarUIManager())
+            defer { manager.cleanup() }
+            let profile = makeProfile(issue: .signInExpired)
+            manager.setupMultiProfile(
+                profiles: [profile],
+                target: manager,
+                action: #selector(NSObject.description)
+            )
 
-        manager.updateMultiProfileButtons(
-            profiles: [profile],
-            config: MultiProfileDisplayConfig(),
-            attentionProfileIDs: [profile.id]
-        )
+            manager.updateMultiProfileButtons(
+                profiles: [profile],
+                config: MultiProfileDisplayConfig(),
+                attention: [profile.id: credential]
+            )
 
-        guard let button = manager.button(for: profile.id) else {
-            return XCTFail("expected a status item for the marked profile")
+            guard let button = manager.button(for: profile.id) else {
+                return XCTFail("expected a status item for the marked profile")
+            }
+            let expected = StatusBarUIManager.attentionStateText(credential)
+            let other = StatusBarUIManager.attentionStateText(
+                credential == .claudeAI ? .claudeCode : .claudeAI
+            )
+            XCTAssertTrue(
+                button.accessibilityLabel()?.contains(expected) ?? false,
+                "the accessibility label did not name \(credential): "
+                    + "\(button.accessibilityLabel() ?? "nil")"
+            )
+            XCTAssertTrue(
+                button.toolTip?.contains(expected) ?? false,
+                "the tooltip did not name \(credential): "
+                    + "\(button.toolTip ?? "nil")"
+            )
+            XCTAssertFalse(
+                button.toolTip?.contains(other) ?? true,
+                "the tooltip blamed the credential that is working: "
+                    + "\(button.toolTip ?? "nil")"
+            )
         }
-        let expectedFragment = ProviderUILocalization.text(
-            "menubar.accessibility.state.sign_in_needs_attention",
-            fallback: "sign-in needs attention"
-        )
-        XCTAssertTrue(
-            button.accessibilityLabel()?.contains(expectedFragment) ?? false,
-            "the accessibility label did not name the sign-in problem: "
-                + "\(button.accessibilityLabel() ?? "nil")"
-        )
-        XCTAssertTrue(
-            button.toolTip?.contains(expectedFragment) ?? false,
-            "the tooltip did not name the sign-in problem: "
-                + "\(button.toolTip ?? "nil")"
-        )
+    }
+
+    /// The two wordings really are different sentences in every shipped
+    /// locale. Two keys that happened to translate to the same string would
+    /// leave the tooltip exactly as uninformative as the one key it replaced.
+    func testTheTwoAttentionWordingsAreDistinctAndTranslated() {
+        let claudeAI = StatusBarUIManager.attentionStateText(.claudeAI)
+        let claudeCode = StatusBarUIManager.attentionStateText(.claudeCode)
+        XCTAssertNotEqual(claudeAI, claudeCode)
+        for text in [claudeAI, claudeCode] {
+            XCTAssertFalse(text.isEmpty)
+            XCTAssertFalse(
+                text.hasPrefix("menubar.accessibility."),
+                "\(text) fell through to its localization key"
+            )
+        }
     }
 
     /// The mirror of the test above: a profile with no sign-in problem must
     /// not gain the wording just because the render pass ran again — a
     /// permanent complaint on a working profile is the same crying-wolf
-    /// failure the marker itself avoids.
-    func testUnmarkedProfileAccessibilityLabelDoesNotNameTheProblem() {
+    /// failure the marker itself avoids. Neither credential's wording, since
+    /// there are now two ways to get it wrong.
+    func testUnmarkedProfileAccessibilityLabelNamesNeitherCredential() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
         let profile = makeProfile(issue: nil)
@@ -567,14 +825,16 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         guard let button = manager.button(for: profile.id) else {
             return XCTFail("expected a status item for the profile")
         }
-        let fragment = ProviderUILocalization.text(
-            "menubar.accessibility.state.sign_in_needs_attention",
-            fallback: "sign-in needs attention"
-        )
-        XCTAssertFalse(
-            button.accessibilityLabel()?.contains(fragment) ?? true
-        )
-        XCTAssertFalse(button.toolTip?.contains(fragment) ?? true)
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let fragment = StatusBarUIManager.attentionStateText(credential)
+            XCTAssertFalse(
+                button.accessibilityLabel()?.contains(fragment) ?? true,
+                "a working profile was told \(credential) needs attention"
+            )
+            XCTAssertFalse(button.toolTip?.contains(fragment) ?? true)
+        }
     }
 
     /// `profileAccessibilityLabel` is the one function both call sites share,
@@ -586,12 +846,20 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             "Claude, r3, 2% used",
             isActive: false
         )
-        let marked = StatusBarUIManager.profileAccessibilityLabel(
-            "Claude, r3, 2% used",
-            isActive: false,
-            needsAttention: true
-        )
-        XCTAssertEqual(marked, plain + ", sign-in needs attention")
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let marked = StatusBarUIManager.profileAccessibilityLabel(
+                "Claude, r3, 2% used",
+                isActive: false,
+                attention: credential
+            )
+            XCTAssertEqual(
+                marked,
+                plain + ", "
+                    + StatusBarUIManager.attentionStateText(credential)
+            )
+        }
     }
 
     /// The active-profile underline is drawn onto a taller canvas; the marker

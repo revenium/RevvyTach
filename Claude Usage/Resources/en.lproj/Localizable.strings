@@ -1140,6 +1140,9 @@
 "popover.normalized.credits.title" = "Credits";
 "popover.normalized.group.empty" = "No limits were reported for this group.";
 "popover.normalized.health.checking" = "Checking usage";
+"popover.normalized.health.claude_ai_sign_in" = "Claude.ai sign-in required";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Check Claude.ai sign-in";
+"popover.normalized.health.claude_code_sign_in_problem" = "Check Claude Code sign-in";
 "popover.normalized.health.degraded" = "Partial data";
 "popover.normalized.health.healthy" = "Available";
 "popover.normalized.health.sign_in" = "Sign-in required";
@@ -1266,7 +1269,8 @@
 "menubar.accessibility.state.no_data" = "no usage data";
 "menubar.accessibility.profile.active" = "%@, active profile";
 "menubar.accessibility.profile.inactive" = "%@, inactive profile";
-"menubar.accessibility.state.sign_in_needs_attention" = "sign-in needs attention";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "Claude.ai sign-in needs attention";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "Claude Code sign-in needs attention";
 "menubar.overflow.header" = "More Profiles";
 "menubar.overflow.accessibility_label" = "%@ more profiles";
 "menu.provider.open_profile" = "Open %@";

@@ -78,7 +78,14 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
         "popover.normalized.health.sign_in",
         "popover.normalized.health.unsupported",
         "popover.normalized.health.checking",
-        "popover.normalized.health.sign_in_problem"
+        "popover.normalized.health.sign_in_problem",
+        // The credential-specific verdicts. They carry a product name the
+        // generic ones do not, which is exactly the kind of growth that
+        // truncates: measured here rather than assumed to fit because the
+        // shorter string above did.
+        "popover.normalized.health.claude_ai_sign_in",
+        "popover.normalized.health.claude_ai_sign_in_problem",
+        "popover.normalized.health.claude_code_sign_in_problem"
     ]
 
     /// Width the top-of-popover banner's message actually gets: the popover

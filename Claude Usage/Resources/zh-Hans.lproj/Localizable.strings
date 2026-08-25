@@ -1121,6 +1121,9 @@
 "popover.normalized.credits.title" = "额度";
 "popover.normalized.group.empty" = "此分组未报告任何限额。";
 "popover.normalized.health.checking" = "正在检查用量";
+"popover.normalized.health.claude_ai_sign_in" = "需要登录 Claude.ai";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Claude.ai 登录需要处理";
+"popover.normalized.health.claude_code_sign_in_problem" = "Claude Code 登录需要处理";
 "popover.normalized.health.degraded" = "部分数据";
 "popover.normalized.health.healthy" = "可用";
 "popover.normalized.health.sign_in" = "需要登录";
@@ -1248,7 +1251,8 @@
 "menubar.accessibility.state.no_data" = "无用量数据";
 "menubar.accessibility.profile.active" = "%@，活跃配置文件";
 "menubar.accessibility.profile.inactive" = "%@，非活跃配置文件";
-"menubar.accessibility.state.sign_in_needs_attention" = "登录需要处理";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "Claude.ai 登录需要处理";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "Claude Code 登录需要处理";
 "menubar.overflow.header" = "更多配置文件";
 "menubar.overflow.accessibility_label" = "还有%@个配置文件";
 "menu.provider.open_profile" = "打开 %@";

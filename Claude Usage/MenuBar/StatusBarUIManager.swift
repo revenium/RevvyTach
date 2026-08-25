@@ -205,16 +205,21 @@ final class StatusBarUIManager {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    /// `needsAttention` appends the same "sign-in needs attention" fact the
-    /// popover header verdict already states (`popover.normalized.health.
-    /// sign_in_problem`), so the wording names the problem rather than the
-    /// dot that represents it — the one thing VoiceOver and a tooltip have
-    /// in common with the visual marker is what they must say, not how they
-    /// say it.
+    /// `attention` appends the same credential-specific fact the popover
+    /// header verdict states (`popover.normalized.health.claude_ai_sign_in_
+    /// problem` / `…claude_code_sign_in_problem`), so the wording names the
+    /// problem rather than the dot that represents it — the one thing
+    /// VoiceOver and a tooltip have in common with the visual marker is what
+    /// they must say, not how they say it.
+    ///
+    /// It names WHICH credential for the same reason the marker has two
+    /// shapes: the shape distinction is worth nothing to someone who reaches
+    /// this icon through VoiceOver or a tooltip, and "sign-in needs
+    /// attention" sends half of them to the wrong Settings screen.
     static func profileAccessibilityLabel(
         _ baseLabel: String,
         isActive: Bool,
-        needsAttention: Bool = false
+        attention: MenuBarAttentionSignal.Credential? = nil
     ) -> String {
         let label = String(
             format: ProviderUILocalization.text(
@@ -227,11 +232,27 @@ final class StatusBarUIManager {
             ),
             baseLabel
         )
-        guard needsAttention else { return label }
-        return label + ", " + ProviderUILocalization.text(
-            "menubar.accessibility.state.sign_in_needs_attention",
-            fallback: "sign-in needs attention"
-        )
+        guard let attention else { return label }
+        return label + ", " + attentionStateText(attention)
+    }
+
+    /// The spoken and hovered form of the marker, single-sourced so the
+    /// tooltip and the accessibility label cannot drift apart.
+    static func attentionStateText(
+        _ credential: MenuBarAttentionSignal.Credential
+    ) -> String {
+        switch credential {
+        case .claudeAI:
+            return ProviderUILocalization.text(
+                "menubar.accessibility.state.claude_ai_sign_in_attention",
+                fallback: "Claude.ai sign-in needs attention"
+            )
+        case .claudeCode:
+            return ProviderUILocalization.text(
+                "menubar.accessibility.state.claude_code_sign_in_attention",
+                fallback: "Claude Code sign-in needs attention"
+            )
+        }
     }
 
     /// What the label says about the session figure. A dash on screen and a
@@ -1341,11 +1362,13 @@ final class StatusBarUIManager {
         isDarkMode: Bool,
         isActive: Bool,
         /// Whether this profile's account is signed out or rejected, decided
-        /// by `MenuBarAttentionSignal`. Defaulted to `false` so
-        /// `intendedItemWidth(for:config:isActive:)` can keep measuring
-        /// without knowing: the marker is drawn inside the existing canvas
-        /// and never changes the image's width, so the overflow plan is the
-        /// same either way.
+        /// by `MenuBarAttentionSignal`. A `Bool` and not the credential kind:
+        /// the dot is identical either way, and which credential died is said
+        /// in words by the label and the popover, not by the drawing.
+        /// Defaulted to `false` so `intendedItemWidth(for:config:isActive:)`
+        /// can keep measuring without knowing: the marker is drawn inside the
+        /// existing canvas and never changes the image's width, so the
+        /// overflow plan is the same either way.
         needsAttention: Bool = false
     ) -> ProfileMenuBarRender {
         // Get usage data for this profile. `ClaudeUsage.empty` stands for
@@ -1548,16 +1571,19 @@ final class StatusBarUIManager {
 
     /// Updates all multi-profile status items
     ///
-    /// `attentionProfileIDs` names the profiles whose account is signed out
-    /// or rejected. Purely additive to what is DRAWN: no status item is
-    /// created, removed, or reordered on account of it, because removing and
-    /// recreating an item discards AppKit's saved menu-bar position and users
-    /// lose their arrangement.
+    /// `attention` names the profiles whose account is signed out or
+    /// rejected, and for each of them WHICH of its two credentials — a
+    /// dictionary rather than a set of ids, because the marker, the tooltip
+    /// and the accessibility label all have to say which one, and a set
+    /// could only say "something". Purely additive to what is DRAWN: no
+    /// status item is created, removed, or reordered on account of it,
+    /// because removing and recreating an item discards AppKit's saved
+    /// menu-bar position and users lose their arrangement.
     func updateMultiProfileButtons(
         profiles: [Profile],
         config: MultiProfileDisplayConfig,
         activeProfileId: UUID? = nil,
-        attentionProfileIDs: Set<UUID> = []
+        attention: [UUID: MenuBarAttentionSignal.Credential] = [:]
     ) {
         guard isMultiProfileMode else { return }
 
@@ -1578,7 +1604,7 @@ final class StatusBarUIManager {
                 config: config,
                 isDarkMode: menuBarIsDark,
                 isActive: isActive,
-                needsAttention: attentionProfileIDs.contains(profile.id)
+                needsAttention: attention[profile.id] != nil
             )
             button.image = render.image
             statusItemIdentities[ObjectIdentifier(button)] =
@@ -1596,7 +1622,7 @@ final class StatusBarUIManager {
             let label = Self.profileAccessibilityLabel(
                 baseLabel,
                 isActive: isActive,
-                needsAttention: attentionProfileIDs.contains(profile.id)
+                attention: attention[profile.id]
             )
             button.setAccessibilityLabel(label)
             button.toolTip = label
@@ -1710,13 +1736,13 @@ final class StatusBarUIManager {
         config: MultiProfileDisplayConfig,
         activeClaudeProfileID: UUID?,
         isActive: (Profile) -> Bool,
-        attentionProfileIDs: Set<UUID> = []
+        attention: [UUID: MenuBarAttentionSignal.Credential] = [:]
     ) {
         updateMultiProfileButtons(
             profiles: profiles,
             config: config,
             activeProfileId: activeClaudeProfileID,
-            attentionProfileIDs: attentionProfileIDs
+            attention: attention
         )
         for presentation in presentations
         where presentation.identity.providerID != .claude {
@@ -1917,6 +1943,9 @@ final class StatusBarUIManager {
     /// `MenuBarAttentionSignal`. Without it the marker would exist only for
     /// people running several profiles, and a signed-out account would still
     /// be invisible for everyone else.
+    ///
+    /// A `Bool` rather than the credential: these paths paint an image and
+    /// nothing else, and the dot is the same dot for both credentials.
     func updateAllButtons(
         usage: ClaudeUsage,
         apiUsage: APIUsage?,

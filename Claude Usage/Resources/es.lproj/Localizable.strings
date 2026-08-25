@@ -1108,6 +1108,9 @@
 "popover.normalized.credits.title" = "Créditos";
 "popover.normalized.group.empty" = "No se reportaron límites para este grupo.";
 "popover.normalized.health.checking" = "Comprobando uso";
+"popover.normalized.health.claude_ai_sign_in" = "Requiere acceso a Claude.ai";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Revisa el acceso a Claude.ai";
+"popover.normalized.health.claude_code_sign_in_problem" = "Revisa el acceso a Claude Code";
 "popover.normalized.health.degraded" = "Datos parciales";
 "popover.normalized.health.healthy" = "Disponible";
 "popover.normalized.health.sign_in" = "Se requiere iniciar sesión";
@@ -1235,7 +1238,8 @@
 "menubar.accessibility.state.no_data" = "Sin datos de uso";
 "menubar.accessibility.profile.active" = "%@, perfil activo";
 "menubar.accessibility.profile.inactive" = "%@, perfil inactivo";
-"menubar.accessibility.state.sign_in_needs_attention" = "el inicio de sesión necesita atención";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "el inicio de sesión de Claude.ai necesita atención";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "el inicio de sesión de Claude Code necesita atención";
 "menubar.overflow.header" = "Más Perfiles";
 "menubar.overflow.accessibility_label" = "%@ perfiles más";
 "menu.provider.open_profile" = "Abrir %@";

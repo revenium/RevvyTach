@@ -1123,6 +1123,9 @@
 "popover.normalized.credits.title" = "Crediti";
 "popover.normalized.group.empty" = "Nessun limite segnalato per questo gruppo.";
 "popover.normalized.health.checking" = "Verifica dell'utilizzo in corso";
+"popover.normalized.health.claude_ai_sign_in" = "Accesso a Claude.ai richiesto";
+"popover.normalized.health.claude_ai_sign_in_problem" = "Verifica accesso a Claude.ai";
+"popover.normalized.health.claude_code_sign_in_problem" = "Verifica accesso a Claude Code";
 "popover.normalized.health.degraded" = "Dati parziali";
 "popover.normalized.health.healthy" = "Disponibile";
 "popover.normalized.health.sign_in" = "Accesso richiesto";
@@ -1252,7 +1255,8 @@
 "menubar.accessibility.state.no_data" = "Nessun dato di utilizzo";
 "menubar.accessibility.profile.active" = "%@, profilo attivo";
 "menubar.accessibility.profile.inactive" = "%@, profilo inattivo";
-"menubar.accessibility.state.sign_in_needs_attention" = "accesso da verificare";
+"menubar.accessibility.state.claude_ai_sign_in_attention" = "accesso a Claude.ai da verificare";
+"menubar.accessibility.state.claude_code_sign_in_attention" = "accesso a Claude Code da verificare";
 "menubar.overflow.header" = "Altri Profili";
 "menubar.overflow.accessibility_label" = "%@ altri profili";
 "menu.provider.open_profile" = "Apri %@";
