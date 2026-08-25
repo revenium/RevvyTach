@@ -891,6 +891,9 @@
 
 // MARK: - Status Banners
 "popover.banner.credentials_expired" = "claude.ai 拒绝了会话密钥。请在“设置 → Claude.ai”中更新。";
+"popover.banner.cli_sign_in_expired" = "此账号的 Claude Code 登录已过期。请重新登录。";
+"popover.banner.cli_signed_out" = "Claude Code 已从此处关联的账号退出登录。";
+"popover.banner.cli_sign_in_unusable" = "此账号的 Claude Code 登录无法使用。";
 "popover.banner.refresh_failed" = "刷新失败 %d 次";
 "popover.banner.updated_ago" = "%d分钟前更新";
 "popover.banner.last_success" = "上次成功刷新：%@";
@@ -1121,6 +1124,7 @@
 "popover.normalized.health.degraded" = "部分数据";
 "popover.normalized.health.healthy" = "可用";
 "popover.normalized.health.sign_in" = "需要登录";
+"popover.normalized.health.sign_in_problem" = "登录需要处理";
 "popover.normalized.health.unavailable" = "不可用";
 "popover.normalized.health.unsupported" = "不受支持的账户";
 "popover.normalized.notice.configuration" = "此配置文件需要处理后才能刷新。";

@@ -38,8 +38,56 @@ enum LegacyPopoverBanner: Equatable {
         /// `preferences` because "open Settings" is not an answer when the
         /// user has two unrelated credentials and only one of them is broken.
         case claudeAIAccount
+        /// Settings → CLI Account, where the Claude Code sign-in lives. The
+        /// other half of the same distinction: the two credentials fail
+        /// independently and each has its own screen.
+        case cliAccount
         case refresh
         case retryCredentialSave
+    }
+
+    /// The Claude Code sign-in states that are actually broken, as opposed to
+    /// the ones that merely have no member figure behind them.
+    ///
+    /// Only these three exist as a value, so a banner for a settled or
+    /// transient condition cannot be constructed at all. That is the point:
+    /// the whole v4.0.9 stream existed because the app reported settled,
+    /// healthy outcomes as failures, and a top-of-popover banner on a
+    /// correctly configured profile would be a louder version of the same
+    /// mistake.
+    enum CLISignInProblem: Equatable {
+        /// The stored sign-in is too old to renew, and Claude Code is not
+        /// holding a usable one for that account either.
+        case expired
+        /// Claude Code is signed out of the linked account: the login it left
+        /// behind carries no token at all.
+        case signedOut
+        /// The sign-in is current and still could not be made to work.
+        case unusable
+
+        /// Exhaustive on purpose, with no `default:`, so a newly added
+        /// `PersonalExtraUsageIssue` cannot compile silently into "no
+        /// banner" — nor into one. Whoever adds a case has to decide.
+        ///
+        /// `notLinked` (never connected — nothing is broken),
+        /// `differentOrganization` (a settled fact about a separate
+        /// account), `temporarilyUnavailable` (a reading that will be
+        /// retried unaided) and `claudeAccountUnresolved` (a claude.ai-side
+        /// problem, routed to that screen by the extra-usage notice) all
+        /// deliberately raise nothing.
+        init?(_ issue: ClaudeUsage.PersonalExtraUsageIssue?) {
+            switch issue {
+            case .signInExpired:
+                self = .expired
+            case .signInHasNoToken:
+                self = .signedOut
+            case .signInUnusable:
+                self = .unusable
+            case .notLinked, .differentOrganization,
+                 .temporarilyUnavailable, .claudeAccountUnresolved, nil:
+                return nil
+            }
+        }
     }
 
     /// A credential the Keychain refused, held in memory. Outranks every
@@ -48,6 +96,11 @@ enum LegacyPopoverBanner: Equatable {
     /// lost at quit.
     case credentialsNotSaved(count: Int)
     case credentialError
+    /// The profile's Claude Code account is signed out or its sign-in no
+    /// longer works. Ranked below `credentialError` on purpose: the claude.ai
+    /// credential produces every number on screen, this one produces a single
+    /// row, so when both are broken the popover names the bigger loss first.
+    case cliSignInBroken(CLISignInProblem)
     case refreshFailed(count: Int)
     case stale(minutesAgo: Int)
 
@@ -63,6 +116,11 @@ enum LegacyPopoverBanner: Equatable {
             // re-sync the CLI account instead, which can never clear this
             // banner no matter how many times it succeeds.
             return .claudeAIAccount
+        case .cliSignInBroken:
+            // The mirror image of the case above, and the same trap: Settings
+            // at large would let someone update their claude.ai session key
+            // and watch a Claude Code complaint survive it untouched.
+            return .cliAccount
         case .refreshFailed, .stale:
             return .refresh
         }
@@ -77,6 +135,26 @@ enum LegacyPopoverBanner: Equatable {
             )
         case .credentialError:
             return "popover.banner.credentials_expired".localized
+        case .cliSignInBroken(let problem):
+            // States the account fact, not the extra-usage consequence: the
+            // grey footnote at the bottom of the popover already said "your
+            // extra usage can't be read", and someone reading it had no way
+            // to learn that the account itself was signed out.
+            //
+            // The two remediable cases name the step and stop there.
+            // `adoptLiveCLILogin(for:replacing:)` re-reads whatever login
+            // Claude Code is currently holding on every refresh, so signing
+            // in again really is the whole of it — no re-sync, no restart.
+            // `.unusable` carries no instruction at all, because that read
+            // has already been attempted and failed.
+            switch problem {
+            case .expired:
+                return "popover.banner.cli_sign_in_expired".localized
+            case .signedOut:
+                return "popover.banner.cli_signed_out".localized
+            case .unusable:
+                return "popover.banner.cli_sign_in_unusable".localized
+            }
         case .refreshFailed(let count):
             return String(
                 format: "popover.banner.refresh_failed".localized,
@@ -93,6 +171,11 @@ enum LegacyPopoverBanner: Equatable {
     static func resolve(
         sessionOnlyCredentialCount: Int = 0,
         hasCredentialError: Bool,
+        /// The profile's own Claude Code verdict, straight off the last
+        /// reading. Defaulted so the call sites that are only exercising the
+        /// claude.ai-side precedence don't have to restate "no CLI problem";
+        /// `CLISignInProblem.init?` decides which values mean anything.
+        cliSignInIssue: ClaudeUsage.PersonalExtraUsageIssue? = nil,
         consecutiveRefreshFailures: Int,
         lastSuccessfulRefreshTime: Date?,
         now: Date
@@ -104,6 +187,9 @@ enum LegacyPopoverBanner: Equatable {
         }
         if hasCredentialError {
             return .credentialError
+        }
+        if let problem = CLISignInProblem(cliSignInIssue) {
+            return .cliSignInBroken(problem)
         }
         if consecutiveRefreshFailures >= 3 {
             return .refreshFailed(
@@ -383,6 +469,8 @@ struct PopoverContentView: View {
                 sessionOnlyCredentialCount:
                     profileManager.sessionOnlyCredentialProfileIDs.count,
                 hasCredentialError: manager.hasCredentialError,
+                cliSignInIssue: presentation.legacyClaudeUsage?
+                    .personalExtraUsageIssue,
                 consecutiveRefreshFailures:
                     manager.consecutiveRefreshFailures,
                 lastSuccessfulRefreshTime:
@@ -480,6 +568,18 @@ struct PopoverContentView: View {
                         "popover.banner.credentials_expired".localized,
                     color: .orange,
                     onTap: { onCredentialsBannerTap(displayedProfile?.id) }
+                )
+            case .cliSignInBroken:
+                StatusBannerView(
+                    icon: "person.crop.circle.badge.exclamationmark",
+                    message: banner.message,
+                    color: .orange,
+                    // Settings → CLI Account, matching `banner.action`.
+                    // Routing this to Settings at large is the exact bug the
+                    // claude.ai banner above was fixed for: the user arrives
+                    // at a screen with nothing on it that can clear what they
+                    // just read.
+                    onTap: navigationActions.cliAccount
                 )
             case .refreshFailed:
                 ExpandableStatusBanner(
@@ -1192,7 +1292,16 @@ struct StatusBannerView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.primary)
                 .lineLimit(2)
-            Spacer()
+                // Without this the `Spacer()` below hands the text its
+                // single-line ideal width and `lineLimit(2)` never gets a
+                // second line to use: every banner longer than ~225pt was
+                // truncated mid-word, including the existing claude.ai one
+                // ("claude.ai rejected this session ke…"). The limit is the
+                // budget the copy is measured against in
+                // `PopoverHeaderLocalizationFitTests`; this is what makes it
+                // the real one.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if onTap != nil {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
@@ -1371,6 +1480,14 @@ extension NormalizedUsagePresentation {
             return self
         case .credentialError:
             kindToStrip = .unauthenticated
+        case .cliSignInBroken:
+            // Nothing to strip. The `.degraded` notice this coexists with is
+            // raised by any degraded cause, not just this one, so removing it
+            // would hide an unrelated problem whenever a sign-in was also
+            // broken. The extra-usage footnote below stays too: it explains
+            // the organization figure the reader is looking at, which the
+            // banner says nothing about.
+            return self
         case .refreshFailed:
             kindToStrip = .refreshFailed
         case .stale:
@@ -1385,6 +1502,7 @@ extension NormalizedUsagePresentation {
             planName: planName,
             organizationName: organizationName,
             healthStatus: healthStatus,
+            healthIssue: healthIssue,
             groups: groups,
             summary: summary,
             credits: credits,

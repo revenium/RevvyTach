@@ -77,8 +77,50 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
         "popover.normalized.health.unavailable",
         "popover.normalized.health.sign_in",
         "popover.normalized.health.unsupported",
-        "popover.normalized.health.checking"
+        "popover.normalized.health.checking",
+        "popover.normalized.health.sign_in_problem"
     ]
+
+    /// Width the top-of-popover banner's message actually gets: the popover
+    /// width, less the outer inset on each side, less the banner card's own
+    /// 12pt horizontal padding, less the 12pt leading icon, the chevron, and
+    /// the 8pt gaps between them.
+    private static let bannerTextWidth =
+        PopoverDesign.width - 2 * PopoverDesign.outerInset - 2 * 12
+        - 14 - 9 - 2 * 8
+
+    /// Every message the top-of-popover banners can carry. Measured together
+    /// so a new banner is held to the same budget as the one it sits under.
+    private static let bannerKeys = [
+        "popover.banner.credentials_expired",
+        "popover.banner.cli_sign_in_expired",
+        "popover.banner.cli_signed_out",
+        "popover.banner.cli_sign_in_unusable"
+    ]
+
+    /// `StatusBannerView` gives its message `lineLimit(2)`, so the budget is
+    /// two lines of `bannerTextWidth`. Measured rather than counted: the
+    /// character-counting pass on this popover predicted two truncations and
+    /// six of nine locales truncated.
+    ///
+    /// The 0.9 factor is the wrapping allowance — a line break lands on a
+    /// word boundary, not at the exact pixel the width runs out, so a string
+    /// measuring just under 2× the width can still need a third line.
+    func testStatusBannerMessagesFitTwoLinesInEveryLocale() throws {
+        let budget = Self.bannerTextWidth * 2 * 0.9
+        for locale in Self.locales {
+            for key in Self.bannerKeys {
+                let message = try string(key, locale)
+                let measured = width(message, size: 11, weight: .medium)
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    budget,
+                    "\(locale) truncates \"\(message)\" — \(Int(measured))pt "
+                        + "against a \(Int(budget))pt two-line budget"
+                )
+            }
+        }
+    }
 
     func testAccountHealthRowFitsInEveryLocale() throws {
         for locale in Self.locales {

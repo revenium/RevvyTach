@@ -1327,7 +1327,14 @@ final class StatusBarUIManager {
         for profile: Profile,
         config: MultiProfileDisplayConfig,
         isDarkMode: Bool,
-        isActive: Bool
+        isActive: Bool,
+        /// Whether this profile's account is signed out or rejected, decided
+        /// by `MenuBarAttentionSignal`. Defaulted to `false` so
+        /// `intendedItemWidth(for:config:isActive:)` can keep measuring
+        /// without knowing: the marker is drawn inside the existing canvas
+        /// and never changes the image's width, so the overflow plan is the
+        /// same either way.
+        needsAttention: Bool = false
     ) -> ProfileMenuBarRender {
         // Get usage data for this profile. `ClaudeUsage.empty` stands for
         // "nothing has been read yet" and says so through its availability
@@ -1493,7 +1500,7 @@ final class StatusBarUIManager {
             isDarkMode: isDarkMode
         )
 
-        let finalImage: NSImage
+        var finalImage: NSImage
         if isActive {
             let underlinedImage = addGreenUnderline(to: badgedImage)
             underlinedImage.isTemplate = false
@@ -1505,6 +1512,20 @@ final class StatusBarUIManager {
             finalImage = badgedImage
         }
 
+        if needsAttention {
+            // Last, so it survives the badge and the active-profile
+            // underline instead of being drawn over by them. Template
+            // rendering is switched off for the same reason the underline
+            // above switches it off: macOS would flatten the red dot into
+            // the icon's own foreground colour and the marker would vanish.
+            let marked = renderer.applyAttentionMarker(
+                to: finalImage,
+                isDarkMode: isDarkMode
+            )
+            marked.isTemplate = false
+            finalImage = marked
+        }
+
         return ProfileMenuBarRender(
             image: finalImage,
             sessionDisplay: sessionDisplay,
@@ -1514,7 +1535,18 @@ final class StatusBarUIManager {
     }
 
     /// Updates all multi-profile status items
-    func updateMultiProfileButtons(profiles: [Profile], config: MultiProfileDisplayConfig, activeProfileId: UUID? = nil) {
+    ///
+    /// `attentionProfileIDs` names the profiles whose account is signed out
+    /// or rejected. Purely additive to what is DRAWN: no status item is
+    /// created, removed, or reordered on account of it, because removing and
+    /// recreating an item discards AppKit's saved menu-bar position and users
+    /// lose their arrangement.
+    func updateMultiProfileButtons(
+        profiles: [Profile],
+        config: MultiProfileDisplayConfig,
+        activeProfileId: UUID? = nil,
+        attentionProfileIDs: Set<UUID> = []
+    ) {
         guard isMultiProfileMode else { return }
 
         for profile in profiles
@@ -1533,7 +1565,8 @@ final class StatusBarUIManager {
                 for: profile,
                 config: config,
                 isDarkMode: menuBarIsDark,
-                isActive: isActive
+                isActive: isActive,
+                needsAttention: attentionProfileIDs.contains(profile.id)
             )
             button.image = render.image
             statusItemIdentities[ObjectIdentifier(button)] =
@@ -1663,12 +1696,14 @@ final class StatusBarUIManager {
         profiles: [Profile],
         config: MultiProfileDisplayConfig,
         activeClaudeProfileID: UUID?,
-        isActive: (Profile) -> Bool
+        isActive: (Profile) -> Bool,
+        attentionProfileIDs: Set<UUID> = []
     ) {
         updateMultiProfileButtons(
             profiles: profiles,
             config: config,
-            activeProfileId: activeClaudeProfileID
+            activeProfileId: activeClaudeProfileID,
+            attentionProfileIDs: attentionProfileIDs
         )
         for presentation in presentations
         where presentation.identity.providerID != .claude {
@@ -1863,9 +1898,16 @@ final class StatusBarUIManager {
     // MARK: - UI Updates
 
     /// Updates all status bar buttons based on current usage data
+    ///
+    /// `needsAttention` marks the single-profile Claude icons the same way
+    /// the multi-profile path marks its own, decided by the same
+    /// `MenuBarAttentionSignal`. Without it the marker would exist only for
+    /// people running several profiles, and a signed-out account would still
+    /// be invisible for everyone else.
     func updateAllButtons(
         usage: ClaudeUsage,
-        apiUsage: APIUsage?
+        apiUsage: APIUsage?,
+        needsAttention: Bool = false
     ) {
         // Get config from active profile
         let profile = ProfileManager.shared.activeClaudeProfile
@@ -1911,16 +1953,21 @@ final class StatusBarUIManager {
             )
 
             let badgeStyle = ProfileManager.shared.providerBadgeStyle
-            let image = renderer.applyProviderBadge(
+            let badged = renderer.applyProviderBadge(
                 to: renderedImage,
                 providerID: .claude,
                 style: badgeStyle,
                 isDarkMode: menuBarIsDark
             )
-            image.isTemplate = config.colorMode == .monochrome
+            badged.isTemplate = config.colorMode == .monochrome
                 && !config.showPaceMarker
                 && !badgeStyle.showsTint
-            button.image = image
+            button.image = Self.marked(
+                badged,
+                needsAttention: needsAttention,
+                renderer: renderer,
+                isDarkMode: menuBarIsDark
+            )
         }
     }
 
@@ -1928,7 +1975,8 @@ final class StatusBarUIManager {
     func updateButton(
         for metricType: MenuBarMetricType,
         usage: ClaudeUsage,
-        apiUsage: APIUsage?
+        apiUsage: APIUsage?,
+        needsAttention: Bool = false
     ) {
         let metricID: MenuBarMetricID
         switch metricType {
@@ -1965,16 +2013,41 @@ final class StatusBarUIManager {
         )
 
         let badgeStyle = ProfileManager.shared.providerBadgeStyle
-        let image = renderer.applyProviderBadge(
+        let badged = renderer.applyProviderBadge(
             to: renderedImage,
             providerID: .claude,
             style: badgeStyle,
             isDarkMode: menuBarIsDark
         )
-        image.isTemplate = config.colorMode == .monochrome
+        badged.isTemplate = config.colorMode == .monochrome
             && !config.showPaceMarker
             && !badgeStyle.showsTint
-        button.image = image
+        button.image = Self.marked(
+            badged,
+            needsAttention: needsAttention,
+            renderer: renderer,
+            isDarkMode: menuBarIsDark
+        )
+    }
+
+    /// Stamps the attention marker when there is something to mark, and
+    /// hands the image back untouched when there is not — so the ordinary
+    /// healthy render is byte-for-byte what it always was.
+    private static func marked(
+        _ image: NSImage,
+        needsAttention: Bool,
+        renderer: MenuBarIconRenderer,
+        isDarkMode: Bool
+    ) -> NSImage {
+        guard needsAttention else { return image }
+        // Same reason as the multi-profile path: template rendering would
+        // flatten the red dot into the icon's foreground colour.
+        let marked = renderer.applyAttentionMarker(
+            to: image,
+            isDarkMode: isDarkMode
+        )
+        marked.isTemplate = false
+        return marked
     }
 
     /// Get button for a specific metric (used for popover positioning)

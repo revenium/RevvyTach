@@ -893,6 +893,9 @@
 
 // MARK: - Status Banners
 "popover.banner.credentials_expired" = "claude.ai がセッションキーを拒否しました。「設定 → Claude.ai」で更新。";
+"popover.banner.cli_sign_in_expired" = "Claude Code のサインインが期限切れです。再度サインインしてください。";
+"popover.banner.cli_signed_out" = "ここにリンクされたアカウントで Claude Code がサインアウトされています。";
+"popover.banner.cli_sign_in_unusable" = "このアカウントの Claude Code のサインインが機能していません。";
 "popover.banner.refresh_failed" = "更新が%d回失敗しました";
 "popover.banner.updated_ago" = "%d分前に更新";
 "popover.banner.last_success" = "前回の更新成功: %@";
@@ -1125,6 +1128,7 @@
 "popover.normalized.health.degraded" = "一部のデータのみ";
 "popover.normalized.health.healthy" = "利用可能";
 "popover.normalized.health.sign_in" = "サインインが必要です";
+"popover.normalized.health.sign_in_problem" = "サインインの確認が必要";
 "popover.normalized.health.unavailable" = "利用不可";
 "popover.normalized.health.unsupported" = "非対応";
 "popover.normalized.notice.configuration" = "更新する前に、このプロファイルの確認が必要です。";

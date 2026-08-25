@@ -2080,6 +2080,59 @@ struct MenuBarIconRenderer {
         return result
     }
 
+    /// Stamps the "this account needs attention" marker onto a finished
+    /// menu-bar image.
+    ///
+    /// Deliberately the same size as its input, unlike `applyProviderBadge`
+    /// above. `intendedItemWidth(for:config:isActive:)` plans the overflow
+    /// split by measuring `renderProfileMenuBar`'s image before the status
+    /// item exists; a marker that changed the width would make that plan
+    /// wrong for exactly the profiles that most need to stay visible. The dot
+    /// is drawn into the top-right corner of the existing canvas instead.
+    ///
+    /// The ring is the menu bar's own foreground colour rather than a second
+    /// tint: against a red dot it reads as a deliberate separation from the
+    /// icon underneath at menu-bar size, where a 4pt dot with no outline
+    /// merges into whatever it lands on.
+    func applyAttentionMarker(
+        to image: NSImage,
+        isDarkMode: Bool
+    ) -> NSImage {
+        let size = image.size
+        let diameter: CGFloat = 4
+        guard size.width >= diameter, size.height >= diameter else {
+            return image
+        }
+
+        let result = NSImage(size: size)
+        result.lockFocus()
+        defer { result.unlockFocus() }
+
+        image.draw(
+            at: .zero,
+            from: NSRect(origin: .zero, size: size),
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+
+        let dotRect = NSRect(
+            x: size.width - diameter - 0.5,
+            y: size.height - diameter - 0.5,
+            width: diameter,
+            height: diameter
+        )
+        let ring = NSBezierPath(ovalIn: dotRect.insetBy(dx: -0.75, dy: -0.75))
+        menuBarForegroundColor(isDarkMode: isDarkMode)
+            .withAlphaComponent(0.85)
+            .setFill()
+        ring.fill()
+
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: dotRect).fill()
+
+        return result
+    }
+
     private static func badgeColor(for providerID: ProviderID) -> NSColor {
         switch providerID {
         case .claude:

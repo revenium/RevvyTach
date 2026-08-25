@@ -985,6 +985,9 @@
 
 // MARK: - Status Banners
 "popover.banner.credentials_expired" = "claude.ai rejected this session key. Update it in Settings → Claude.ai.";
+"popover.banner.cli_sign_in_expired" = "Claude Code's sign-in for this account has expired. Sign in again.";
+"popover.banner.cli_signed_out" = "Claude Code is signed out of the account linked here.";
+"popover.banner.cli_sign_in_unusable" = "This account's Claude Code sign-in isn't working.";
 "popover.banner.refresh_failed" = "Refresh failed %d times";
 "popover.banner.updated_ago" = "Updated %dm ago";
 "popover.banner.last_success" = "Last successful refresh: %@";
@@ -1140,6 +1143,7 @@
 "popover.normalized.health.degraded" = "Partial data";
 "popover.normalized.health.healthy" = "Available";
 "popover.normalized.health.sign_in" = "Sign-in required";
+"popover.normalized.health.sign_in_problem" = "Sign-in needs attention";
 "popover.normalized.health.unavailable" = "Unavailable";
 "popover.normalized.health.unsupported" = "Unsupported account";
 "popover.normalized.notice.configuration" = "This profile needs attention before it can refresh.";

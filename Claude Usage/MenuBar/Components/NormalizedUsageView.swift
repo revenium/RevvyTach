@@ -285,6 +285,11 @@ struct NormalizedUsagePresentation: Equatable {
     let planName: String?
     let organizationName: String?
     let healthStatus: ProviderHealthStatus?
+    /// What the provider said was wrong, alongside how wrong. The status
+    /// alone collapses every degraded cause into one word, and "Partial
+    /// data" was the entire on-screen account verdict for a profile whose
+    /// Claude Code account was signed out. Nil when nothing was reported.
+    let healthIssue: ProviderHealthIssue?
     let groups: [NormalizedUsageGroupPresentation]
     let summary: NormalizedUsageSummaryPresentation?
     let credits: [UsageCredit]
@@ -429,6 +434,7 @@ enum NormalizedUsagePresentationBuilder {
             healthStatus:
                 report?.health.status
                 ?? headerHealthStatus(for: emptyState),
+            healthIssue: report?.health.issue,
             groups: groups,
             summary: summary,
             credits: credits,
@@ -678,6 +684,7 @@ enum NormalizedUsagePresentationBuilder {
             planName: nil,
             organizationName: nil,
             healthStatus: nil,
+            healthIssue: nil,
             groups: [],
             summary: nil,
             credits: [],
@@ -827,17 +834,53 @@ struct ProviderPopoverHeader: View {
     /// This account's own health, in the same words every other provider's
     /// header already uses.
     private var accountHealthText: String {
-        switch presentation.healthStatus {
+        Self.accountHealthText(
+            status: presentation.healthStatus,
+            issue: presentation.healthIssue
+        )
+    }
+
+    /// A pure resolver, in the style of `LegacyPopoverBannerDetail`, so
+    /// "which verdict does this account get" is answerable in a unit test
+    /// without driving SwiftUI.
+    static func accountHealthText(
+        status: ProviderHealthStatus?,
+        issue: ProviderHealthIssue?
+    ) -> String {
+        switch status {
         case .healthy:
             return NormalizedUsageStrings.localized(
                 "popover.normalized.health.healthy",
                 default: "Available"
             )
         case .degraded:
-            return NormalizedUsageStrings.localized(
-                "popover.normalized.health.degraded",
-                default: "Partial data"
-            )
+            // "Partial data" used to be the whole verdict for every degraded
+            // cause, including a profile whose Claude Code account was signed
+            // out — which reads as a data hiccup rather than as a credential
+            // that stopped working. Name the one cause a person can act on.
+            //
+            // Exhaustive on purpose, with no `default:`, following
+            // `ClaudeUsageProviderAdapter.accountHealth`: a newly added issue
+            // must not inherit either verdict by accident.
+            switch issue {
+            case .authenticationRequired:
+                return NormalizedUsageStrings.localized(
+                    "popover.normalized.health.sign_in_problem",
+                    default: "Sign-in needs attention"
+                )
+            case .dependencyMissing, .configurationInvalid,
+                 .accountUnsupported, .transportUnavailable,
+                 .protocolMismatch, .responseInvalid,
+                 .optionalUsageUnavailable, .unknown, nil:
+                // Every other degraded cause really is partial data: a figure
+                // that did not arrive, or arrived malformed. Saying "sign-in"
+                // about any of them would put a credential complaint on a
+                // profile whose credentials are fine.
+                return NormalizedUsageStrings.localized(
+                    "popover.normalized.health.degraded",
+                    default: "Partial data"
+                )
+            }
         case .unavailable:
             return NormalizedUsageStrings.localized(
                 "popover.normalized.health.unavailable",

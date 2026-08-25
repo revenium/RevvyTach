@@ -2902,7 +2902,8 @@ class MenuBarManager: NSObject, ObservableObject {
                 profiles: profileManager.profiles,
                 config: config,
                 activeClaudeProfileID: profileManager.activeClaudeProfileID,
-                isActive: profileManager.isActive
+                isActive: profileManager.isActive,
+                attentionProfileIDs: attentionProfileIDs(among: visible)
             )
             scheduleFreshnessDeadline(for: presentations, now: now)
         } else {
@@ -2921,7 +2922,8 @@ class MenuBarManager: NSObject, ObservableObject {
             if profile.providerID == .claude {
                 statusBarUIManager?.updateAllButtons(
                     usage: usage,
-                    apiUsage: apiUsage
+                    apiUsage: apiUsage,
+                    needsAttention: needsAttention(for: profile)
                 )
                 statusBarUIManager?.bindLegacySingleProfile(profile)
             } else {
@@ -2937,6 +2939,37 @@ class MenuBarManager: NSObject, ObservableObject {
                 now: now
             )
         }
+    }
+
+    /// Which of these profiles' menu-bar icons should carry the attention
+    /// marker. Only Claude profiles are considered: the marker is drawn by
+    /// the Claude render path, and the provider-neutral path already carries
+    /// its own `ProviderMetricDisplayState`.
+    private func attentionProfileIDs(
+        among profiles: [Profile]
+    ) -> Set<UUID> {
+        Set(
+            profiles
+                .filter { $0.providerID == .claude }
+                .filter(needsAttention)
+                .map(\.id)
+        )
+    }
+
+    /// The marker decision for one profile, read from that profile's own
+    /// snapshot rather than from the popover's projection.
+    /// `hasCredentialError` describes whichever profile the popover is
+    /// currently showing, so using it here would put a dot on every Claude
+    /// icon whenever one account's session key was rejected.
+    private func needsAttention(for profile: Profile) -> Bool {
+        let snapshot = profileUsagePresentations[profile.id]
+        return MenuBarAttentionSignal.needsAttention(
+            cliSignInIssue: (snapshot?.claudeUsage ?? profile.claudeUsage)?
+                .personalExtraUsageIssue,
+            hasCredentialError:
+                snapshot?.currentFailure?.isCredentialFailure ?? false,
+            healthStatus: snapshot?.report?.health.status
+        )
     }
 
     private func scheduleFreshnessDeadline(
@@ -2968,7 +3001,9 @@ class MenuBarManager: NSObject, ObservableObject {
         statusBarUIManager?.updateButton(
             for: metricType,
             usage: usage,
-            apiUsage: apiUsage
+            apiUsage: apiUsage,
+            needsAttention: profileManager.activeClaudeProfile
+                .map(needsAttention) ?? false
         )
     }
 
