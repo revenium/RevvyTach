@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The app no longer signs you out of Claude Code.** Anthropic hands out a new
+  refresh token every time one is used, so only one holder can keep working. When
+  the app renewed an account's Claude Code sign-in it kept the new token to
+  itself, leaving the `claude` command holding one that had already been spent —
+  and the next time you ran it, it demanded a sign-in for an account you had
+  never signed out of. The renewed token is now written back into Claude Code's
+  own login. The write only happens when Claude Code is still holding the exact
+  token the app just spent, and never when it cannot be shown that the app's copy
+  is at least as new, so an account signed in somewhere else is never rolled
+  backwards.
+
 - **The menu bar now says which of an account's two sign-ins is broken.** A
   Claude profile has two credentials that fail independently and are repaired on
   different screens: the claude.ai session key, which produces every number the
