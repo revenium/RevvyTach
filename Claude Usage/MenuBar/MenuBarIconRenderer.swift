@@ -791,6 +791,27 @@ struct MenuBarIconRenderer {
 
     // MARK: - Icon Style Renderers
 
+    private func drawUnknownDash(
+        in trackRect: NSRect,
+        isDarkMode: Bool
+    ) {
+        let dashSize = NSSize(width: 8, height: 1.5)
+        let dashRect = NSRect(
+            x: trackRect.midX - dashSize.width / 2,
+            y: trackRect.midY - dashSize.height / 2,
+            width: dashSize.width,
+            height: dashSize.height
+        )
+        menuBarForegroundColor(isDarkMode: isDarkMode)
+            .withAlphaComponent(0.55)
+            .setFill()
+        NSBezierPath(
+            roundedRect: dashRect,
+            xRadius: 0.75,
+            yRadius: 0.75
+        ).fill()
+    }
+
     private func createBatteryStyle(
         metricType: MenuBarMetricType,
         metricData: MetricData,
@@ -831,8 +852,14 @@ struct MenuBarIconRenderer {
         let padding: CGFloat = 2.0
 
         // Outer container
+        let trackRect = NSRect(
+            x: xOffset + 1,
+            y: barY,
+            width: barWidth,
+            height: barHeight
+        )
         let containerPath = NSBezierPath(
-            roundedRect: NSRect(x: xOffset + 1, y: barY, width: barWidth, height: barHeight),
+            roundedRect: trackRect,
             xRadius: 2.5,
             yRadius: 2.5
         )
@@ -841,24 +868,28 @@ struct MenuBarIconRenderer {
         containerPath.stroke()
 
         // Fill level
-        let fillWidth = (barWidth - padding * 2) * percentage
-        if fillWidth > 1 {
-            let fillPath = NSBezierPath(
-                roundedRect: NSRect(
-                    x: xOffset + 1 + padding,
-                    y: barY + padding,
-                    width: fillWidth,
-                    height: barHeight - padding * 2
-                ),
-                xRadius: 1.5,
-                yRadius: 1.5
-            )
-            fillColor.setFill()
-            fillPath.fill()
+        if metricData.isUnknown {
+            drawUnknownDash(in: trackRect, isDarkMode: isDarkMode)
+        } else {
+            let fillWidth = (barWidth - padding * 2) * percentage
+            if fillWidth > 1 {
+                let fillPath = NSBezierPath(
+                    roundedRect: NSRect(
+                        x: xOffset + 1 + padding,
+                        y: barY + padding,
+                        width: fillWidth,
+                        height: barHeight - padding * 2
+                    ),
+                    xRadius: 1.5,
+                    yRadius: 1.5
+                )
+                fillColor.setFill()
+                fillPath.fill()
+            }
         }
 
         // Time-elapsed tick mark on the battery bar
-        if let fraction = timeMarkerFraction {
+        if !metricData.isUnknown, let fraction = timeMarkerFraction {
             let tickX = round(xOffset + 1 + padding + (barWidth - padding * 2) * fraction)
             let tickPath = NSBezierPath()
             tickPath.move(to: NSPoint(x: tickX, y: barY))
@@ -975,8 +1006,14 @@ struct MenuBarIconRenderer {
         let barY = (height - barHeight) / 2
 
         // Background
+        let trackRect = NSRect(
+            x: xOffset,
+            y: barY,
+            width: barWidth,
+            height: barHeight
+        )
         let bgPath = NSBezierPath(
-            roundedRect: NSRect(x: xOffset, y: barY, width: barWidth, height: barHeight),
+            roundedRect: trackRect,
             xRadius: 4,
             yRadius: 4
         )
@@ -984,43 +1021,52 @@ struct MenuBarIconRenderer {
         bgPath.fill()
 
         // Fill
-        let fillWidth = barWidth * CGFloat(metricData.percentage / 100.0)
-        if fillWidth > 1 {
-            let fillPath = NSBezierPath(
-                roundedRect: NSRect(x: xOffset, y: barY, width: fillWidth, height: barHeight),
-                xRadius: 4,
-                yRadius: 4
-            )
-            fillColor.setFill()
-            fillPath.fill()
-
-            // Time-elapsed tick mark on the progress bar
-            if let fraction = timeMarkerFraction {
-                let tickX = round(xOffset + barWidth * fraction)
-                let tickPath = NSBezierPath()
-                tickPath.move(to: NSPoint(x: tickX, y: barY))
-                tickPath.line(to: NSPoint(x: tickX, y: barY + barHeight))
-                drawPaceMarkerTick(tickPath, paceStatus: paceStatus, showPaceMarker: showPaceMarker, isDarkMode: isDarkMode)
-            }
-
-            // Draw session reset time inside the fill area if enabled and this is a session metric
-            if showNextSessionTime && metricType == .session, let resetTime = metricData.sessionResetTime {
-                let timeString = resetTime.timeRemainingHoursString() as NSString
-                let timeFont: NSFont? = NSFont.systemFont(ofSize: 5.5, weight: .medium)
-                let timeAttributes = textAttributes(
-                    font: timeFont,
-                    fallbackSize: 5.5,
-                    color: NSColor.white
+        if metricData.isUnknown {
+            drawUnknownDash(in: trackRect, isDarkMode: isDarkMode)
+        } else {
+            let fillWidth = barWidth * CGFloat(metricData.percentage / 100.0)
+            if fillWidth > 1 {
+                let fillPath = NSBezierPath(
+                    roundedRect: NSRect(
+                        x: xOffset,
+                        y: barY,
+                        width: fillWidth,
+                        height: barHeight
+                    ),
+                    xRadius: 4,
+                    yRadius: 4
                 )
+                fillColor.setFill()
+                fillPath.fill()
 
-                if let timeAttributes {
-                    let timeSize = timeString.size(withAttributes: timeAttributes)
-                    // Only draw if there's enough space in the fill area
-                    if fillWidth > timeSize.width + 2 {
-                        // Right-align the text in the fill area
-                        let timeX = xOffset + fillWidth - timeSize.width - 4
-                        let timeY = barY + (barHeight - timeSize.height) / 2
-                        timeString.draw(at: NSPoint(x: timeX, y: timeY), withAttributes: timeAttributes)
+                // Time-elapsed tick mark on the progress bar
+                if let fraction = timeMarkerFraction {
+                    let tickX = round(xOffset + barWidth * fraction)
+                    let tickPath = NSBezierPath()
+                    tickPath.move(to: NSPoint(x: tickX, y: barY))
+                    tickPath.line(to: NSPoint(x: tickX, y: barY + barHeight))
+                    drawPaceMarkerTick(tickPath, paceStatus: paceStatus, showPaceMarker: showPaceMarker, isDarkMode: isDarkMode)
+                }
+
+                // Draw session reset time inside the fill area if enabled and this is a session metric
+                if showNextSessionTime && metricType == .session, let resetTime = metricData.sessionResetTime {
+                    let timeString = resetTime.timeRemainingHoursString() as NSString
+                    let timeFont: NSFont? = NSFont.systemFont(ofSize: 5.5, weight: .medium)
+                    let timeAttributes = textAttributes(
+                        font: timeFont,
+                        fallbackSize: 5.5,
+                        color: NSColor.white
+                    )
+
+                    if let timeAttributes {
+                        let timeSize = timeString.size(withAttributes: timeAttributes)
+                        // Only draw if there's enough space in the fill area
+                        if fillWidth > timeSize.width + 2 {
+                            // Right-align the text in the fill area
+                            let timeX = xOffset + fillWidth - timeSize.width - 4
+                            let timeY = barY + (barHeight - timeSize.height) / 2
+                            timeString.draw(at: NSPoint(x: timeX, y: timeY), withAttributes: timeAttributes)
+                        }
                     }
                 }
             }
@@ -1147,7 +1193,17 @@ struct MenuBarIconRenderer {
         bgArcPath.stroke()
 
         // Progress ring (clockwise from 12 o'clock)
-        if percentage > 0 {
+        if metricData.isUnknown {
+            drawUnknownDash(
+                in: NSRect(
+                    x: xOffset,
+                    y: 0,
+                    width: circleSize,
+                    height: size
+                ),
+                isDarkMode: isDarkMode
+            )
+        } else if percentage > 0 {
             let arcPath = NSBezierPath()
             arcPath.appendArc(
                 withCenter: center,
@@ -1163,7 +1219,7 @@ struct MenuBarIconRenderer {
         }
 
         // Time-elapsed tick mark on the ring (clockwise from 12 o'clock)
-        if let fraction = timeMarkerFraction {
+        if !metricData.isUnknown, let fraction = timeMarkerFraction {
             let tickAngle = (90 - 360 * fraction) * .pi / 180
             let innerR = radius - 2.0
             let outerR = radius + 2.0
@@ -1180,7 +1236,7 @@ struct MenuBarIconRenderer {
         }
 
         // Draw S/W in the CENTER of the circle
-        if showIconName {
+        if showIconName && !metricData.isUnknown {
             let ringCenterFont: NSFont? = NSFont.systemFont(ofSize: 9, weight: .bold)
             let labelAttributes = textAttributes(
                 font: ringCenterFont,

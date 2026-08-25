@@ -574,6 +574,158 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         }
     }
 
+    func testLegacySingleProfileBarsDoNotFabricateProportionalFill()
+        throws
+    {
+        let renderer = MenuBarIconRenderer()
+        let styles: [MenuBarIconStyle] = [.battery, .progressBar, .icon]
+
+        func fixtures(
+            for metric: MenuBarMetricType,
+            sessionResetTime: Date? = nil
+        ) -> (unread: ClaudeUsage, measuredZero: ClaudeUsage) {
+            var unread = ClaudeUsage.empty
+            if let sessionResetTime {
+                unread.sessionResetTime = sessionResetTime
+            }
+            var measuredZero = unread
+            if metric == .session {
+                measuredZero.sessionPercentageAvailable = true
+            } else {
+                measuredZero.weeklyPercentageAvailable = true
+            }
+            return (unread, measuredZero)
+        }
+
+        func fingerprint(
+            _ usage: ClaudeUsage,
+            metric: MenuBarMetricType,
+            style: MenuBarIconStyle,
+            showRemaining: Bool,
+            showNextSessionTime: Bool
+        ) throws -> Data {
+            let globalConfig = MenuBarIconConfiguration(
+                colorMode: .monochrome,
+                showIconNames: true,
+                showRemainingPercentage: showRemaining,
+                showTimeMarker: false,
+                showPaceMarker: false,
+                usePaceColoring: false
+            )
+            let image = renderer.createImage(
+                for: metric,
+                config: MetricIconConfig(
+                    metricType: metric,
+                    isEnabled: true,
+                    iconStyle: style,
+                    showNextSessionTime: showNextSessionTime
+                ),
+                globalConfig: globalConfig,
+                usage: usage,
+                apiUsage: nil,
+                isDarkMode: false,
+                colorMode: globalConfig.colorMode,
+                singleColorHex: globalConfig.singleColorHex,
+                showIconName: true,
+                showNextSessionTime: showNextSessionTime
+            )
+            return try XCTUnwrap(
+                StatusBarUIManager.imageFingerprint(image)
+            )
+        }
+
+        // A: labels replace percentage text, so the bar itself must expose
+        // the difference between no reading and a measured zero.
+        for metric in [MenuBarMetricType.session, .week] {
+            let pair = fixtures(for: metric)
+            for style in styles {
+                XCTAssertNotEqual(
+                    try fingerprint(
+                        pair.unread,
+                        metric: metric,
+                        style: style,
+                        showRemaining: false,
+                        showNextSessionTime: false
+                    ),
+                    try fingerprint(
+                        pair.measuredZero,
+                        metric: metric,
+                        style: style,
+                        showRemaining: false,
+                        showNextSessionTime: false
+                    ),
+                    "\(metric) \(style): an unread bar must not look like "
+                        + "a measured 0% bar when its label is visible."
+                )
+            }
+        }
+
+        // B: a reset label must not hide the same distinction.
+        let resetPair = fixtures(
+            for: .session,
+            sessionResetTime: Date().addingTimeInterval(7_200)
+        )
+        for style in styles {
+            XCTAssertNotEqual(
+                try fingerprint(
+                    resetPair.unread,
+                    metric: .session,
+                    style: style,
+                    showRemaining: false,
+                    showNextSessionTime: true
+                ),
+                try fingerprint(
+                    resetPair.measuredZero,
+                    metric: .session,
+                    style: style,
+                    showRemaining: false,
+                    showNextSessionTime: true
+                ),
+                "\(style): a reset label must not make an unread session "
+                    + "bar look like measured 0%."
+            )
+        }
+
+        // C: unknown has no direction to invert. Known zero, by contrast,
+        // legitimately becomes a full bar in remaining mode.
+        for metric in [MenuBarMetricType.session, .week] {
+            let pair = fixtures(for: metric)
+            for style in styles {
+                let unreadRemaining = try fingerprint(
+                    pair.unread,
+                    metric: metric,
+                    style: style,
+                    showRemaining: true,
+                    showNextSessionTime: false
+                )
+                XCTAssertEqual(
+                    try fingerprint(
+                        pair.unread,
+                        metric: metric,
+                        style: style,
+                        showRemaining: false,
+                        showNextSessionTime: false
+                    ),
+                    unreadRemaining,
+                    "\(metric) \(style): unknown must render identically "
+                        + "in used and remaining modes."
+                )
+                XCTAssertNotEqual(
+                    unreadRemaining,
+                    try fingerprint(
+                        pair.measuredZero,
+                        metric: metric,
+                        style: style,
+                        showRemaining: true,
+                        showNextSessionTime: false
+                    ),
+                    "\(metric) \(style): unknown must not look like the "
+                        + "legitimate 100% remaining state."
+                )
+            }
+        }
+    }
+
     func testNeverLoadedProfileRendersDifferentlyFromZeroPercentProfile() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
