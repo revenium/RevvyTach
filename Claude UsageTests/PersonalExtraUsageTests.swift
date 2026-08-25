@@ -1117,6 +1117,114 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    // MARK: - A rotation must reach the store with its provenance
+
+    /// The seam that decides whether Claude Code stays signed in.
+    ///
+    /// Anthropic rotates the refresh token on every use, so an ordinary
+    /// timer-driven renewal spends the token Claude Code may itself be
+    /// holding. The store can only write the rotated token back into the
+    /// CLI's own Keychain item if it is told *which* credential was spent —
+    /// so this asserts the spent credential reaches the writer, not merely
+    /// that a renewal was persisted. Nothing else in the suite would notice
+    /// if that argument were dropped on the way through.
+    func testARenewalHandsTheSpentCredentialToTheCredentialWriter()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: stored,
+            in: store
+        )
+        let renewals = RenewedCredentialRecorder()
+        let service = try makeService(
+            profileID: profileID,
+            store: store,
+            renewals: renewals
+        )
+        let profile = try seededProfile(profileID)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        _ = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        let write = try XCTUnwrap(renewals.writes.first)
+        XCTAssertEqual(write.profileID, profileID)
+        XCTAssertEqual(
+            write.rotatedFrom,
+            stored,
+            "the credential whose refresh token was spent must reach the "
+                + "store, or Claude Code's copy of that token is rotated "
+                + "away with nothing written back"
+        )
+    }
+
+    /// Adoption spends no refresh token — it copies the login Claude Code is
+    /// already holding — so it must NOT claim a rotation. Claiming one would
+    /// send the store to rewrite a working CLI login for no reason.
+    func testAnAdoptedLoginClaimsNoRotation() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals
+        )
+
+        // A 400 from the token endpoint is what sends the app down the
+        // adoption path rather than the renewal path.
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        _ = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        let write = try XCTUnwrap(
+            renewals.writes.first { $0.json == live }
+        )
+        XCTAssertNil(
+            write.rotatedFrom,
+            "adoption spends no refresh token, so it must not report one"
+        )
+    }
+
     // MARK: - Adopting the live CLI login
 
     /// The reported bug: the app's stored copy can no longer be renewed

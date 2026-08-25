@@ -409,4 +409,262 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
 
         XCTAssertEqual(runner.verbs, ["add-generic-password"])
     }
+
+    // MARK: - A rotation must not invalidate Claude Code's own login
+
+    /// Anthropic rotates the refresh token on every use, so the moment this
+    /// app renews a credential Claude Code is also holding, the CLI's copy is
+    /// dead and the next `claude` command demands a fresh sign-in. These tests
+    /// pin the repair — and, just as importantly, the three cases where the
+    /// app must keep its hands off Claude Code's login entirely.
+
+    private func credentials(
+        accessToken: String = "abc",
+        refreshToken: String,
+        expiresAtMillis: Double
+    ) -> String {
+        #"{"claudeAiOauth":{"accessToken":"\#(accessToken)","refreshToken":"\#(refreshToken)","expiresAt":\#(expiresAtMillis)}}"#
+    }
+
+    private static let rotationAccountName = "rotation-test-account"
+
+    /// The Keychain item Claude Code keeps that account's login in. Derived
+    /// the same way production derives it, so a test asserting on the write
+    /// is asserting it landed on the account's own item and not the shared
+    /// one.
+    private var rotationAccountServiceName: String {
+        ClaudeCodeSyncService.serviceName(
+            forConfigurationDirectory: ClaudeCodeSyncService
+                .configurationDirectory(
+                    forAccountNamed: Self.rotationAccountName
+                ).path
+        )
+    }
+
+    @MainActor
+    private func seedProfileForRotation(in store: ProfileStore) throws -> UUID {
+        let profile = Profile(
+            name: "Rotation Test",
+            hasCliAccount: true,
+            cliAccountName: Self.rotationAccountName
+        )
+        try seedProfilesForTesting([profile], in: store)
+        return profile.id
+    }
+
+    /// The fix. The app spent the refresh token Claude Code was relying on,
+    /// so the rotated one has to be written back into Claude Code's own
+    /// Keychain item or that account is signed out without ever being told
+    /// why.
+    @MainActor
+    func testRotatedTokenIsWrittenBackIntoClaudeCodesOwnLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let renewed = credentials(
+            accessToken: "renewed",
+            refreshToken: "rotated",
+            expiresAtMillis: 2_000
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            // Claude Code is holding the very credential we just spent.
+            systemCredentialsReader: { spent }
+        )
+
+        try service.saveRefreshedCredentials(
+            renewed,
+            for: profileId,
+            rotatedFrom: spent
+        )
+
+        XCTAssertEqual(
+            runner.verbs,
+            ["add-generic-password"],
+            "The rotated token must be written back into Claude Code's login"
+        )
+        let write = try XCTUnwrap(runner.invocations.first)
+        XCTAssertTrue(
+            write.contains(renewed),
+            "Claude Code must receive the renewed credential: \(write)"
+        )
+        XCTAssertTrue(
+            write.contains(rotationAccountServiceName),
+            "The write must land on this account's own Keychain item, not "
+                + "the shared one: \(write)"
+        )
+    }
+
+    /// Claude Code is on a different login — signed in again since, or never
+    /// sharing this credential at all. Nothing it holds was invalidated by
+    /// this renewal, so its login is not ours to rewrite.
+    @MainActor
+    func testClaudeCodeIsLeftAloneWhenItHoldsADifferentLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let spent = credentials(refreshToken: "ours", expiresAtMillis: 1_000)
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: {
+                self.credentials(
+                    refreshToken: "claude-codes-own",
+                    expiresAtMillis: 1_500
+                )
+            }
+        )
+
+        try service.saveRefreshedCredentials(
+            credentials(
+                accessToken: "renewed",
+                refreshToken: "rotated",
+                expiresAtMillis: 2_000
+            ),
+            for: profileId,
+            rotatedFrom: spent
+        )
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A login Claude Code did not share must never be overwritten: "
+                + "\(runner.invocations)"
+        )
+    }
+
+    /// No refresh token was spent — this is the adoption path, which copies
+    /// Claude Code's own live login as-is. There is nothing to mirror back,
+    /// and writing anyway would be a pointless rewrite of a working login.
+    @MainActor
+    func testNonRotatingSaveNeverTouchesClaudeCodesLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: {
+                self.credentials(refreshToken: "live", expiresAtMillis: 1_000)
+            }
+        )
+
+        try service.saveRefreshedCredentials(
+            credentials(refreshToken: "live", expiresAtMillis: 1_000),
+            for: profileId
+        )
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A save that spent no refresh token must not write to Claude "
+                + "Code: \(runner.invocations)"
+        )
+    }
+
+    /// The same fail-closed rule `applyProfileCredentials` obeys: freshness
+    /// that cannot be established is not freshness. Here the live login
+    /// carries no `expiresAt` at all, so there is no way to prove the write
+    /// would not roll Claude Code backwards — and it must be declined.
+    @MainActor
+    func testWriteBackIsDeclinedWhenFreshnessCannotBeEstablished() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: {
+                #"{"claudeAiOauth":{"accessToken":"live","refreshToken":"shared"}}"#
+            }
+        )
+
+        try service.saveRefreshedCredentials(
+            credentials(
+                accessToken: "renewed",
+                refreshToken: "rotated",
+                expiresAtMillis: 2_000
+            ),
+            for: profileId,
+            rotatedFrom: spent
+        )
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "Unprovable freshness must decline the write, not permit it: "
+                + "\(runner.invocations)"
+        )
+    }
+
+    /// Claude Code's login is demonstrably newer than what we would write.
+    /// Writing would sign that account backwards, which is the one outcome
+    /// worse than leaving it alone.
+    @MainActor
+    func testWriteBackNeverRollsClaudeCodeBackwards() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: {
+                self.credentials(
+                    accessToken: "live",
+                    refreshToken: "shared",
+                    expiresAtMillis: 9_000
+                )
+            }
+        )
+
+        try service.saveRefreshedCredentials(
+            credentials(
+                accessToken: "renewed",
+                refreshToken: "rotated",
+                expiresAtMillis: 2_000
+            ),
+            for: profileId,
+            rotatedFrom: spent
+        )
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A newer Claude Code login must never be rolled back: "
+                + "\(runner.invocations)"
+        )
+    }
+
+    /// A profile with no linked Claude Code account has no CLI login to keep
+    /// in sync, and the unscoped write would land on the shared item — which
+    /// on a multi-account machine belongs to somebody else.
+    @MainActor
+    func testWriteBackIsSkippedForAProfileWithNoLinkedAccount() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profile = Profile(name: "No CLI Account")
+        try seedProfilesForTesting([profile], in: store)
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { spent }
+        )
+
+        try service.saveRefreshedCredentials(
+            credentials(
+                accessToken: "renewed",
+                refreshToken: "rotated",
+                expiresAtMillis: 2_000
+            ),
+            for: profile.id,
+            rotatedFrom: spent
+        )
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "With no linked account there is no CLI login to repair: "
+                + "\(runner.invocations)"
+        )
+    }
 }

@@ -779,9 +779,7 @@ class ClaudeCodeSyncService {
         // reason about.
         do {
             if let live = try readSystemCredentials(forAccountNamed: accountName) {
-                guard let liveExpiry = extractTokenExpiry(from: live),
-                      let mineExpiry = extractTokenExpiry(from: jsonData),
-                      mineExpiry >= liveExpiry else {
+                guard isAtLeastAsFresh(jsonData, as: live) else {
                     LoggingService.shared.log(
                         "Cannot establish that the stored CLI credential is "
                         + "at least as new as this account's live Claude "
@@ -806,6 +804,21 @@ class ClaudeCodeSyncService {
         LoggingService.shared.log("✅ Applied profile CLI credentials to system: \(profileId)")
     }
 
+    /// Whether `candidate` may be written over `live` without signing the
+    /// account backwards.
+    ///
+    /// Fails CLOSED: a missing `expiresAt` on either side means "cannot
+    /// establish", never "probably fine". Every path that writes into Claude
+    /// Code's own Keychain item asks this first, because the cost of getting
+    /// it wrong is a working CLI login replaced by an older one — and the two
+    /// callers must not be able to drift apart on what "safe" means.
+    func isAtLeastAsFresh(_ candidate: String, as live: String) -> Bool {
+        guard let liveExpiry = extractTokenExpiry(from: live),
+              let candidateExpiry = extractTokenExpiry(from: candidate)
+        else { return false }
+        return candidateExpiry >= liveExpiry
+    }
+
     /// Persists a credential blob the app renewed itself.
     ///
     /// Same verified Keychain write as every other credential path here, with
@@ -813,9 +826,15 @@ class ClaudeCodeSyncService {
     /// rotation is not a change of account, and `.credentialsChanged` triggers
     /// a usage refresh — which is what asked for the rotation in the first
     /// place.
+    ///
+    /// `rotatedFrom` is the credential whose refresh token was spent to obtain
+    /// `jsonData`. Supplying it is what lets Claude Code's own login be kept
+    /// working across the rotation; `nil` means no refresh token was spent —
+    /// an adopted live login, say — and nothing needs mirroring.
     func saveRefreshedCredentials(
         _ jsonData: String,
-        for profileId: UUID
+        for profileId: UUID,
+        rotatedFrom spentCredential: String? = nil
     ) throws {
         guard let data = jsonData.data(using: .utf8),
               (try? JSONSerialization.jsonObject(with: data))
@@ -826,9 +845,121 @@ class ClaudeCodeSyncService {
             throw ClaudeCodeError.invalidJSON
         }
         try profileStore.saveCLIProfileCredential(jsonData, for: profileId)
+
+        // The account name is here for the log as much as for the write-back.
+        // Nothing recorded which Claude Code account a rotation belonged to,
+        // so when a member was asked to sign in again there was no way to tell
+        // from the log whether this app had rotated the token out from under
+        // them or the login had simply aged out on its own.
+        let accountName = profileStore.loadProfiles()
+            .first { $0.id == profileId }?
+            .cliAccountName
         LoggingService.shared.log(
-            "Stored a renewed CLI access token for profile: \(profileId)"
+            "Stored a renewed CLI access token for profile: \(profileId) "
+            + "(\(Self.describeAccount(accountName)))"
         )
+
+        if let spentCredential {
+            propagateRotatedTokenToClaudeCode(
+                jsonData,
+                rotatedFrom: spentCredential,
+                accountName: accountName
+            )
+        }
+    }
+
+    /// Names a linked Claude Code account for a log line.
+    static func describeAccount(_ accountName: String?) -> String {
+        guard let accountName, !accountName.isEmpty else {
+            return "no linked Claude Code account"
+        }
+        return "Claude Code account '\(accountName)'"
+    }
+
+    /// Keeps Claude Code's own login working after this app spends its refresh
+    /// token.
+    ///
+    /// Anthropic rotates the refresh token on every use. When the credential
+    /// the app just renewed is the one Claude Code is itself relying on, that
+    /// renewal invalidates the CLI's login: the token in Claude Code's Keychain
+    /// item has been rotated away, and the next `claude` command asks the
+    /// person to sign in again — with nothing in either program's output
+    /// connecting the demand to the app that caused it. An app whose whole job
+    /// is watching credential health must not be the thing degrading it, so
+    /// the rotated token is mirrored back rather than kept to ourselves.
+    ///
+    /// Ownership is established at the moment it matters rather than recorded
+    /// when the credential was adopted: Claude Code depends on this credential
+    /// exactly when its live login still carries the refresh token we just
+    /// spent. A flag recorded at adoption time would go stale the moment that
+    /// account was signed in again anywhere else, and a stale "the CLI relies
+    /// on this" is an instruction to overwrite a login we no longer understand.
+    ///
+    /// Two guards, both failing closed:
+    ///
+    /// - the live login must carry the refresh token that was spent, so a
+    ///   Claude Code that has moved on is never rewritten from here;
+    /// - the renewed credential must be provably at least as new as the live
+    ///   login (`isAtLeastAsFresh`), the same protection `applyProfileCredentials`
+    ///   uses, so this can never roll Claude Code backwards.
+    ///
+    /// Everything here is best effort and never throws. The renewed token is
+    /// already stored against the profile by the time this runs; failing to
+    /// mirror it leaves Claude Code exactly where the old code left it, which
+    /// is bad but no worse than not trying.
+    private func propagateRotatedTokenToClaudeCode(
+        _ renewed: String,
+        rotatedFrom spent: String,
+        accountName: String?
+    ) {
+        guard let accountName, !accountName.isEmpty else { return }
+        guard let spentRefreshToken = ClaudeCLITokenRefresher.refreshToken(
+            in: spent
+        ) else { return }
+
+        let live: String?
+        do {
+            live = try readSystemCredentials(forAccountNamed: accountName)
+        } catch {
+            LoggingService.shared.log(
+                "Could not read the live Claude Code login for "
+                + "\(Self.describeAccount(accountName)) after renewing its "
+                + "token; leaving it unchanged: \(error.localizedDescription)"
+            )
+            return
+        }
+
+        // No live login at all means Claude Code is holding nothing this
+        // renewal could have invalidated, so there is nothing to repair.
+        guard let live else { return }
+
+        guard ClaudeCLITokenRefresher.refreshToken(in: live) == spentRefreshToken
+        else { return }
+
+        guard isAtLeastAsFresh(renewed, as: live) else {
+            LoggingService.shared.log(
+                "Cannot establish that the renewed token is at least as new "
+                + "as the live login for \(Self.describeAccount(accountName)); "
+                + "leaving that login in place rather than risking a rollback"
+            )
+            return
+        }
+
+        do {
+            try writeSystemCredentials(renewed, forAccountNamed: accountName)
+            LoggingService.shared.log(
+                "Mirrored the rotated token back into Claude Code's own login "
+                + "for \(Self.describeAccount(accountName)), so the CLI keeps "
+                + "working after the app spent its refresh token"
+            )
+        } catch {
+            LoggingService.shared.logWarning(
+                "Could not write the rotated token back into Claude Code's "
+                + "login for \(Self.describeAccount(accountName)): "
+                + "\(error.localizedDescription). Claude Code may ask for a "
+                + "fresh sign-in."
+            )
+        }
     }
 
     /// Removes CLI credentials from profile (doesn't affect system)

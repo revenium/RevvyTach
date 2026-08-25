@@ -294,7 +294,9 @@ struct UnreachableSecurityRunner: SecurityCommandRunning {
 ///   find-generic-password`.
 /// - `renewedCredentialWriter` resolves to
 ///   `ClaudeCodeSyncService.shared.saveRefreshedCredentials`, which writes
-///   through `ProfileStore.shared`.
+///   through `ProfileStore.shared` — and, when a refresh token was spent, can
+///   go on to write Claude Code's own Keychain item through
+///   `/usr/bin/security`.
 ///
 /// The third one is the expensive one, and it is the one with no argument at
 /// the call site to hint that it exists. Persisting a renewed token loads
@@ -318,6 +320,11 @@ func makeIsolatedClaudeAPIService(
 ) -> ClaudeAPIService {
     let cliSync = ClaudeCodeSyncService(
         profileStore: store,
+        // The write-back that keeps Claude Code's login working reads the
+        // account's live login first. Left to its default that read reaches
+        // the developer's real `~/.claude/.credentials.json`; answering `nil`
+        // keeps the whole seam inside the test.
+        systemCredentialsReader: { nil },
         securityRunner: UnreachableSecurityRunner()
     )
     return ClaudeAPIService(
@@ -325,9 +332,13 @@ func makeIsolatedClaudeAPIService(
         systemCredentialsReader: systemCredentials,
         // Captures `cliSync` and `renewals`, which is what keeps them alive
         // for the service's lifetime.
-        renewedCredentialWriter: { json, profileID in
-            renewals?.record(json, for: profileID)
-            try cliSync.saveRefreshedCredentials(json, for: profileID)
+        renewedCredentialWriter: { json, rotatedFrom, profileID in
+            renewals?.record(json, rotatedFrom: rotatedFrom, for: profileID)
+            try cliSync.saveRefreshedCredentials(
+                json,
+                for: profileID,
+                rotatedFrom: rotatedFrom
+            )
         }
     )
 }
@@ -343,10 +354,21 @@ func makeIsolatedClaudeAPIService(
 /// overwritten later in the same refresh.
 @MainActor
 final class RenewedCredentialRecorder {
-    private(set) var writes: [(json: String, profileID: UUID)] = []
+    /// `rotatedFrom` is the credential whose refresh token was spent, or
+    /// `nil` when none was. It is recorded because it is the whole difference
+    /// between a renewal that leaves Claude Code signed out and one that does
+    /// not: without it reaching the store, the rotated token is never written
+    /// back into the CLI's own Keychain item.
+    private(set) var writes: [
+        (json: String, rotatedFrom: String?, profileID: UUID)
+    ] = []
 
-    func record(_ json: String, for profileID: UUID) {
-        writes.append((json, profileID))
+    func record(
+        _ json: String,
+        rotatedFrom: String? = nil,
+        for profileID: UUID
+    ) {
+        writes.append((json, rotatedFrom, profileID))
     }
 
     func carriesAccessToken(_ token: String, for profileID: UUID) -> Bool {

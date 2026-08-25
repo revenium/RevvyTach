@@ -59,11 +59,13 @@ enum ClaudeCLITokenRefresher {
     /// Exchanges the stored refresh token for a fresh credential blob.
     static func refreshedCredentials(
         from credentialsJSON: String,
+        forAccountNamed accountName: String? = nil,
         session: URLSession = .shared,
         now: Date = Date()
     ) async -> String? {
         switch await refreshOutcome(
             from: credentialsJSON,
+            forAccountNamed: accountName,
             session: session,
             now: now
         ) {
@@ -74,17 +76,24 @@ enum ClaudeCLITokenRefresher {
         }
     }
 
+    /// `accountName` names the linked Claude Code account in the log lines
+    /// below. Every failure here used to be reported anonymously, so a machine
+    /// with several linked accounts produced warnings no one could attribute
+    /// to the account that actually needed signing in again.
     static func refreshOutcome(
         from credentialsJSON: String,
+        forAccountNamed accountName: String? = nil,
         session: URLSession = .shared,
         now: Date = Date()
     ) async -> RefreshOutcome {
+        let account = ClaudeCodeSyncService.describeAccount(accountName)
         guard let refreshToken = refreshToken(in: credentialsJSON) else {
             // A credential with no renewal token at all is one the app copied
             // before the account had a full login stored. Signing in again is
             // what produces one.
             LoggingService.shared.logWarning(
-                "CLI credential has no refresh token; leaving it untouched."
+                "CLI credential for \(account) has no refresh token; "
+                + "leaving it untouched."
             )
             return .failed(.expired)
         }
@@ -112,7 +121,7 @@ enum ClaudeCLITokenRefresher {
             (data, response) = try await session.data(for: request)
         } catch {
             LoggingService.shared.logWarning(
-                "CLI token refresh request failed: "
+                "CLI token refresh for \(account) failed: "
                 + "\(error.localizedDescription). The stored credential is "
                 + "unchanged."
             )
@@ -130,7 +139,7 @@ enum ClaudeCLITokenRefresher {
             let object = try? JSONSerialization.jsonObject(with: data)
             let code = (object as? [String: Any])?["error"] as? String
             LoggingService.shared.logWarning(
-                "CLI token refresh returned HTTP \(status)"
+                "CLI token refresh for \(account) returned HTTP \(status)"
                 + (code.map { " (\($0))" } ?? "")
                 + ". The stored credential is unchanged."
                 + (code == "invalid_grant"
@@ -147,8 +156,8 @@ enum ClaudeCLITokenRefresher {
             now: now
         ) else {
             LoggingService.shared.logWarning(
-                "CLI token refresh response could not be applied. The stored "
-                + "credential is unchanged."
+                "CLI token refresh response for \(account) could not be "
+                + "applied. The stored credential is unchanged."
             )
             return .failed(.unavailable)
         }
