@@ -515,7 +515,13 @@ class MenuBarManager: NSObject, ObservableObject {
     @Published private(set) var clickedProfileAPIUsage: APIUsage?
 
     // Track when refresh was last triggered (for distinguishing user vs auto refresh)
-    private var lastRefreshTriggerTime: Date = .distantPast
+    /// When a usage refresh was last actually dispatched.
+    ///
+    /// `private(set)` so the network-availability debounce's input can be
+    /// asserted directly: the guard that reads this was inert for as long as
+    /// nothing wrote it, and a test that could not see it would not have
+    /// noticed.
+    private(set) var lastRefreshTriggerTime: Date = .distantPast
 
     // Track last known reset times for history recording
     private var lastKnownSessionResetTime: [UUID: Date] = [:]
@@ -616,6 +622,17 @@ class MenuBarManager: NSObject, ObservableObject {
     ) {
         guard !profiles.isEmpty else { return }
         dispatchedUsageFanOuts &+= 1
+        // The network-availability guard debounces against this, and until
+        // it was recorded here it debounced against nothing: the only writers
+        // were profile activation, the popover, and the two credentials
+        // -changed paths, so `elapsedSinceLastTrigger` was really "time since
+        // the last profile switch" and was almost always enormous. The
+        // comment at that call site says the check exists to "avoid duplicate
+        // on startup", and it could not do that. A Wi-Fi interface that drops
+        // and returns twice in quick succession — which is how a real stall
+        // recovery looks — would otherwise fan out once per path update, each
+        // one cancelling the last.
+        lastRefreshTriggerTime = Date()
         dispatchUsageRefresh(profiles, trigger)
     }
     private var refreshEventObserver: UUID?

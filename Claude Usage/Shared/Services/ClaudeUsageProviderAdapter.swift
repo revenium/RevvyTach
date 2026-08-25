@@ -248,8 +248,20 @@ enum ClaudeUsageProviderAdapter {
             break
         }
 
-        if usage.organizationExtraUsageIssue == .lookupFailed {
+        // Exhaustive on purpose, like the member switch above it. An `==`
+        // check against `.lookupFailed` used to stand here, which let a newly
+        // added case compile silently into "healthy" without anyone deciding
+        // — and the case that was added is the one that must stay silent, so
+        // the right answer arriving by accident would have been luck.
+        switch usage.organizationExtraUsageIssue {
+        case .lookupFailed:
             return degraded(.optionalUsageUnavailable)
+        case .notEnabled, .notAvailableForOrganization, nil:
+            // Switched off, not offered to this organization, or never asked
+            // for. Settled answers with nothing to fix; degrading the account
+            // for one would leave a permanent complaint on a profile that is
+            // working exactly as it should.
+            break
         }
 
         return base
@@ -323,9 +335,10 @@ enum ClaudeUsageProviderAdapter {
         switch usage.organizationExtraUsageIssue {
         case .lookupFailed:
             return .unreadableOrganizationFigure
-        case .notEnabled, nil:
-            // Switched off, or never asked for. Settled answers with nothing
-            // to fix, and a notice about them would be noise on every refresh.
+        case .notEnabled, .notAvailableForOrganization, nil:
+            // Switched off, not offered to this organization, or never asked
+            // for. Settled answers with nothing to fix, and a notice about
+            // them would be noise on every refresh.
             return nil
         }
     }

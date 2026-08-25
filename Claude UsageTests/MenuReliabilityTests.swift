@@ -2922,6 +2922,70 @@ final class MenuReliabilityTests: HostedAppTestCase {
         XCTAssertEqual(dispatched.count, 1)
     }
 
+    /// The network-availability debounce needs something to debounce against.
+    ///
+    /// `RefreshTimingPolicy.shouldRefreshForNetworkAvailability` compares
+    /// against `lastRefreshTriggerTime`, and until a dispatch recorded it the
+    /// only writers were profile activation, the popover, and the two
+    /// credentials-changed paths — so the elapsed time it measured was
+    /// really "time since the last profile switch", almost always enormous,
+    /// and the guard never once fired. The comment at that call site says it
+    /// exists to "avoid duplicate on startup"; this is what makes that true.
+    ///
+    /// Not what caused the observed double fan-out — that was a genuine
+    /// seven-second Wi-Fi outage, and refreshing when the link returns is
+    /// correct. It is what would let a link that drops and returns twice in
+    /// quick succession fan out twice, each one cancelling the last.
+    func testADispatchRecordsTheDebounceTheNetworkPathReadsFrom() {
+        let (manager, _) = makeMultiProfileManagerForLaunchSequence()
+        manager.dispatchUsageRefresh = { _, _ in }
+
+        XCTAssertEqual(
+            manager.lastRefreshTriggerTime,
+            .distantPast,
+            "nothing has been dispatched yet"
+        )
+        XCTAssertTrue(
+            RefreshTimingPolicy.shouldRefreshForNetworkAvailability(
+                hasRefreshableProfile: true,
+                elapsedSinceLastTrigger: Date().timeIntervalSince(
+                    manager.lastRefreshTriggerTime
+                )
+            ),
+            "so a link coming back must refresh"
+        )
+
+        manager.refreshUsage(trigger: .timer)
+
+        XCTAssertLessThan(
+            Date().timeIntervalSince(manager.lastRefreshTriggerTime),
+            1,
+            "a dispatch must record when it happened"
+        )
+        XCTAssertFalse(
+            RefreshTimingPolicy.shouldRefreshForNetworkAvailability(
+                hasRefreshableProfile: true,
+                elapsedSinceLastTrigger: Date().timeIntervalSince(
+                    manager.lastRefreshTriggerTime
+                )
+            ),
+            "and a link coming back a moment later must not fan out again on "
+                + "top of the refresh already running"
+        )
+    }
+
+    /// An empty fan-out refreshed nothing, so it must not move the debounce
+    /// either — otherwise a call that did no work would suppress a real
+    /// network-recovery refresh.
+    func testAnEmptyFanOutDoesNotMoveTheDebounce() {
+        let (manager, _) = makeMultiProfileManagerForLaunchSequence()
+        manager.dispatchUsageRefresh = { _, _ in }
+
+        manager.dispatchRefresh(profiles: [], trigger: .startup)
+
+        XCTAssertEqual(manager.lastRefreshTriggerTime, .distantPast)
+    }
+
     /// Two profiles selected for display, both refreshable, in multi-profile
     /// mode — the shape the maintainer's machine launches in.
     private func makeMultiProfileManagerForLaunchSequence()

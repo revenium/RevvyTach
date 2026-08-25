@@ -193,6 +193,19 @@ struct ClaudeUsage: Codable, Equatable {
         /// Extra usage is switched off for this organization. Settled, and
         /// deliberately silent in the UI.
         case notEnabled
+        /// claude.ai answered HTTP 200 carrying no extra-usage record at
+        /// all — an empty body, or a JSON value that is not an object. There
+        /// is nothing to show for this organization, which is as settled as
+        /// having extra usage switched off, and just as silent.
+        ///
+        /// Kept apart from `notEnabled` even though both render as nothing.
+        /// They are different facts: one is a preference the organization set
+        /// and could set back, the other is the server having no record to
+        /// return. Collapsing them would also hide which of the two a profile
+        /// is in, and the difference is the whole reason this case exists —
+        /// it used to be reported as `lookupFailed`, which puts "Some usage
+        /// details are unavailable" on a profile where nothing failed.
+        case notAvailableForOrganization
     }
 
     /// Nil when the organization's figure was obtained, or when it was never

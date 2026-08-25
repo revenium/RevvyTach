@@ -1542,6 +1542,167 @@ class ClaudeAPIService: APIServiceProtocol {
         }
     }
 
+    /// What asking claude.ai for an organization's extra-usage limit
+    /// established.
+    ///
+    /// The endpoint answers three genuinely different things and the app used
+    /// to hear one. Telling them apart is the whole point: only one of them
+    /// is a problem, and only a problem may say so on screen.
+    private enum OrganizationExtraUsageLookup {
+        /// A 200 whose body decoded. Says nothing yet about whether extra
+        /// usage is switched on — that is `isEnabled`'s job.
+        case figure(OverageSpendLimitResponse)
+        /// HTTP 200 carrying no extra-usage record at all — an empty body,
+        /// or a JSON value that is not an object. The server answered, and
+        /// the answer is that there is nothing here.
+        ///
+        /// Measured, not assumed: across 10,421 logged responses on the
+        /// maintainer's machine every single `overage_spend_limit` reply was
+        /// 200, including the two organizations the app was reporting as
+        /// unreadable. So the failure was never in the request — it was a
+        /// successful answer the app could not name.
+        case noRecord
+        /// The reading could not be taken: offline, timed out, rate limited,
+        /// refused for a credential reason, or a body that would not decode.
+        /// Worth saying, and worth retrying.
+        case unreadable
+        /// The app cancelled its own request because a later refresh
+        /// superseded this one. Not an answer, and not a failure.
+        case superseded
+    }
+
+    /// Reads an organization's extra-usage limit, classified rather than
+    /// swallowed.
+    private func organizationExtraUsage(
+        organizationId: String,
+        sessionKey: String
+    ) async -> OrganizationExtraUsageLookup {
+        let data: Data
+        do {
+            data = try await performRequest(
+                endpoint: "/organizations/\(organizationId)/overage_spend_limit",
+                sessionKey: sessionKey
+            )
+        } catch {
+            // Cancellation is checked before anything else, because a
+            // superseded request can surface either as the task being
+            // cancelled or as URLSession reporting -999, and neither is a
+            // statement about this organization.
+            if Task.isCancelled || Self.isCancellation(error) {
+                return .superseded
+            }
+            // Every other throw — transport, 401/403, 429, 5xx, or any
+            // non-200 status — is a reading that did not happen. None of them
+            // is treated as a settled answer, deliberately: not one non-200
+            // `overage_spend_limit` response appears anywhere in the logged
+            // evidence, so a "the server declined this organization" category
+            // would be a shape invented rather than observed. If such a
+            // status ever does appear it will arrive here as `unreadable`,
+            // which says only that the figure could not be read — true of
+            // every case in this branch.
+            return .unreadable
+        }
+
+        if let overage = try? JSONDecoder().decode(
+            OverageSpendLimitResponse.self,
+            from: data
+        ) {
+            return .figure(overage)
+        }
+
+        // A 200 that decoded to nothing. Every property of
+        // `OverageSpendLimitResponse` is optional, so *any* JSON object
+        // decodes — `{}` included. Reaching here means the body was not an
+        // object at all: empty, `null`, or some other bare value.
+        //
+        // That is a successful answer meaning "there is no extra-usage record
+        // for this organization", and it is what two of the maintainer's
+        // organizations return on every single refresh while every other
+        // organization returns a decodable object. Reproducible across days
+        // and app versions is the signature of deliberate server behaviour,
+        // not of a malformed response — so it is settled, and silent, exactly
+        // as a member's `is_enabled: false` already is.
+        //
+        // A body that IS an object and still will not decode is kept in the
+        // failure bucket. That cannot happen while every field is optional,
+        // but it is what a genuine shape change would look like, and it must
+        // not be mistaken for the organization having nothing to report.
+        let shape = Self.jsonShape(of: data)
+        guard shape != .object else {
+            LoggingService.shared.logWarning(
+                "Extra usage for organization \(organizationId) came back as "
+                + "HTTP 200 with a JSON object that no longer decodes; the "
+                + "response shape has changed."
+            )
+            return .unreadable
+        }
+        // Byte count and top-level JSON kind only — never any content. This
+        // is the line that makes the exact shape recoverable next time: it
+        // was not, when this was written, from any source the app persists.
+        LoggingService.shared.logDebug(
+            "Extra usage for organization \(organizationId): HTTP 200 with "
+            + "no extra-usage record (\(data.count) bytes, top level "
+            + "\(shape.description)). Treating it as a settled 'nothing "
+            + "here' answer rather than as a reading that failed."
+        )
+        return .noRecord
+    }
+
+    /// The top-level kind of a JSON payload — never its content.
+    ///
+    /// Used only to tell "the server sent no record" apart from "the record's
+    /// shape changed", and to make the former diagnosable without putting a
+    /// response body anywhere near a log.
+    enum JSONShape: Equatable {
+        case empty
+        case object
+        case array
+        case null
+        case scalar
+        case notJSON
+
+        var description: String {
+            switch self {
+            case .empty: return "empty"
+            case .object: return "object"
+            case .array: return "array"
+            case .null: return "null"
+            case .scalar: return "scalar"
+            case .notJSON: return "not JSON"
+            }
+        }
+    }
+
+    static func jsonShape(of data: Data) -> JSONShape {
+        guard !data.isEmpty else { return .empty }
+        guard let value = try? JSONSerialization.jsonObject(
+            with: data,
+            options: [.fragmentsAllowed]
+        ) else { return .notJSON }
+        if value is [String: Any] { return .object }
+        if value is [Any] { return .array }
+        if value is NSNull { return .null }
+        return .scalar
+    }
+
+    /// Whether an error is the app having cancelled its own work.
+    ///
+    /// Deliberately does NOT try to unwrap an `AppError` to find a
+    /// `URLError.cancelled` inside it. That cannot work and must not be made
+    /// to: `AppError` replaces its underlying error with a redacted
+    /// description string, so by the time one exists the cause is gone —
+    /// which is why `performRequest` classifies the cancellation before
+    /// wrapping and throws `CancellationError` instead. Both forms are
+    /// accepted here because the OAuth path throws its own `URLError`
+    /// directly, without an `AppError` in between.
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            return true
+        }
+        return false
+    }
+
     /// Fetches usage data for a specific profile using provided credentials
     /// - Parameters:
     ///   - sessionKey: The Claude.ai session key
@@ -1571,19 +1732,19 @@ class ClaudeAPIService: APIServiceProtocol {
         var claudeUsage = try parseUsageResponse(usageData)
 
         if checkOverageLimitEnabled {
-            // One `if let ... try? ...` chain used to collapse three
-            // different outcomes into "the fields stay nil": the request
-            // failing, the body not decoding, and extra usage genuinely being
-            // switched off. Only the last of those is a settled answer, so
-            // they are separated here and the difference is recorded.
-            let data = try? await performRequest(
-                endpoint: "/organizations/\(organizationId)/overage_spend_limit",
+            // A `try?` used to collapse every outcome of this request into
+            // "the fields stay nil". Splitting the settled answers out from
+            // the failures started here and stopped one level short: a
+            // request that came back as a definite "not for this
+            // organization", and one the app cancelled itself, both still
+            // landed on `lookupFailed` — which renders as "Some usage details
+            // are unavailable" on a profile where nothing is wrong and there
+            // is nothing to do. Each outcome is now named.
+            switch await organizationExtraUsage(
+                organizationId: organizationId,
                 sessionKey: sessionKey
-            )
-            let overage = data.flatMap {
-                try? JSONDecoder().decode(OverageSpendLimitResponse.self, from: $0)
-            }
-            if let overage {
+            ) {
+            case .figure(let overage):
                 if overage.isEnabled == true {
                     claudeUsage.costUsed = overage.usedCredits
                     claudeUsage.costLimit = overage.monthlyCreditLimit
@@ -1598,13 +1759,22 @@ class ClaudeAPIService: APIServiceProtocol {
                 } else {
                     claudeUsage.organizationExtraUsageIssue = .notEnabled
                 }
-            } else {
+            case .noRecord:
+                claudeUsage.organizationExtraUsageIssue =
+                    .notAvailableForOrganization
+            case .unreadable:
                 claudeUsage.organizationExtraUsageIssue = .lookupFailed
                 LoggingService.shared.logWarning(
                     "Extra usage for organization \(organizationId) could "
                     + "not be read on this refresh; reporting it as "
                     + "unavailable rather than as not applicable."
                 )
+            case .superseded:
+                // Nothing written at all. A later refresh cancelled this one
+                // and is already asking the same question; recording a
+                // failure here would put a complaint on screen for work the
+                // app tore down on purpose.
+                break
             }
         }
 
@@ -1979,6 +2149,32 @@ class ClaudeAPIService: APIServiceProtocol {
                 duration: duration,
                 error: error
             )
+
+            // A request the app tore down itself, because a later refresh
+            // superseded this one. Rethrown as `CancellationError` rather
+            // than wrapped, for two reasons.
+            //
+            // Callers cannot recover the cause once it is wrapped:
+            // `AppError` redacts its underlying error down to a description
+            // string on purpose, so a `URLError.cancelled` inside one is
+            // unrecoverable by design and must not be dug back out. The
+            // distinction has to survive at the only point that still holds
+            // the real error, which is here.
+            //
+            // And it is not an API error, so it stops being logged as one.
+            // A superseded fan-out emitted one red `❌ API Error … NSURLError:
+            // cancelled` line per in-flight request — six at a time in the
+            // captured evidence — which is precisely the raw material for
+            // the misdiagnoses this whole area keeps producing: the app's own
+            // housekeeping, filed under the same heading as a real failure.
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                LoggingService.shared.logDebug(
+                    "Request to \(endpoint) was cancelled because a later "
+                    + "refresh superseded this one; no verdict is recorded "
+                    + "for it."
+                )
+                throw CancellationError()
+            }
 
             LoggingService.shared.logAPIError(endpoint, error: error)
             let appError = AppError(
