@@ -728,7 +728,9 @@ final class ExtraUsageScopeTests: XCTestCase {
         let service = ClaudeAPIService(
             profileManager: manager,
             systemCredentialsReader: { nil },
-            renewedCredentialWriter: { json, _, _ in persisted.append(json) }
+            renewedCredentialWriter: { renewal, _ in
+                persisted.append(renewal.credentialsJSON)
+            }
         )
 
         // First refresh: the stored token has expired, so it is renewed and

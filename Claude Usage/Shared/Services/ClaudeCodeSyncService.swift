@@ -384,6 +384,18 @@ class ClaudeCodeSyncService {
         } else {
             serviceName = resolveServiceName()
         }
+        return try readKeychainSecret(serviceName: serviceName)
+    }
+
+    /// Reads one named Keychain item, with no service-name resolution of its
+    /// own.
+    ///
+    /// Split out of `readKeychainCredentials` because the rotation write-back
+    /// has to read *the exact item it is about to overwrite*, which it names
+    /// itself. Resolving the name a second way there would let the item that
+    /// was checked and the item that gets written drift apart — the one
+    /// mistake that would turn this repair into a way to destroy a login.
+    private func readKeychainSecret(serviceName: String) throws -> String? {
         let result = try securityRunner.run([
             "find-generic-password",
             "-s", serviceName,
@@ -917,9 +929,20 @@ class ClaudeCodeSyncService {
             in: spent
         ) else { return }
 
+        // Deliberately the Keychain item itself, not `readSystemCredentials`.
+        // That chain prefers an unexpired `.credentials.json` snapshot, which
+        // can carry a different refresh token from the Keychain item Claude
+        // Code actually authenticates with — and the Keychain item is both
+        // what this renewal invalidated and what the write below replaces.
+        // Checking one and overwriting the other would skip the repair in
+        // exactly the case it is needed, leaving the user signed out.
+        guard let serviceName = accountServiceNameForWriting(
+            forAccountNamed: accountName
+        ) else { return }
+
         let live: String?
         do {
-            live = try readSystemCredentials(forAccountNamed: accountName)
+            live = try readKeychainSecret(serviceName: serviceName)
         } catch {
             LoggingService.shared.log(
                 "Could not read the live Claude Code login for "
@@ -929,8 +952,8 @@ class ClaudeCodeSyncService {
             return
         }
 
-        // No live login at all means Claude Code is holding nothing this
-        // renewal could have invalidated, so there is nothing to repair.
+        // No item at all means Claude Code is holding nothing this renewal
+        // could have invalidated, and nothing this write would replace.
         guard let live else { return }
 
         guard ClaudeCLITokenRefresher.refreshToken(in: live) == spentRefreshToken

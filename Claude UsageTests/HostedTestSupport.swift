@@ -332,12 +332,16 @@ func makeIsolatedClaudeAPIService(
         systemCredentialsReader: systemCredentials,
         // Captures `cliSync` and `renewals`, which is what keeps them alive
         // for the service's lifetime.
-        renewedCredentialWriter: { json, rotatedFrom, profileID in
-            renewals?.record(json, rotatedFrom: rotatedFrom, for: profileID)
+        renewedCredentialWriter: { renewal, profileID in
+            renewals?.record(
+                renewal.credentialsJSON,
+                rotatedFrom: renewal.rotatedFrom,
+                for: profileID
+            )
             try cliSync.saveRefreshedCredentials(
-                json,
+                renewal.credentialsJSON,
                 for: profileID,
-                rotatedFrom: rotatedFrom
+                rotatedFrom: renewal.rotatedFrom
             )
         }
     )
