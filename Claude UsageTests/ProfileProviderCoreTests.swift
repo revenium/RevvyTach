@@ -272,7 +272,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             name: "Second",
             providerConfiguration: .codex(.init(linkedHome: secondHome))
         )
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: ProviderTestDefaults(),
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -381,7 +381,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let firstHome = try canonicalizer.canonicalize(first.path)
         let secondHome = try canonicalizer.canonicalize(second.path)
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -412,7 +412,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testCredentialUpdateAPIsCannotMutateProviderIdentity() throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -462,7 +462,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testOrdinarySaveCannotAddOrRemoveProfileIdentities() throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -507,7 +507,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testInvalidAuthoritativeProfileSetsFailClosedWithoutOverwrite()
         throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -700,7 +700,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
                 Date(timeIntervalSinceReferenceDate: 9000)
             }
         )
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: usageStore
@@ -935,7 +935,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let home = try CodexHomeCanonicalizer().canonicalize(linked.path)
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -975,7 +975,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testZeroProfileBootstrapAndExplicitInitialProviderChoice() throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -1015,7 +1015,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         )
         let home = try CodexHomeCanonicalizer().canonicalize(homeURL.path)
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -1088,7 +1088,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testCodexActivationRunsNoClaudeEffectsOrSecretOperations() async throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -1234,7 +1234,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: usage
@@ -1301,7 +1301,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         )
         let defaults = ProviderTestDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1403,7 +1403,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         )
         XCTAssertNil(legacyHome.filesystemIdentity)
 
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: ProviderTestDefaults(),
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -1468,7 +1468,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             replacementIdentity
         )
 
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: ProviderTestDefaults(),
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -1522,7 +1522,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let defaults = FaultingProfileDefaults()
         let secrets = ProviderSecretStore()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: usage
@@ -1576,7 +1576,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let home = try CodexHomeCanonicalizer().canonicalize(homeURL.path)
         let defaults = FaultingProfileDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1622,7 +1622,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         )
 
         usage.saveError = nil
-        let relaunched = retain(ProfileStore(
+        let relaunched = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1656,7 +1656,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let home = try CodexHomeCanonicalizer().canonicalize(homeURL.path)
         let defaults = ProviderTestDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1712,7 +1712,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             .canonicalize(homeURL.path)
         let defaults = FaultingProfileDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1786,7 +1786,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let home = try CodexHomeCanonicalizer().canonicalize(homeURL.path)
         let defaults = ProviderTestDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1814,7 +1814,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testDeletionLifecycleStartsSynchronouslyAndCompletesOnlyAfterRetry()
         throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -1868,7 +1868,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         throws
     {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -1927,7 +1927,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             .canonicalize(homeURL.path)
         let defaults = FaultingProfileDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -1981,7 +1981,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testCleanupFailureLeavesUsableSurvivorActive() throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2031,7 +2031,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testRelaunchDoesNotSelectRetainedDeletionMarker() async throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2066,7 +2066,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testDeletionCompletionObservesSurvivorAsActive() throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2109,7 +2109,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testDeletingActiveProfileAppliesClaudeSurvivorEffects() throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2164,7 +2164,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         throws
     {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2208,7 +2208,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testTombstoneDoesNotCountAsUsableLastProfile() throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2247,7 +2247,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         async throws {
         let defaults = ProviderTestDefaults()
         let usage = ProviderUsageStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: usage
@@ -2306,7 +2306,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testDeletionStateCannotBypassLifecycleAPIs() throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2353,7 +2353,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testCodexProfileCannotDeleteClaudeSecrets() throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2381,7 +2381,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         throws {
         let defaults = ProviderTestDefaults()
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2459,7 +2459,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2530,7 +2530,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2585,7 +2585,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
         let secrets = ProviderSecretStore()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2644,7 +2644,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
         defaults.set(true, forKey: "didMigrateToProfilesV3")
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2695,7 +2695,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2756,7 +2756,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2811,7 +2811,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         defaults.removePersistentDomain(forName: suite)
         let secrets = ProviderSecretStore()
         secrets.writeError = ProviderTestError.expected
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: secrets,
             usageFileStore: ProviderUsageStore()
@@ -2875,7 +2875,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.removePersistentDomain(forName: suite)
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2915,7 +2915,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testClaudeAndCodexProfilesActivateIndependently() async throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -2966,7 +2966,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testReactivatingAlreadyActiveProfileOnlyMovesFocus() async throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3000,7 +3000,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testLegacySingleSlotMigratesToOwningProviderOnly() throws {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3035,7 +3035,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         throws
     {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3086,7 +3086,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             .canonicalize(homeURL.path)
 
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3131,7 +3131,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             .canonicalize(homeURL.path)
 
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3186,7 +3186,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
             .canonicalize(homeURL.path)
 
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3220,7 +3220,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()
@@ -3260,7 +3260,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         throws
     {
         let defaults = ProviderTestDefaults()
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
             usageFileStore: ProviderUsageStore()

@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
     private func makeStore(with profiles: [Profile]) throws -> ProfileStore {
-        let store = retain(ProfileStore(
+        let store = retain(makeIsolatedProfileStore(
             defaults: FaultingProfileDefaults(),
             secretStore: IsolatedProfileSecrets(),
             usageFileStore: IsolatedProfileUsageFiles()

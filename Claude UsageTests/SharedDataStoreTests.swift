@@ -10,9 +10,11 @@ final class SharedDataStoreTests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
 
-        let suiteName = "ClaudeUsageTests.SharedDataStoreTests.\(UUID().uuidString)"
+        let suiteName = HostedTestDefaults.suiteName(
+            "ClaudeUsageTests.SharedDataStoreTests"
+        )
         let testDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        testDefaults.removePersistentDomain(forName: suiteName)
+        HostedTestDefaults.reset(testDefaults, suiteName: suiteName)
 
         defaultsSuiteName = suiteName
         defaults = testDefaults
@@ -21,8 +23,11 @@ final class SharedDataStoreTests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let defaults, let defaultsSuiteName {
-            defaults.removePersistentDomain(forName: defaultsSuiteName)
+            HostedTestDefaults.reset(defaults, suiteName: defaultsSuiteName)
         }
+        sharedDataStore = nil
+        defaults = nil
+        defaultsSuiteName = nil
 
         try super.tearDownWithError()
     }

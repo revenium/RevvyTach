@@ -23,14 +23,16 @@ final class LegacyIdentityMigrationServiceTests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
 
-        currentSuiteName =
-            "LegacyIdentityMigrationServiceTests.current.\(UUID().uuidString)"
-        legacySuiteName =
-            "LegacyIdentityMigrationServiceTests.legacy.\(UUID().uuidString)"
+        currentSuiteName = HostedTestDefaults.suiteName(
+            "LegacyIdentityMigrationServiceTests.current"
+        )
+        legacySuiteName = HostedTestDefaults.suiteName(
+            "LegacyIdentityMigrationServiceTests.legacy"
+        )
         defaults = try XCTUnwrap(UserDefaults(suiteName: currentSuiteName))
         legacyDefaults = try XCTUnwrap(UserDefaults(suiteName: legacySuiteName))
-        defaults.removePersistentDomain(forName: currentSuiteName)
-        legacyDefaults.removePersistentDomain(forName: legacySuiteName)
+        HostedTestDefaults.reset(defaults, suiteName: currentSuiteName)
+        HostedTestDefaults.reset(legacyDefaults, suiteName: legacySuiteName)
 
         applicationSupportURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -44,8 +46,8 @@ final class LegacyIdentityMigrationServiceTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        defaults.removePersistentDomain(forName: currentSuiteName)
-        legacyDefaults.removePersistentDomain(forName: legacySuiteName)
+        HostedTestDefaults.reset(defaults, suiteName: currentSuiteName)
+        HostedTestDefaults.reset(legacyDefaults, suiteName: legacySuiteName)
         try? FileManager.default.removeItem(at: applicationSupportURL)
 
         try super.tearDownWithError()

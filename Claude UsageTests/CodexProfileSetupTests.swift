@@ -1383,7 +1383,7 @@ final class CodexProfileSetupTests: HostedAppTestCase {
     ) -> Context {
         let defaults = TestDefaults()
         let store = retain(
-            ProfileStore(
+            makeIsolatedProfileStore(
                 defaults: defaults,
                 secretStore: secretStore,
                 usageFileStore: TestUsageStore()

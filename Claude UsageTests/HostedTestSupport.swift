@@ -35,6 +35,66 @@ class HostedAppTestCase: XCTestCase {
     }
 }
 
+/// Owns the temporary `UserDefaults` domains used by hosted tests.
+///
+/// A domain is unique to the current test process, so concurrent `xcodebuild`
+/// runs cannot read or overwrite one another. Within that process, a class
+/// reuses its domain and resets it between methods. `cfprefsd` can re-flush a
+/// removed domain at process exit, so a registered test-bundle observer removes
+/// all backing plists only after XCTest has finished every suite.
+enum HostedTestDefaults {
+    private static let processSalt = UUID().uuidString
+    private static let suiteNamesLock = NSLock()
+    private static var suiteNames: Set<String> = []
+    private static let bundleObserver: TestDefaultsBundleObserver = {
+        let observer = TestDefaultsBundleObserver()
+        XCTestObservationCenter.shared.addTestObserver(observer)
+        return observer
+    }()
+
+    static func suiteName(_ prefix: String) -> String {
+        let name = "\(prefix).\(processSalt)"
+        _ = bundleObserver
+        _ = processExitCleanup
+        suiteNamesLock.lock()
+        suiteNames.insert(name)
+        suiteNamesLock.unlock()
+        return name
+    }
+
+    static func reset(_ defaults: UserDefaults, suiteName: String) {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    fileprivate static func removeBackingFilesAfterTestBundleFinishes() {
+        suiteNamesLock.lock()
+        let names = suiteNames
+        suiteNamesLock.unlock()
+
+        let preferences = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences")
+        for name in names {
+            try? FileManager.default.removeItem(
+                at: preferences.appendingPathComponent("\(name).plist")
+            )
+        }
+    }
+
+    private static let processExitCleanup: Void = {
+        atexit(removeHostedTestDefaultsBackingsAtProcessExit)
+    }()
+}
+
+private final class TestDefaultsBundleObserver: NSObject, XCTestObservation {
+    func testBundleWillFinish(_ testBundle: Bundle) {
+        HostedTestDefaults.removeBackingFilesAfterTestBundleFinishes()
+    }
+}
+
+private func removeHostedTestDefaultsBackingsAtProcessExit() {
+    HostedTestDefaults.removeBackingFilesAfterTestBundleFinishes()
+}
+
 final class FaultingProfileDefaults: ProfileDefaultsStore {
     var storage: [String: Any] = [:]
     var corruptNextProfileWrite = false
@@ -117,6 +177,8 @@ final class IsolatedProfileSecrets: ProfileSecretStore {
 final class IsolatedProfileUsageFiles: ProfileCurrentUsageFileStoring {
     private var usage: [UUID: ProfileCurrentUsage] = [:]
 
+    nonisolated init() {}
+
     func loadCurrentUsage(for profileID: UUID) throws -> ProfileCurrentUsage? {
         usage[profileID]
     }
@@ -174,6 +236,25 @@ func makeIsolatedProfileStore(
         defaults: defaults,
         secretStore: secrets,
         usageFileStore: usageFiles ?? IsolatedProfileUsageFiles()
+    )
+}
+
+/// Builds a profile store from test-specific metadata and credential fakes.
+///
+/// Direct `ProfileStore(...)` construction is unsafe in hosted tests unless
+/// every optional dependency is supplied: omitting `usageFileStore` silently
+/// selects the real Application Support directory. This overload preserves
+/// each test's purpose-built defaults and secret doubles while ensuring that
+/// omitted usage files stay in memory.
+func makeIsolatedProfileStore(
+    defaults: any ProfileDefaultsStore,
+    secretStore: any ProfileSecretStore,
+    usageFileStore: (any ProfileCurrentUsageFileStoring)? = nil
+) -> ProfileStore {
+    ProfileStore(
+        defaults: defaults,
+        secretStore: secretStore,
+        usageFileStore: usageFileStore ?? IsolatedProfileUsageFiles()
     )
 }
 

@@ -156,3 +156,6 @@ release/
 
 # Coverage byproduct of xcodebuild test runs
 default.profraw
+
+# Result bundles and scratch from local test runs
+.build-artifacts/

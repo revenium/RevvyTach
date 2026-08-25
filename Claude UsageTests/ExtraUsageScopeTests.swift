@@ -846,7 +846,7 @@ final class ExtraUsageScopeTests: XCTestCase {
         let defaults = UserDefaults(
             suiteName: "ExtraUsageScopeTests-\(UUID().uuidString)"
         )!
-        let store = ProfileStore(
+        let store = makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: UnusedProfileSecretStore()
         )

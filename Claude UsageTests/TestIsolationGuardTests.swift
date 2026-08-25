@@ -3,7 +3,7 @@ import XCTest
 
 /// Isolation is a property that stops holding silently.
 ///
-/// `ProfileStore()` resolves to `UserDefaults.standard` and
+/// `makeIsolatedProfileStore()` resolves to `UserDefaults.standard` and
 /// `KeychainService.shared`, and `ProfileManager()` resolves to the shared
 /// store. Nothing at those call sites looks wrong, which is why a test in
 /// this suite once built `ProfileManager()` on the shared store and came one
@@ -189,6 +189,58 @@ final class TestIsolationGuardTests: HostedAppTestCase {
             loaded,
             "The store did not read the injected usage-file store — it is "
                 + "still pointed at real Application Support"
+        )
+    }
+
+    /// The overload used to convert direct test-side `ProfileStore(...)`
+    /// calls must carry every seam too. It deliberately uses credentials and
+    /// usage that exist only in the injected doubles: falling back to either
+    /// `.shared` singleton or the real Application Support directory makes
+    /// one of these marker reads fail.
+    @MainActor
+    func testTheDirectConstructionHelperKeepsCredentialsAndFilesIsolated()
+        throws {
+        let profile = Profile(name: "Direct-construction isolation")
+        let defaults = IsolatedProfileDefaults()
+        let secrets = IsolatedProfileSecrets()
+        let usageFiles = IsolatedProfileUsageFiles()
+        defaults.set(
+            try JSONEncoder().encode([profile]),
+            forKey: Self.profilesKey
+        )
+        try secrets.write(
+            "isolated-secret",
+            to: ProfileSecretLocator(
+                profileID: profile.id,
+                field: .claudeSessionKey
+            )
+        )
+        try usageFiles.saveCurrentUsage(
+            ProfileCurrentUsage(
+                providerID: .claude,
+                providerRevision: profile.providerRevision
+            ),
+            for: profile.id
+        )
+
+        let store = retain(makeIsolatedProfileStore(
+            defaults: defaults,
+            secretStore: secrets,
+            usageFileStore: usageFiles
+        ))
+
+        XCTAssertEqual(
+            try store.loadProfileCredentials(profile.id).claudeSessionKey,
+            "isolated-secret",
+            "The direct-construction helper fell back to KeychainService.shared"
+        )
+        XCTAssertNotNil(
+            try store.loadCurrentUsage(
+                for: profile.id,
+                expectedProviderID: .claude,
+                expectedProviderRevision: profile.providerRevision
+            ),
+            "The direct-construction helper fell back to real Application Support"
         )
     }
 
