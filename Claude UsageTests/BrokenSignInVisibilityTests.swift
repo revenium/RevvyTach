@@ -727,8 +727,9 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         /// The most opaque pixel on the marker's centre row between 1pt and
         /// 2.5pt out from the middle — where the ring's stroke lives. Taken
         /// as a maximum over several offsets rather than one sample because
-        /// the backing scale is not ours to choose: the same point lands in
-        /// the middle of a pixel at 2x and on its edge at 1x.
+        /// a single fixed offset can still straddle a pixel boundary within
+        /// the bitmap's own 2x grid; sampling several offsets and taking the
+        /// max is cheap insurance against that, independent of host scale.
         let strokeAlpha: CGFloat
         let strokeGreen: CGFloat
         let map: String
@@ -737,9 +738,37 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     private func marker(
         of render: StatusBarUIManager.ProfileMenuBarRender
     ) throws -> Marker {
-        let data = try XCTUnwrap(render.image.tiffRepresentation)
-        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: data))
-        let scale = CGFloat(bitmap.pixelsWide) / render.image.size.width
+        // Rasterize at a fixed 2x scale rather than relying on
+        // `tiffRepresentation`, whose backing scale tracks the host's
+        // display: on a 1x/headless runner the marker's 1.0pt stroke lands
+        // on a single device pixel and samples come back partial-alpha,
+        // making the assertions below flaky depending on where the test
+        // happens to run.
+        let pointSize = render.image.size
+        let fixedScale: CGFloat = 2.0
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pointSize.width * fixedScale),
+            pixelsHigh: Int(pointSize.height * fixedScale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ))
+        bitmap.size = pointSize
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        render.image.draw(
+            in: NSRect(origin: .zero, size: pointSize),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        NSGraphicsContext.restoreGraphicsState()
+        let scale = fixedScale
 
         // The marker occupies a 4pt square whose top-right corner sits 0.5pt
         // in from the image's own top-right, drawn by `applyAttentionMarker`.
