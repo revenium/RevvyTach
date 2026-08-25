@@ -433,10 +433,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     // MARK: - The menu bar marker
 
     /// A profile has two credentials that fail independently, and the first
-    /// pass at this surface gave both of them the same "sign-in needs
-    /// attention" tooltip. The verdict has to say WHICH, or the menu bar is
-    /// telling someone that something they cannot identify is broken. The
-    /// dot itself stays one dot; the kind is what the wording is built from.
+    /// pass at this surface gave both of them the same red dot and the same
+    /// "sign-in needs attention" tooltip. The verdict has to say WHICH, or
+    /// the menu bar is telling someone that something they cannot identify
+    /// is broken. The kind is what both the mark and the wording are built
+    /// from.
     func testEveryBrokenSignInRaisesTheClaudeCodeKind() {
         for issue in Self.raising {
             XCTAssertEqual(
@@ -536,10 +537,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         }
     }
 
-    /// The menu-bar wording and the banner agree about which credential
-    /// comes first, not just about whether something is wrong. Asserted
-    /// against the banner itself so the two orderings cannot drift.
-    func testWordingAndBannerNameTheSameCredentialFirst() {
+    /// The mark drawn, the wording spoken and the banner all agree about
+    /// which credential comes first, not just about whether something is
+    /// wrong — they read the one verdict this asserts. Checked against the
+    /// banner itself so the two orderings cannot drift.
+    func testMarkAndWordingAndBannerNameTheSameCredentialFirst() {
         for issue in Self.raising {
             XCTAssertEqual(
                 banner(for: issue, hasCredentialError: true),
@@ -590,70 +592,201 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         return profile
     }
 
+    private func render(
+        attention: MenuBarAttentionSignal.Credential?,
+        isActive: Bool = false,
+        config: MultiProfileDisplayConfig = MultiProfileDisplayConfig(),
+        manager: StatusBarUIManager
+    ) -> StatusBarUIManager.ProfileMenuBarRender {
+        manager.renderProfileMenuBar(
+            for: makeProfile(issue: .signInExpired),
+            config: config,
+            isDarkMode: false,
+            isActive: isActive,
+            attention: attention
+        )
+    }
+
     /// `intendedItemWidth(for:config:isActive:)` plans the overflow split by
     /// measuring this same render before the status item exists, and it
     /// cannot know whether an account is broken. A marker that changed the
     /// width would make that plan wrong for exactly the profiles that most
-    /// need to stay on screen.
-    func testMarkerDoesNotChangeTheRenderedWidth() {
+    /// need to stay on screen. Both markers, since either can be the one
+    /// drawn.
+    func testNeitherMarkerChangesTheRenderedSize() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
-        let profile = makeProfile(issue: .signInExpired)
-        let config = MultiProfileDisplayConfig()
+        let plain = render(attention: nil, manager: manager)
 
-        let plain = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: false
-        )
-        let marked = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: false,
-            needsAttention: true
-        )
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let marked = render(attention: credential, manager: manager)
+            XCTAssertEqual(
+                marked.image.size.width,
+                plain.image.size.width,
+                accuracy: 0.01,
+                "\(credential) changed the icon's width, which would make "
+                    + "the overflow plan wrong for a broken profile"
+            )
+            XCTAssertEqual(
+                marked.image.size.height,
+                plain.image.size.height,
+                accuracy: 0.01
+            )
+        }
+    }
 
-        XCTAssertEqual(
-            marked.image.size.width,
-            plain.image.size.width,
-            accuracy: 0.01
+    /// And they are actually drawn, and drawn DIFFERENTLY. The whole
+    /// complaint was that the menu bar said nothing; two identical marks for
+    /// two unrelated failures would be the same complaint one level in.
+    func testTheTwoMarkersDifferFromEachOtherAndFromNoMarker() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let plain = render(attention: nil, manager: manager)
+        let claudeAI = render(attention: .claudeAI, manager: manager)
+        let claudeCode = render(attention: .claudeCode, manager: manager)
+
+        XCTAssertNotEqual(
+            claudeAI.image.tiffRepresentation,
+            plain.image.tiffRepresentation,
+            "the claude.ai marker left the icon unchanged"
         )
-        XCTAssertEqual(
-            marked.image.size.height,
-            plain.image.size.height,
-            accuracy: 0.01
+        XCTAssertNotEqual(
+            claudeCode.image.tiffRepresentation,
+            plain.image.tiffRepresentation,
+            "the Claude Code marker left the icon unchanged"
+        )
+        XCTAssertNotEqual(
+            claudeAI.image.tiffRepresentation,
+            claudeCode.image.tiffRepresentation,
+            "both credentials drew the same mark, so the menu bar still "
+                + "cannot say which one is broken"
         )
     }
 
-    /// And it is actually drawn: the whole complaint was that the menu bar
-    /// said nothing, so an identical image would be the same defect with more
-    /// code behind it.
-    func testMarkerChangesWhatIsDrawn() {
+    /// Colour alone would carry nothing for a red/green-colourblind viewer,
+    /// and red-against-amber is one of the pairs that goes first. The shape
+    /// is the part that survives: claude.ai is a filled disc, Claude Code is
+    /// a ring with the middle punched out.
+    ///
+    /// Asserted in pixels rather than trusted to the drawing code, because a
+    /// ring whose hole closed up would still be a different image from the
+    /// disc and would still pass every test above it — while looking, at
+    /// menu-bar size, exactly like the disc.
+    func testClaudeCodeMarkerIsHollowAndClaudeAIMarkerIsFilled() throws {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
-        let profile = makeProfile(issue: .signInExpired)
-        let config = MultiProfileDisplayConfig()
 
-        let plain = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: false
+        let disc = try marker(
+            of: render(attention: .claudeAI, manager: manager)
         )
-        let marked = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: false,
-            needsAttention: true
+        let ring = try marker(
+            of: render(attention: .claudeCode, manager: manager)
         )
 
-        XCTAssertNotEqual(
-            marked.image.tiffRepresentation,
-            plain.image.tiffRepresentation,
-            "the attention marker left the icon unchanged"
+        XCTAssertGreaterThan(
+            disc.centreAlpha,
+            0.9,
+            "the claude.ai marker is a filled disc; an empty middle would "
+                + "make it the same shape as the Claude Code ring\n"
+                + disc.map
+        )
+        XCTAssertLessThan(
+            ring.centreAlpha,
+            0.1,
+            "the Claude Code marker read as a filled blob, not a ring — "
+                + "the one encoding that survives both menu-bar size and "
+                + "colourblindness\n"
+                + ring.map
+        )
+        XCTAssertGreaterThan(
+            ring.strokeAlpha,
+            0.9,
+            "the ring's own stroke is missing or too faint to see\n"
+                + ring.map
+        )
+
+        // Shape is the encoding that survives colourblindness, but the two
+        // colours still have to be two colours: if the ring came back red
+        // the marker would have lost half its redundancy silently. Green is
+        // what separates systemOrange from systemRed.
+        XCTAssertGreaterThan(
+            ring.strokeGreen - disc.centreGreen,
+            0.2,
+            "the ring was not drawn in amber — \(ring.strokeGreen) against "
+                + "the disc's \(disc.centreGreen)"
+        )
+    }
+
+    /// Reads the corner the marker is drawn into, so a failure above can
+    /// show what was actually painted instead of only a number.
+    private struct Marker {
+        let centreAlpha: CGFloat
+        let centreGreen: CGFloat
+        /// The most opaque pixel on the marker's centre row between 1pt and
+        /// 2.5pt out from the middle — where the ring's stroke lives. Taken
+        /// as a maximum over several offsets rather than one sample because
+        /// the backing scale is not ours to choose: the same point lands in
+        /// the middle of a pixel at 2x and on its edge at 1x.
+        let strokeAlpha: CGFloat
+        let strokeGreen: CGFloat
+        let map: String
+    }
+
+    private func marker(
+        of render: StatusBarUIManager.ProfileMenuBarRender
+    ) throws -> Marker {
+        let data = try XCTUnwrap(render.image.tiffRepresentation)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let scale = CGFloat(bitmap.pixelsWide) / render.image.size.width
+
+        // The marker occupies a 4pt square whose top-right corner sits 0.5pt
+        // in from the image's own top-right, drawn by `applyAttentionMarker`.
+        // Bitmap coordinates run from the top-left, so the marker's centre is
+        // 2.5pt in from the right edge and 2.5pt down from the top.
+        func pixel(rightOffset: CGFloat, topOffset: CGFloat) -> NSColor? {
+            let x = Int((render.image.size.width - rightOffset) * scale)
+            let y = Int(topOffset * scale)
+            guard x >= 0, y >= 0,
+                  x < bitmap.pixelsWide, y < bitmap.pixelsHigh else {
+                return nil
+            }
+            return bitmap.colorAt(x: x, y: y)?
+                .usingColorSpace(.sRGB)
+        }
+
+        func alpha(rightOffset: CGFloat, topOffset: CGFloat) -> CGFloat {
+            pixel(rightOffset: rightOffset, topOffset: topOffset)?
+                .alphaComponent ?? 0
+        }
+
+        var map = ""
+        let side = Int((8 * scale).rounded())
+        for row in 0..<side {
+            for column in stride(from: side - 1, through: 0, by: -1) {
+                let value = alpha(
+                    rightOffset: (CGFloat(column) + 0.5) / scale,
+                    topOffset: (CGFloat(row) + 0.5) / scale
+                )
+                map += value > 0.75 ? "#" : (value > 0.15 ? "+" : ".")
+            }
+            map += "\n"
+        }
+
+        let strokeOffsets: [CGFloat] = [3.5, 4.0, 4.5, 5.0]
+        let strokeOffset = strokeOffsets.max {
+            alpha(rightOffset: $0, topOffset: 2.5)
+                < alpha(rightOffset: $1, topOffset: 2.5)
+        } ?? 4.0
+        return Marker(
+            centreAlpha: alpha(rightOffset: 2.5, topOffset: 2.5),
+            centreGreen: pixel(rightOffset: 2.5, topOffset: 2.5)?
+                .greenComponent ?? 0,
+            strokeAlpha: alpha(rightOffset: strokeOffset, topOffset: 2.5),
+            strokeGreen: pixel(rightOffset: strokeOffset, topOffset: 2.5)?
+                .greenComponent ?? 0,
+            map: map
         )
     }
 
@@ -674,29 +807,34 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// the red dot becomes the same grey as the icon it sits on. The one
     /// person who most needs a coloured alarm is the one who switched every
     /// other colour off. Marking after that assignment, and forcing
-    /// `isTemplate` back off, is what keeps the dot red.
+    /// `isTemplate` back off, is what keeps the dot red — and, for the
+    /// hollow ring, keeps the punched-out middle that tells the two
+    /// credentials apart when neither colour survives.
     func testMarkedIconIsNeverTemplateRendered() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
-        let profile = makeProfile(issue: .signInExpired)
         var monochrome = MultiProfileDisplayConfig()
         monochrome.useSystemColor = true
         monochrome.showPaceMarker = false
 
-        for isActive in [false, true] {
-            let marked = manager.renderProfileMenuBar(
-                for: profile,
-                config: monochrome,
-                isDarkMode: false,
-                isActive: isActive,
-                needsAttention: true
-            )
-            XCTAssertFalse(
-                marked.image.isTemplate,
-                "template rendering would repaint the marker in the menu "
-                    + "bar's foreground colour, hiding it from exactly the "
-                    + "monochrome users who have no other colour to notice"
-            )
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            for isActive in [false, true] {
+                let marked = render(
+                    attention: credential,
+                    isActive: isActive,
+                    config: monochrome,
+                    manager: manager
+                )
+                XCTAssertFalse(
+                    marked.image.isTemplate,
+                    "template rendering would repaint the \(credential) "
+                        + "marker in the menu bar's foreground colour, "
+                        + "hiding it from exactly the monochrome users who "
+                        + "have no other colour to notice"
+                )
+            }
         }
     }
 
@@ -738,10 +876,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// the icon and rebuilds the label every render, so it is the one place
     /// this fact must reach both surfaces.
     ///
-    /// It has to name the credential here more than anywhere else: the icon
-    /// carries one dot for both credentials by design, so a tooltip saying
-    /// only "sign-in needs attention" leaves nothing anywhere that says
-    /// which — and sends half of them to the wrong Settings screen.
+    /// It has to name the credential here more than anywhere else: the
+    /// icon's two shapes are worth nothing to someone reading a tooltip or
+    /// listening to VoiceOver, so for them "sign-in needs attention" is the
+    /// whole message — and it sends half of them to the wrong Settings
+    /// screen.
     func testAttentionLabelNamesWhichCredentialIsBroken() {
         for credential: MenuBarAttentionSignal.Credential in [
             .claudeAI, .claudeCode
@@ -867,32 +1006,26 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     func testMarkerPreservesTheActiveProfileUnderlineGeometry() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
-        let profile = makeProfile(issue: .signInHasNoToken)
-        let config = MultiProfileDisplayConfig()
+        let active = render(attention: nil, isActive: true, manager: manager)
 
-        let active = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: true
-        )
-        let activeMarked = manager.renderProfileMenuBar(
-            for: profile,
-            config: config,
-            isDarkMode: false,
-            isActive: true,
-            needsAttention: true
-        )
-
-        XCTAssertEqual(
-            activeMarked.image.size.height,
-            active.image.size.height,
-            accuracy: 0.01
-        )
-        XCTAssertNotEqual(
-            activeMarked.image.tiffRepresentation,
-            active.image.tiffRepresentation
-        )
+        for credential: MenuBarAttentionSignal.Credential in [
+            .claudeAI, .claudeCode
+        ] {
+            let activeMarked = render(
+                attention: credential,
+                isActive: true,
+                manager: manager
+            )
+            XCTAssertEqual(
+                activeMarked.image.size.height,
+                active.image.size.height,
+                accuracy: 0.01
+            )
+            XCTAssertNotEqual(
+                activeMarked.image.tiffRepresentation,
+                active.image.tiffRepresentation
+            )
+        }
     }
 
     // MARK: - The single-profile label and tooltip
@@ -975,10 +1108,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
-    /// The point of the whole change: the dot is deliberately one dot for
-    /// both credentials, so if the words do not name which one, nothing
-    /// does — and half the people who read it go to the wrong Settings
-    /// screen.
+    /// The point of the whole change on this surface: the mark's shape says
+    /// which credential failed to anyone who can see it, and says nothing at
+    /// all to someone hovering for a tooltip or listening to VoiceOver. If
+    /// the words do not name which one, for them nothing does — and half of
+    /// them go to the wrong Settings screen.
     func testSingleProfileLabelNamesWhichCredentialIsBroken() {
         for credential: MenuBarAttentionSignal.Credential in [
             .claudeAI, .claudeCode

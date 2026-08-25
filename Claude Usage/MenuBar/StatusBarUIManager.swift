@@ -212,11 +212,11 @@ final class StatusBarUIManager {
     /// VoiceOver and a tooltip have in common with the visual marker is what
     /// they must say, not how they say it.
     ///
-    /// It names WHICH credential because nothing else does. The marker is
-    /// deliberately one dot for both — a 4pt mark is a poor place to encode
-    /// two states — so these words are the entire distinction, and
-    /// "sign-in needs attention" on its own sends half the people who read
-    /// it to the wrong Settings screen.
+    /// It names WHICH credential even though the marker now draws two
+    /// different shapes, because the shape reaches nobody who arrives here
+    /// through a tooltip or VoiceOver. For them the words ARE the marker,
+    /// and "sign-in needs attention" on its own sends half of them to the
+    /// wrong Settings screen.
     static func profileAccessibilityLabel(
         _ baseLabel: String,
         isActive: Bool,
@@ -375,8 +375,8 @@ final class StatusBarUIManager {
     /// common case — saw the attention dot and had nothing anywhere telling
     /// them which of the profile's two credentials it was about. Hovering
     /// said nothing and VoiceOver said nothing, which for that person is the
-    /// same as the feature not existing: the dot is deliberately one dot for
-    /// both credentials, so the words carry the entire distinction.
+    /// same as the feature not existing — the mark's own shape says which
+    /// credential failed, and a shape reaches neither of them.
     ///
     /// Assembled in the multi-profile label's order — provider, profile,
     /// figure, then state — so the two modes read alike, with the metric
@@ -1519,15 +1519,16 @@ final class StatusBarUIManager {
         config: MultiProfileDisplayConfig,
         isDarkMode: Bool,
         isActive: Bool,
-        /// Whether this profile's account is signed out or rejected, decided
-        /// by `MenuBarAttentionSignal`. A `Bool` and not the credential kind:
-        /// the dot is identical either way, and which credential died is said
-        /// in words by the label and the popover, not by the drawing.
-        /// Defaulted to `false` so `intendedItemWidth(for:config:isActive:)`
-        /// can keep measuring without knowing: the marker is drawn inside the
-        /// existing canvas and never changes the image's width, so the
-        /// overflow plan is the same either way.
-        needsAttention: Bool = false
+        /// Which of this profile's two credentials is signed out or
+        /// rejected, decided by `MenuBarAttentionSignal`; `nil` for no
+        /// marker. The kind reaches the drawing because the two credentials
+        /// get two different marks — a filled disc and a hollow ring — not
+        /// only two different sentences. Defaulted so
+        /// `intendedItemWidth(for:config:isActive:)` can keep measuring
+        /// without knowing: both markers are drawn inside the existing canvas
+        /// and neither changes the image's width, so the overflow plan is the
+        /// same either way.
+        attention: MenuBarAttentionSignal.Credential? = nil
     ) -> ProfileMenuBarRender {
         // Get usage data for this profile. `ClaudeUsage.empty` stands for
         // "nothing has been read yet" and says so through its availability
@@ -1705,14 +1706,17 @@ final class StatusBarUIManager {
             finalImage = badgedImage
         }
 
-        if needsAttention {
+        if let attention {
             // Last, so it survives the badge and the active-profile
             // underline instead of being drawn over by them. Template
             // rendering is switched off for the same reason the underline
-            // above switches it off: macOS would flatten the red dot into
-            // the icon's own foreground colour and the marker would vanish.
+            // above switches it off: macOS would flatten the marker into
+            // the icon's own foreground colour, taking both its colour and
+            // — for the hollow ring — the punched-out hole that tells the
+            // two credentials apart.
             let marked = renderer.applyAttentionMarker(
                 to: finalImage,
+                credential: attention,
                 isDarkMode: isDarkMode
             )
             marked.isTemplate = false
@@ -1762,7 +1766,7 @@ final class StatusBarUIManager {
                 config: config,
                 isDarkMode: menuBarIsDark,
                 isActive: isActive,
-                needsAttention: attention[profile.id] != nil
+                attention: attention[profile.id]
             )
             button.image = render.image
             statusItemIdentities[ObjectIdentifier(button)] =
@@ -2102,12 +2106,12 @@ final class StatusBarUIManager {
     /// people running several profiles, and a signed-out account would still
     /// be invisible for everyone else.
     ///
-    /// The credential and not a `Bool`, even though the drawing is identical
-    /// either way: this path also writes the label and the tooltip, and on
-    /// this surface those words are the only thing that distinguishes the
-    /// two credentials. One dot for both is a deliberate choice — a 4pt mark
-    /// is a poor place to encode two states — which is exactly what makes
-    /// the wording load-bearing rather than decorative.
+    /// The credential and not a `Bool`, because it selects both surfaces
+    /// this path writes: which mark is drawn — a filled red disc for
+    /// claude.ai, a hollow amber ring for Claude Code — and the wording of
+    /// the label and tooltip built beneath it. A `Bool` would leave this
+    /// path drawing one shape for two unrelated failures while the
+    /// multi-profile path drew two.
     func updateAllButtons(
         usage: ClaudeUsage,
         apiUsage: APIUsage?,
@@ -2173,7 +2177,7 @@ final class StatusBarUIManager {
                 && !badgeStyle.showsTint
             button.image = Self.marked(
                 badged,
-                needsAttention: attention != nil,
+                attention: attention,
                 renderer: renderer,
                 isDarkMode: menuBarIsDark
             )
@@ -2248,7 +2252,7 @@ final class StatusBarUIManager {
             && !badgeStyle.showsTint
         button.image = Self.marked(
             badged,
-            needsAttention: attention != nil,
+            attention: attention,
             renderer: renderer,
             isDarkMode: menuBarIsDark
         )
@@ -2269,15 +2273,17 @@ final class StatusBarUIManager {
     /// healthy render is byte-for-byte what it always was.
     private static func marked(
         _ image: NSImage,
-        needsAttention: Bool,
+        attention: MenuBarAttentionSignal.Credential?,
         renderer: MenuBarIconRenderer,
         isDarkMode: Bool
     ) -> NSImage {
-        guard needsAttention else { return image }
+        guard let attention else { return image }
         // Same reason as the multi-profile path: template rendering would
-        // flatten the red dot into the icon's foreground colour.
+        // flatten the marker into the icon's foreground colour, taking the
+        // ring's punched-out hole with it.
         let marked = renderer.applyAttentionMarker(
             to: image,
+            credential: attention,
             isDarkMode: isDarkMode
         )
         marked.isTemplate = false

@@ -2090,12 +2090,22 @@ struct MenuBarIconRenderer {
     /// wrong for exactly the profiles that most need to stay visible. The dot
     /// is drawn into the top-right corner of the existing canvas instead.
     ///
-    /// The ring is the menu bar's own foreground colour rather than a second
-    /// tint: against a red dot it reads as a deliberate separation from the
-    /// icon underneath at menu-bar size, where a 4pt dot with no outline
-    /// merges into whatever it lands on.
+    /// The halo is the menu bar's own foreground colour rather than a second
+    /// tint: it reads as a deliberate separation from the icon underneath at
+    /// menu-bar size, where a 4pt marker with no outline merges into whatever
+    /// it lands on. Both markers sit inside the same 5.5pt halo, so switching
+    /// between them never moves anything.
+    ///
+    /// The two credentials are told apart by SHAPE as well as colour — a
+    /// filled red disc for claude.ai, a hollow amber ring for Claude Code.
+    /// Colour alone would carry no information for a red/green-colourblind
+    /// viewer, and red-against-amber is one of the pairs that goes first;
+    /// solid-against-hollow survives both that and the 4pt size. Which is
+    /// which follows the loss: the solid mark, the one that reads as heavier,
+    /// belongs to the credential that takes every number on screen with it.
     func applyAttentionMarker(
         to image: NSImage,
+        credential: MenuBarAttentionSignal.Credential,
         isDarkMode: Bool
     ) -> NSImage {
         let size = image.size
@@ -2115,20 +2125,64 @@ struct MenuBarIconRenderer {
             fraction: 1.0
         )
 
-        let dotRect = NSRect(
+        let markerRect = NSRect(
             x: size.width - diameter - 0.5,
             y: size.height - diameter - 0.5,
             width: diameter,
             height: diameter
         )
-        let ring = NSBezierPath(ovalIn: dotRect.insetBy(dx: -0.75, dy: -0.75))
+        let halo = NSBezierPath(
+            ovalIn: markerRect.insetBy(dx: -0.75, dy: -0.75)
+        )
         menuBarForegroundColor(isDarkMode: isDarkMode)
             .withAlphaComponent(0.85)
             .setFill()
-        ring.fill()
+        halo.fill()
 
-        NSColor.systemRed.setFill()
-        NSBezierPath(ovalIn: dotRect).fill()
+        switch credential {
+        case .claudeAI:
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: markerRect).fill()
+        case .claudeCode:
+            // The hole is punched rather than left unpainted. Whatever the
+            // marker lands on — a digit, a bar, the halo just drawn — would
+            // otherwise show through the middle and the ring would read as a
+            // fuzzy filled dot, which is precisely the distinction this
+            // exists to make. `.clear` erases back to transparency, so the
+            // hole shows the menu bar itself.
+            if let context = NSGraphicsContext.current {
+                let previous = context.compositingOperation
+                context.compositingOperation = .clear
+                NSBezierPath(ovalIn: markerRect).fill()
+                context.compositingOperation = previous
+            }
+
+            // Stroked half-in/half-out of a path inset by half the line
+            // width, so the ring's outer edge lands exactly on `markerRect`
+            // and its footprint matches the filled disc above.
+            //
+            // 1pt is the measured optimum, not a guess. Rendered offscreen
+            // at the real canvas size and read back pixel by pixel: at 2x it
+            // gives a solid three-pixel annulus around a clean four-pixel
+            // transparent core, unmistakably a ring. Thinner strokes (0.7pt,
+            // 0.8pt) buy a wider hole but fall below one device pixel, and
+            // the whole marker turns into partial-alpha mush; 1.25pt closes
+            // the hole to two pixels. On a 1x display the hole is down to a
+            // single pixel and the ring reads as a lighter, mottled dot
+            // rather than a ring — the colour and the tooltip carry the
+            // distinction there. That is the trade made knowingly: 1x menu
+            // bars are all but extinct, and no variant does better on them.
+            let strokeWidth: CGFloat = 1
+            let ring = NSBezierPath(
+                ovalIn: markerRect.insetBy(
+                    dx: strokeWidth / 2,
+                    dy: strokeWidth / 2
+                )
+            )
+            ring.lineWidth = strokeWidth
+            NSColor.systemOrange.setStroke()
+            ring.stroke()
+        }
 
         return result
     }

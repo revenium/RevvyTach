@@ -14,20 +14,21 @@ import UsageCore
 /// footnote to find out.
 ///
 /// The first pass at that fix returned a `Bool`, which produced an identical
-/// "sign-in needs attention" tooltip for two unrelated failures with two
-/// unrelated remedies — a signal that says something is wrong without saying
-/// what. The verdict is a `Credential?` so the wording can name which one.
+/// red dot and an identical "sign-in needs attention" tooltip for two
+/// unrelated failures with two unrelated remedies — a signal that says
+/// something is wrong without saying what, on the one surface a person
+/// actually looks at. The verdict is a `Credential?` so every surface can
+/// name which one.
 ///
-/// The kind selects the WORDING and deliberately not the drawing. The dot
-/// stays one dot for both credentials, because a 4pt mark in a menu bar is a
-/// poor place to encode two states — whatever second shape or colour it
-/// carried would have to survive being read at a glance, at that size, by
-/// someone who may not distinguish the colours. The dot's job is "something
-/// here needs you, open me". Which credential died belongs in the tooltip,
-/// the accessibility label and the popover, all of which have room for a
-/// sentence and are where a person goes once the dot has done its job.
-/// Two marks were considered and declined on those grounds; anyone adding
-/// one later is reopening that, not filling a gap.
+/// The kind selects BOTH the mark and the wording. claude.ai is a filled red
+/// disc, Claude Code a hollow amber ring, and the difference is deliberately
+/// carried in the SHAPE and not only the colour: red against amber is one of
+/// the first pairs to fail for a colourblind viewer, while solid against
+/// hollow survives that and survives being read at 4pt. Which mark goes to
+/// which credential follows the loss — the solid one, the mark that reads as
+/// heavier, belongs to the credential that takes every number on screen with
+/// it. The wording carries the same fact for anyone reaching the icon through
+/// a tooltip or VoiceOver, where no shape reaches at all.
 ///
 /// This is the one decision behind the marker, kept apart from the drawing so
 /// it can be tested without AppKit — and so it cannot drift from the popover
@@ -70,12 +71,12 @@ enum MenuBarAttentionSignal {
         healthStatus: ProviderHealthStatus?
     ) -> Credential? {
         // claude.ai first, so that when both credentials are broken at once
-        // the wording names the bigger loss. This is the same precedence
-        // `LegacyPopoverBanner.resolve` already applies, for the same reason:
-        // the claude.ai credential produces every number on screen, the
-        // Claude Code one produces a single row. Two surfaces disagreeing
-        // about which failure matters more would be worse than either
-        // ordering.
+        // the mark drawn and the words spoken both name the bigger loss.
+        // This is the same precedence `LegacyPopoverBanner.resolve` already
+        // applies, for the same reason: the claude.ai credential produces
+        // every number on screen, the Claude Code one produces a single row.
+        // Two surfaces disagreeing about which failure matters more would be
+        // worse than either ordering.
         if hasCredentialError { return .claudeAI }
 
         // Exhaustive on purpose, with no `default:`, matching the discipline
