@@ -739,7 +739,9 @@ struct MenuBarIconRenderer {
             // real per-window token counts (see ClaudeUsageProviderAdapter).
             // Token display mode falls back to percentage rather than
             // showing a number derived from an assumed plan limit.
-            let displayText = "\(Int(displayPercentage))%"
+            let displayText = usage.weeklyPercentageAvailable
+                ? "\(Int(displayPercentage))%"
+                : MenuBarUnknownWindows.dashGlyph
 
             return MetricData(
                 percentage: displayPercentage,

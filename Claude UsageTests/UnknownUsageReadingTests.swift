@@ -486,7 +486,7 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         return CGFloat(maximum) / 255
     }
 
-    func testLegacySingleProfileSessionDistinguishesUnreadFromMeasuredZero()
+    func testLegacySingleProfileMetricsDistinguishUnreadFromMeasuredZero()
         throws
     {
         let renderer = MenuBarIconRenderer()
@@ -498,14 +498,16 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
             usePaceColoring: false
         )
         let unread = ClaudeUsage.empty
-        var measuredZero = ClaudeUsage.empty
-        measuredZero.sessionPercentageAvailable = true
 
-        func render(_ usage: ClaudeUsage, style: MenuBarIconStyle) -> NSImage {
+        func render(
+            _ usage: ClaudeUsage,
+            metric: MenuBarMetricType,
+            style: MenuBarIconStyle
+        ) -> NSImage {
             renderer.createImage(
-                for: .session,
+                for: metric,
                 config: MetricIconConfig(
-                    metricType: .session,
+                    metricType: metric,
                     isEnabled: true,
                     iconStyle: style
                 ),
@@ -521,37 +523,54 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         }
 
         XCTAssertFalse(unread.sessionPercentageAvailable)
-        XCTAssertEqual(measuredZero.sessionPercentage, 0)
-        XCTAssertTrue(measuredZero.sessionPercentageAvailable)
+        XCTAssertFalse(unread.weeklyPercentageAvailable)
+        for metric in [MenuBarMetricType.session, .week] {
+            var measuredZero = ClaudeUsage.empty
+            if metric == .session {
+                measuredZero.sessionPercentageAvailable = true
+                XCTAssertEqual(measuredZero.sessionPercentage, 0)
+                XCTAssertTrue(measuredZero.sessionPercentageAvailable)
+                XCTAssertFalse(measuredZero.weeklyPercentageAvailable)
+            } else {
+                measuredZero.weeklyPercentageAvailable = true
+                XCTAssertEqual(measuredZero.weeklyPercentage, 0)
+                XCTAssertTrue(measuredZero.weeklyPercentageAvailable)
+                XCTAssertFalse(measuredZero.sessionPercentageAvailable)
+            }
 
-        for style in [MenuBarIconStyle.battery, .percentageOnly] {
-            let unreadImage = render(unread, style: style)
-            let zeroImage = render(measuredZero, style: style)
-            XCTAssertNotEqual(
-                try XCTUnwrap(
-                    StatusBarUIManager.imageFingerprint(unreadImage)
-                ),
-                try XCTUnwrap(
-                    StatusBarUIManager.imageFingerprint(zeroImage)
-                ),
-                "\(style): the legacy single-profile icon must not render "
-                    + "an unread session window as a measured 0%."
-            )
-            let unreadAlpha = try maximumRasterAlpha(in: unreadImage)
-            let measuredZeroAlpha = try maximumRasterAlpha(in: zeroImage)
-            XCTAssertEqual(
-                unreadAlpha,
-                0.55,
-                accuracy: 0.08,
-                "\(style): the unknown dash must use the established "
-                    + "dimmed treatment."
-            )
-            XCTAssertGreaterThan(
-                measuredZeroAlpha,
-                unreadAlpha + 0.25,
-                "\(style): a genuine measured 0% must remain more opaque "
-                    + "than unknown."
-            )
+            for style in [MenuBarIconStyle.battery, .percentageOnly] {
+                let unreadImage = render(unread, metric: metric, style: style)
+                let zeroImage = render(
+                    measuredZero,
+                    metric: metric,
+                    style: style
+                )
+                XCTAssertNotEqual(
+                    try XCTUnwrap(
+                        StatusBarUIManager.imageFingerprint(unreadImage)
+                    ),
+                    try XCTUnwrap(
+                        StatusBarUIManager.imageFingerprint(zeroImage)
+                    ),
+                    "\(metric) \(style): the legacy single-profile icon "
+                        + "must not render unread usage as a measured 0%."
+                )
+                let unreadAlpha = try maximumRasterAlpha(in: unreadImage)
+                let measuredZeroAlpha = try maximumRasterAlpha(in: zeroImage)
+                XCTAssertEqual(
+                    unreadAlpha,
+                    0.55,
+                    accuracy: 0.08,
+                    "\(metric) \(style): the unknown dash must use the "
+                        + "established dimmed treatment."
+                )
+                XCTAssertGreaterThan(
+                    measuredZeroAlpha,
+                    unreadAlpha + 0.25,
+                    "\(metric) \(style): a genuine measured 0% must remain "
+                        + "more opaque than unknown."
+                )
+            }
         }
     }
 
