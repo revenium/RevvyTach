@@ -133,6 +133,32 @@ nonisolated struct RefreshTimingPolicy: Equatable, Sendable {
             && elapsedSinceLastTrigger > networkDebounce
     }
 
+    /// Whether the delayed initial fetch scheduled at the end of `setup()`
+    /// should still fan out when its second elapses.
+    ///
+    /// That fetch exists for launch-at-login, where the app can come up
+    /// before anything is ready to be refreshed, and it must keep doing that
+    /// job. What it must not do is duplicate a fan-out that already went out
+    /// in the meantime — which is what happened on every launch: a first
+    /// fan-out of every selected profile, then a second one 0.85 s later, and
+    /// the refresh engine cancelling the first one's in-flight requests
+    /// because a later refresh supersedes an earlier one. Those
+    /// self-inflicted cancellations were then reported to the user as
+    /// problems with their Claude Code sign-in.
+    ///
+    /// Decided on a count of fan-outs actually dispatched rather than on
+    /// elapsed time, because the question is not "was something recent" but
+    /// "did the work this call would repeat already happen". A fan-out that
+    /// covered no profiles never increments the count, so it does not
+    /// suppress this one — the launch-at-login case stays covered.
+    static func shouldPerformDelayedLaunchRefresh(
+        hasRefreshableProfile: Bool,
+        fanOutsWhenScheduled: UInt64,
+        fanOutsNow: UInt64
+    ) -> Bool {
+        hasRefreshableProfile && fanOutsNow == fanOutsWhenScheduled
+    }
+
     static func shouldRefreshAfterWake(
         elapsedSinceLastAutomaticRefresh: TimeInterval
     ) -> Bool {
@@ -540,6 +566,40 @@ class MenuBarManager: NSObject, ObservableObject {
     private let providerUIDependencies: ProviderUIDependencies
     private let autoStartService = AutoStartSessionService.shared
     private let refreshRuntime: UsageRefreshRuntime
+
+    /// How many usage fan-outs this manager has actually handed to the
+    /// refresh runtime. Monotonic, and incremented only when profiles were
+    /// really dispatched — a call that found nothing eligible does not count,
+    /// because nothing was refreshed.
+    ///
+    /// Read by the delayed launch fetch to tell "a refresh already covered
+    /// this" from "nothing has run yet", which is what stops one launch
+    /// producing two fan-outs that cancel each other. See
+    /// `RefreshTimingPolicy.shouldPerformDelayedLaunchRefresh`.
+    private(set) var dispatchedUsageFanOuts: UInt64 = 0
+
+    /// Where a fan-out actually goes.
+    ///
+    /// Defaults to the refresh runtime. Exposed as a seam so a test can count
+    /// the launch sequence's fan-outs without standing up a network stack —
+    /// the property under test is how many times this is called, and calling
+    /// the real runtime would make that assertion depend on live requests.
+    lazy var dispatchUsageRefresh: (
+        [Profile],
+        UsageRefreshTrigger
+    ) -> Void = { [weak self] profiles, trigger in
+        self?.refreshRuntime.refresh(profiles: profiles, trigger: trigger)
+    }
+
+    /// The single place a fan-out leaves this manager, so the count above
+    /// cannot drift from what was actually dispatched.
+    private func dispatchRefresh(
+        profiles: [Profile],
+        trigger: UsageRefreshTrigger
+    ) {
+        dispatchedUsageFanOuts &+= 1
+        dispatchUsageRefresh(profiles, trigger)
+    }
     private var refreshEventObserver: UUID?
     private var refreshPresentedEventObserver: UUID?
     private var refreshFailureObserver: UUID?
@@ -1465,9 +1525,24 @@ class MenuBarManager: NSObject, ObservableObject {
 
         // Initial data fetch (with small delay for launch-at-login scenarios)
         // Only if profile has usage credentials (not just CLI)
+        //
+        // Gated on the fan-out count taken right now, not merely on having a
+        // refreshable profile. Network monitoring starts a few lines above
+        // and NWPathMonitor delivers its first path within a couple of
+        // hundred milliseconds, so on a normal launch a full fan-out of every
+        // selected profile has already gone out by the time this second
+        // elapses. Firing anyway produced a second fan-out that superseded
+        // the first, and the refresh engine cancels a superseded batch's
+        // in-flight requests — which the extra-usage path could only read as
+        // a rejected credential. Re-checked at fire time rather than decided
+        // here, because whether anything ran in between is only knowable
+        // then.
         if hasRefreshableVisibleProfile {
+            let fanOutsWhenScheduled = dispatchedUsageFanOuts
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.refreshUsage(trigger: .startup)
+                self?.performDelayedLaunchRefresh(
+                    fanOutsWhenScheduled: fanOutsWhenScheduled
+                )
             }
         } else {
             LoggingService.shared.log("Skipping initial refresh (no usage credentials)")
@@ -3757,7 +3832,7 @@ class MenuBarManager: NSObject, ObservableObject {
         }
 
         LoggingService.shared.log("MenuBarManager: Refreshing \(selectedProfiles.count) selected profiles for multi-profile mode")
-        refreshRuntime.refresh(
+        dispatchRefresh(
             profiles: selectedProfiles,
             trigger: trigger
         )
@@ -3807,6 +3882,27 @@ class MenuBarManager: NSObject, ObservableObject {
         LoggingService.shared.log("MenuBarManager: Single profile mode enabled")
     }
 
+    /// The delayed launch fetch, at the moment it is due.
+    ///
+    /// Internal rather than private so the launch sequence can be exercised
+    /// as a sequence — schedule, something else fans out, this fires — which
+    /// is the only shape in which the duplicate could be observed.
+    func performDelayedLaunchRefresh(fanOutsWhenScheduled: UInt64) {
+        guard RefreshTimingPolicy.shouldPerformDelayedLaunchRefresh(
+            hasRefreshableProfile: hasRefreshableVisibleProfile,
+            fanOutsWhenScheduled: fanOutsWhenScheduled,
+            fanOutsNow: dispatchedUsageFanOuts
+        ) else {
+            LoggingService.shared.log(
+                "MenuBarManager: Skipping the initial launch refresh — a "
+                + "fan-out already covered the selected profiles, and a "
+                + "second one would only cancel the first's requests"
+            )
+            return
+        }
+        refreshUsage(trigger: .startup)
+    }
+
     func refreshUsage(
         trigger: UsageRefreshTrigger = .manual
     ) {
@@ -3838,7 +3934,7 @@ class MenuBarManager: NSObject, ObservableObject {
         }
 
         LoggingService.shared.log("MenuBarManager: Proceeding with refresh")
-        refreshRuntime.refresh(
+        dispatchRefresh(
             profiles: [profile],
             trigger: trigger
         )

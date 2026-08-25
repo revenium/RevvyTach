@@ -1312,7 +1312,8 @@
 "popover.extra_usage.cli_not_linked" = "This is your organization's total. Your own extra usage comes from Claude Code, which isn't linked to this account yet — add it in Settings → CLI Account.";
 "popover.extra_usage.cli_sign_in_expired" = "This is your organization's total. Claude Code's sign-in for this account has expired. Sign in to Claude Code again and your own extra usage will reappear on its own.";
 "popover.extra_usage.cli_sign_in_has_no_token" = "This is your organization's total. Claude Code is signed out of the account linked here, so there's no sign-in to read your own extra usage with. Sign in to it and this will fill in on its own.";
-"popover.extra_usage.cli_sign_in_unusable" = "This is your organization's total. Your own extra usage couldn't be read just now — re-sync your Claude Code account in Settings → CLI Account.";
+"popover.extra_usage.cli_sign_in_unusable" = "This is your organization's total. Your own extra usage couldn't be read with the Claude Code account linked here.";
+"popover.extra_usage.cli_temporarily_unavailable" = "This is your organization's total. Your own extra usage couldn't be read this time. It will be retried automatically.";
 "cli.login_expired_title" = "Sign-in expired";
 "cli.login_expired_explain" = "Re-syncing won't help: it copies this account's sign-in, and that sign-in has expired. Run this in Terminal to sign in again.";
 "cli.login_expired_then_resync" = "Once you're signed in, come back and press Re-sync.";
@@ -1321,7 +1322,8 @@
 "popover.extra_usage.absent.cli_not_linked" = "Your extra usage comes from Claude Code, which isn't linked to this account yet — add it in Settings → CLI Account.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Your extra usage can't be read: Claude Code's sign-in for this account has expired. Sign in to Claude Code again and it will reappear on its own.";
 "popover.extra_usage.absent.cli_sign_in_has_no_token" = "Your extra usage can't be read: Claude Code is signed out of the account linked here. Sign in to it and this will fill in on its own.";
-"popover.extra_usage.absent.cli_sign_in_unusable" = "Your extra usage couldn't be read just now — re-sync your Claude Code account in Settings → CLI Account.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Your extra usage couldn't be read with the Claude Code account linked here.";
+"popover.extra_usage.absent.cli_temporarily_unavailable" = "Your extra usage couldn't be read this time. It will be retried automatically.";
 "popover.extra_usage.absent.cli_other_organization" = "Your extra usage isn't shown: the linked Claude Code account belongs to a different organization.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Your extra usage couldn't be matched to this organization — reconnect your account in Settings → Claude.ai.";
 "popover.extra_usage.organization_lookup_failed" = "Your extra usage couldn't be read just now. Refresh to try again.";

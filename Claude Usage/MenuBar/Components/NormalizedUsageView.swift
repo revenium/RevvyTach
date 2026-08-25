@@ -1351,7 +1351,14 @@ private struct ExtraUsageNoticeView: View {
             case .claudeAccountUnresolved:
                 return claudeAIAccountAction
             case .notLinked, .signInExpired, .signInUnusable,
-                 .signInHasNoToken, .differentOrganization:
+                 .signInHasNoToken, .differentOrganization,
+                 .temporarilyUnavailable:
+                // `.temporarilyUnavailable` says nothing to do and means it:
+                // its message carries no instruction, because the retry is
+                // the app's job. The row is still a button — every notice is
+                // — so it lands on the screen where the linked Claude Code
+                // account lives rather than nowhere. The destination is a
+                // fallback for a tap, not a remedy being suggested.
                 return cliAccountAction
             }
         }
@@ -1408,11 +1415,26 @@ private struct ExtraUsageNoticeView: View {
                     + "it and this will fill in on its own."
             )
         case .signInUnusable:
+            // No instruction, deliberately. The re-sync this used to ask for
+            // has already been attempted: `adoptLiveCLILogin` performs the
+            // same read the button does, unprompted, before this verdict is
+            // reached. Asking for it again asks someone to repeat a step that
+            // just failed — and the Re-sync import validates JSON shape only,
+            // so a tokenless blob can overwrite a working login and read back
+            // as valid. Steering people toward it could cost them the
+            // credential it was meant to fix.
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.cli_sign_in_unusable",
                 default: "This is your organization's total. Your own extra "
-                    + "usage couldn't be read just now — re-sync your Claude "
-                    + "Code account in Settings → CLI Account."
+                    + "usage couldn't be read with the Claude Code account "
+                    + "linked here."
+            )
+        case .temporarilyUnavailable:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.cli_temporarily_unavailable",
+                default: "This is your organization's total. Your own extra "
+                    + "usage couldn't be read this time. It will be retried "
+                    + "automatically."
             )
         case .differentOrganization:
             return NormalizedUsageStrings.localized(
@@ -1459,11 +1481,19 @@ private struct ExtraUsageNoticeView: View {
                     + "and this will fill in on its own."
             )
         case .signInUnusable:
+            // Same reasoning as the reconciliation voice above: a statement
+            // of what is true, with no step attached that the app has not
+            // already taken itself.
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.absent.cli_sign_in_unusable",
-                default: "Your extra usage couldn't be read just now — "
-                    + "re-sync your Claude Code account in Settings → "
-                    + "CLI Account."
+                default: "Your extra usage couldn't be read with the Claude "
+                    + "Code account linked here."
+            )
+        case .temporarilyUnavailable:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_temporarily_unavailable",
+                default: "Your extra usage couldn't be read this time. It "
+                    + "will be retried automatically."
             )
         case .differentOrganization:
             return NormalizedUsageStrings.localized(
@@ -1492,6 +1522,10 @@ private struct ExtraUsageNoticeView: View {
                 return "person.crop.circle.badge.plus"
             case .signInExpired, .signInUnusable, .signInHasNoToken:
                 return "exclamationmark.triangle"
+            case .temporarilyUnavailable:
+                // Not a warning triangle: nothing is wrong and nothing needs
+                // attention — a reading is simply on its way back.
+                return "arrow.clockwise"
             case .differentOrganization:
                 return "person.2.slash"
             case .claudeAccountUnresolved:

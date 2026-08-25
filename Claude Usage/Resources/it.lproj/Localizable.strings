@@ -1298,7 +1298,8 @@
 "popover.extra_usage.cli_not_linked" = "Questo è il totale della tua organizzazione. Il tuo utilizzo aggiuntivo proviene da Claude Code, che non è ancora collegato a questo account: aggiungilo in Impostazioni → Account CLI.";
 "popover.extra_usage.cli_sign_in_expired" = "Questo è il totale della tua organizzazione. L'accesso a Claude Code per questo account è scaduto. Accedi di nuovo a Claude Code: il tuo utilizzo aggiuntivo ricomparirà da sé.";
 "popover.extra_usage.cli_sign_in_has_no_token" = "Questo è il totale della tua organizzazione. Claude Code è disconnesso dall'account collegato qui, quindi non c'è alcun accesso con cui leggere il tuo utilizzo aggiuntivo. Accedi a quell'account: il valore comparirà da sé.";
-"popover.extra_usage.cli_sign_in_unusable" = "Questo è il totale della tua organizzazione. Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento: risincronizza il tuo account Claude Code in Impostazioni → Account CLI.";
+"popover.extra_usage.cli_sign_in_unusable" = "Questo è il totale della tua organizzazione. Non è stato possibile leggere il tuo utilizzo aggiuntivo con l'account Claude Code collegato qui.";
+"popover.extra_usage.cli_temporarily_unavailable" = "Questo è il totale della tua organizzazione. Questa volta non è stato possibile leggere il tuo utilizzo aggiuntivo. Verrà riprovato automaticamente.";
 "cli.login_expired_title" = "Accesso scaduto";
 "cli.login_expired_explain" = "Risincronizzare non serve: copia l'accesso di questo account, e quell'accesso è scaduto. Esegui questo nel Terminale per accedere di nuovo.";
 "cli.login_expired_then_resync" = "Una volta effettuato l'accesso, torna qui e premi Risincronizza.";
@@ -1307,7 +1308,8 @@
 "popover.extra_usage.absent.cli_not_linked" = "Il tuo utilizzo aggiuntivo proviene da Claude Code, che non è ancora collegato a questo account: aggiungilo in Impostazioni → Account CLI.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Non è possibile leggere il tuo utilizzo aggiuntivo: l'accesso a Claude Code per questo account è scaduto. Accedi di nuovo a Claude Code e il valore ricomparirà da sé.";
 "popover.extra_usage.absent.cli_sign_in_has_no_token" = "Non è possibile leggere il tuo utilizzo aggiuntivo: Claude Code è disconnesso dall'account collegato qui. Accedi a quell'account e il valore comparirà da sé.";
-"popover.extra_usage.absent.cli_sign_in_unusable" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento: risincronizza il tuo account Claude Code in Impostazioni → Account CLI.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo con l'account Claude Code collegato qui.";
+"popover.extra_usage.absent.cli_temporarily_unavailable" = "Questa volta non è stato possibile leggere il tuo utilizzo aggiuntivo. Verrà riprovato automaticamente.";
 "popover.extra_usage.absent.cli_other_organization" = "Il tuo utilizzo aggiuntivo non viene mostrato: l'account Claude Code collegato appartiene a un'altra organizzazione.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Non è stato possibile abbinare il tuo utilizzo aggiuntivo a questa organizzazione: ricollega il tuo account in Impostazioni → Claude.ai.";
 "popover.extra_usage.organization_lookup_failed" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento. Aggiorna per riprovare.";

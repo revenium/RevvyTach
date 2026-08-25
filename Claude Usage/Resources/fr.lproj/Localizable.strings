@@ -1278,7 +1278,8 @@
 "popover.extra_usage.cli_not_linked" = "Il s'agit du total de votre organisation. Votre propre utilisation supplémentaire provient de Claude Code, qui n'est pas encore lié à ce compte — ajoutez-le dans Réglages → Compte CLI.";
 "popover.extra_usage.cli_sign_in_expired" = "Il s'agit du total de votre organisation. La connexion Claude Code de ce compte a expiré. Reconnectez-vous à Claude Code : votre propre utilisation supplémentaire réapparaîtra d'elle-même.";
 "popover.extra_usage.cli_sign_in_has_no_token" = "Il s'agit du total de votre organisation. Claude Code est déconnecté du compte lié ici, il n'y a donc aucune connexion permettant de lire votre utilisation supplémentaire. Connectez-vous à ce compte : la valeur apparaîtra d'elle-même.";
-"popover.extra_usage.cli_sign_in_unusable" = "Il s'agit du total de votre organisation. Votre utilisation supplémentaire n'a pas pu être lue à l'instant — resynchronisez votre compte Claude Code dans Réglages → Compte CLI.";
+"popover.extra_usage.cli_sign_in_unusable" = "Il s'agit du total de votre organisation. Votre utilisation supplémentaire n'a pas pu être lue avec le compte Claude Code lié ici.";
+"popover.extra_usage.cli_temporarily_unavailable" = "Il s'agit du total de votre organisation. Votre utilisation supplémentaire n'a pas pu être lue cette fois-ci. Une nouvelle tentative aura lieu automatiquement.";
 "cli.login_expired_title" = "Connexion expirée";
 "cli.login_expired_explain" = "Une resynchronisation n'y changera rien : elle copie la connexion de ce compte, et cette connexion a expiré. Exécutez ceci dans le Terminal pour vous reconnecter.";
 "cli.login_expired_then_resync" = "Une fois connecté, revenez ici et appuyez sur Resynchroniser.";
@@ -1287,7 +1288,8 @@
 "popover.extra_usage.absent.cli_not_linked" = "Votre utilisation supplémentaire provient de Claude Code, qui n'est pas encore lié à ce compte — ajoutez-le dans Réglages → Compte CLI.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Votre utilisation supplémentaire ne peut pas être lue : la connexion Claude Code de ce compte a expiré. Reconnectez-vous à Claude Code et la valeur réapparaîtra d'elle-même.";
 "popover.extra_usage.absent.cli_sign_in_has_no_token" = "Votre utilisation supplémentaire ne peut pas être lue : Claude Code est déconnecté du compte lié ici. Connectez-vous à ce compte et la valeur apparaîtra d'elle-même.";
-"popover.extra_usage.absent.cli_sign_in_unusable" = "Votre utilisation supplémentaire n'a pas pu être lue à l'instant — resynchronisez votre compte Claude Code dans Réglages → Compte CLI.";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "Votre utilisation supplémentaire n'a pas pu être lue avec le compte Claude Code lié ici.";
+"popover.extra_usage.absent.cli_temporarily_unavailable" = "Votre utilisation supplémentaire n'a pas pu être lue cette fois-ci. Une nouvelle tentative aura lieu automatiquement.";
 "popover.extra_usage.absent.cli_other_organization" = "Votre utilisation supplémentaire n'est pas affichée : le compte Claude Code lié appartient à une autre organisation.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Votre utilisation supplémentaire n'a pas pu être associée à cette organisation — reconnectez votre compte dans Réglages → Claude.ai.";
 "popover.extra_usage.organization_lookup_failed" = "Votre utilisation supplémentaire n'a pas pu être lue à l'instant. Actualisez pour réessayer.";

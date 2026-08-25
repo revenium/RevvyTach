@@ -1298,7 +1298,8 @@
 "popover.extra_usage.cli_not_linked" = "これは組織全体の合計です。ご自身の追加使用量は Claude Code から取得されますが、このアカウントにはまだ連携されていません。設定 → CLI アカウントで追加してください。";
 "popover.extra_usage.cli_sign_in_expired" = "これは組織全体の合計です。このアカウントの Claude Code のサインインは期限切れです。Claude Code に再度サインインすれば、ご自身の追加使用量は自動的に再表示されます。";
 "popover.extra_usage.cli_sign_in_has_no_token" = "これは組織全体の合計です。ここにリンクされたアカウントで Claude Code がサインアウトされているため、ご自身の追加使用量を読み取るためのサインインがありません。そのアカウントにサインインすれば、自動的に表示されます。";
-"popover.extra_usage.cli_sign_in_unusable" = "これは組織全体の合計です。ご自身の追加使用量を今回読み取れませんでした。「設定 → CLI アカウント」で Claude Code アカウントを再同期してください。";
+"popover.extra_usage.cli_sign_in_unusable" = "これは組織全体の合計です。ここにリンクされている Claude Code アカウントでは、ご自身の追加使用量を読み取れませんでした。";
+"popover.extra_usage.cli_temporarily_unavailable" = "これは組織全体の合計です。今回はご自身の追加使用量を読み取れませんでした。自動的に再試行されます。";
 "cli.login_expired_title" = "サインインの期限切れ";
 "cli.login_expired_explain" = "再同期では解決しません。再同期はこのアカウントのサインインを複製するもので、そのサインイン自体が期限切れです。ターミナルで次を実行して再度サインインしてください。";
 "cli.login_expired_then_resync" = "サインインが完了したら、ここに戻って「再同期」を押してください。";
@@ -1307,7 +1308,8 @@
 "popover.extra_usage.absent.cli_not_linked" = "ご自身の追加使用量は Claude Code から取得されますが、このアカウントにはまだ連携されていません。「設定 → CLI アカウント」で追加してください。";
 "popover.extra_usage.absent.cli_sign_in_expired" = "ご自身の追加使用量を読み取れません。このアカウントの Claude Code のサインインは期限切れです。Claude Code に再度サインインすれば、自動的に再表示されます。";
 "popover.extra_usage.absent.cli_sign_in_has_no_token" = "ご自身の追加使用量を読み取れません。ここにリンクされたアカウントで Claude Code がサインアウトされています。そのアカウントにサインインすれば、自動的に表示されます。";
-"popover.extra_usage.absent.cli_sign_in_unusable" = "ご自身の追加使用量を今回読み取れませんでした。「設定 → CLI アカウント」で Claude Code アカウントを再同期してください。";
+"popover.extra_usage.absent.cli_sign_in_unusable" = "ここにリンクされている Claude Code アカウントでは、追加使用量を読み取れませんでした。";
+"popover.extra_usage.absent.cli_temporarily_unavailable" = "今回は追加使用量を読み取れませんでした。自動的に再試行されます。";
 "popover.extra_usage.absent.cli_other_organization" = "ご自身の追加使用量は表示されません。連携されている Claude Code アカウントは別の組織に属しています。";
 "popover.extra_usage.absent.claude_account_unresolved" = "ご自身の追加使用量をこの組織と照合できませんでした。「設定 → Claude.ai」でアカウントを再接続してください。";
 "popover.extra_usage.organization_lookup_failed" = "ご自身の追加使用量を今回読み取れませんでした。更新して再試行してください。";

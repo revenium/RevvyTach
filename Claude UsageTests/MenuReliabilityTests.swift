@@ -2825,6 +2825,119 @@ final class MenuReliabilityTests: HostedAppTestCase {
 
         XCTAssertNil(target)
     }
+
+    // MARK: - One launch, one fan-out
+
+    /// A launch used to refresh every selected profile twice, 0.85 s apart.
+    ///
+    /// Network monitoring starts near the end of `setup()` and NWPathMonitor
+    /// delivers its first path within a couple of hundred milliseconds, so a
+    /// full fan-out had already gone out by the time the delayed initial
+    /// fetch fired. The second fan-out superseded the first, and the refresh
+    /// engine cancels a superseded batch's in-flight requests — cancellations
+    /// the extra-usage path could only read as a rejected credential, which
+    /// is how the app came to accuse the user's Claude Code sign-in of a
+    /// failure it had caused itself.
+    func testLaunchProducesExactlyOneFanOutOfTheSelectedProfiles() {
+        let (manager, _) = makeMultiProfileManagerForLaunchSequence()
+        var dispatched: [[UUID]] = []
+        manager.dispatchUsageRefresh = { profiles, _ in
+            dispatched.append(profiles.map(\.id))
+        }
+
+        // The launch sequence in the order `setup()` performs it: the delayed
+        // fetch is scheduled (capturing the fan-out count as it stands), the
+        // network monitor's first path arrives and fans out, and a second
+        // later the delayed fetch comes due.
+        let fanOutsWhenScheduled = manager.dispatchedUsageFanOuts
+        manager.refreshUsage(trigger: .networkAvailable)
+        manager.performDelayedLaunchRefresh(
+            fanOutsWhenScheduled: fanOutsWhenScheduled
+        )
+
+        XCTAssertEqual(
+            dispatched.count,
+            1,
+            "one launch must fan out once; a second fan-out only cancels the "
+                + "first one's requests"
+        )
+        XCTAssertEqual(
+            dispatched.first?.count,
+            2,
+            "the one fan-out that does happen must still cover every "
+                + "selected profile"
+        )
+    }
+
+    /// The delayed fetch exists for launch-at-login, where nothing may be
+    /// refreshable when `setup()` runs. Suppressing a duplicate must not cost
+    /// it that job: with no fan-out in between, it still fires.
+    func testTheDelayedLaunchRefreshStillFiresWhenNothingRanBefore() {
+        let (manager, _) = makeMultiProfileManagerForLaunchSequence()
+        var dispatched: [[UUID]] = []
+        manager.dispatchUsageRefresh = { profiles, _ in
+            dispatched.append(profiles.map(\.id))
+        }
+
+        manager.performDelayedLaunchRefresh(
+            fanOutsWhenScheduled: manager.dispatchedUsageFanOuts
+        )
+
+        XCTAssertEqual(dispatched.count, 1)
+        XCTAssertEqual(dispatched.first?.count, 2)
+    }
+
+    /// Two profiles selected for display, both refreshable, in multi-profile
+    /// mode — the shape the maintainer's machine launches in.
+    private func makeMultiProfileManagerForLaunchSequence()
+        -> (MenuBarManager, ProfileManager)
+    {
+        var profiles = [
+            Profile(
+                name: "first",
+                claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: "665a6475-2eb6-4da8-8379-d5529d283568"
+            ),
+            Profile(
+                name: "second",
+                claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: "ef142542-c027-47d7-9b93-80f8415554a9"
+            )
+        ]
+        for index in profiles.indices {
+            profiles[index].isSelectedForDisplay = true
+        }
+        let profileManager = retain(makeIsolatedProfileManager())
+        profileManager.profiles = profiles
+        profileManager.activeProfile = profiles[0]
+        profileManager.displayMode = .multi
+        let apiService = retain(ClaudeAPIService(
+            profileManager: profileManager,
+            systemCredentialsReader: { nil }
+        ))
+        let statusService = retain(ClaudeStatusService())
+        let runtime = retain(UsageRefreshRuntime.live(
+            profileManager: profileManager,
+            apiService: apiService,
+            statusService: statusService,
+            featureAvailability: .testing()
+        ))
+        let manager = retain(MenuBarManager(
+            apiService: apiService,
+            statusService: statusService,
+            profileManager: profileManager,
+            refreshRuntime: runtime,
+            providerUIDependencies: retain(
+                ProviderUIDependencies(
+                    profileManager: profileManager,
+                    codexProviderFactory: CodexProviderFactory(
+                        availability: .testing()
+                    )
+                )
+            )
+        ))
+        return (manager, profileManager)
+    }
 }
 
 private enum LocalizedDeletionError: LocalizedError {

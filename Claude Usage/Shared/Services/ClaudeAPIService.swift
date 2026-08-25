@@ -698,8 +698,21 @@ class ClaudeAPIService: APIServiceProtocol {
     private enum PersonalExtraUsageOutcome {
         case available(OAuthUsageResponse.ExtraUsage)
         case issue(ClaudeUsage.PersonalExtraUsageIssue)
-        /// Nothing to report: no profile, or the member has extra usage off.
+        /// Nothing to report: no profile, the member has extra usage off, or
+        /// the linked account has no organization behind it to attribute an
+        /// organization-scoped figure to.
         case notApplicable
+        /// No answer at all: the app tore its own request down because a
+        /// later refresh superseded this one.
+        ///
+        /// Deliberately distinct from `notApplicable`. That is a settled
+        /// answer and this is the absence of one, and the difference decides
+        /// whether what is already on screen may be replaced. The superseding
+        /// refresh is running right now and will supply the real reading, so
+        /// the correct state change here is none — recording anything would
+        /// swap a good figure for the shadow of a request the app cancelled
+        /// itself.
+        case superseded
     }
 
     private func personalExtraUsage(
@@ -796,10 +809,29 @@ class ClaudeAPIService: APIServiceProtocol {
             return .issue(expired ? .signInExpired : .signInUnusable)
         }
 
-        guard let cliOrganizationId = await cliOrganizationID(
+        let cliOrganizationId: String
+        switch await cliOrganizationID(
             for: profile,
             credential: credential
-        ) else { return .issue(.signInUnusable) }
+        ) {
+        case .resolved(let uuid):
+            cliOrganizationId = uuid
+        case .noOrganization:
+            // A settled answer, and the commonest one on a personal Max/Pro
+            // account: there is no organization behind the login, so there is
+            // no organization-scoped member figure to attribute and nothing
+            // for anyone to do about it. Silent for exactly the reason extra
+            // usage being switched off is silent. It used to arrive here as a
+            // bare nil and be reported as a broken sign-in, which is why the
+            // notice appeared on every profile except the one team account.
+            return .notApplicable
+        case .lookupFailed:
+            // The request did not come back usable. Nothing is known about
+            // the credential, so nothing is said about it.
+            return .issue(.temporarilyUnavailable)
+        case .cancelled:
+            return .superseded
+        }
 
         // The guard this whole path exists for. One person can hold two CLI
         // logins under the same email — one on their company's team, one on
@@ -816,10 +848,21 @@ class ClaudeAPIService: APIServiceProtocol {
             return .issue(.differentOrganization)
         }
 
-        guard let data = await performOAuthRequest(
+        let data: Data
+        switch await performOAuthRequest(
             urlString: Self.oauthUsageURL,
             accessToken: credential.accessToken
-        ) else { return .issue(.signInUnusable) }
+        ) {
+        case .succeeded(let payload):
+            data = payload
+        case .failed:
+            // Offline, refused, rate limited, timed out. The token was good
+            // enough to get this far, so blaming the sign-in here was always
+            // a guess — and the remedy it named could not have helped.
+            return .issue(.temporarilyUnavailable)
+        case .cancelled:
+            return .superseded
+        }
 
         guard let usage = try? JSONDecoder().decode(
             OAuthUsageResponse.self,
@@ -828,7 +871,12 @@ class ClaudeAPIService: APIServiceProtocol {
             LoggingService.shared.logWarning(
                 "Could not read the member's extra usage response."
             )
-            return .issue(.signInUnusable)
+            // A body that will not decode is a failed reading, not a failed
+            // credential: the request was authorized, answered, and came back
+            // malformed. Re-syncing a login cannot change what the server
+            // sent, so this belongs with the other transient outcomes rather
+            // than with the ones that implicate the sign-in.
+            return .issue(.temporarilyUnavailable)
         }
 
         // Extra usage switched off for this member is a settled answer, not a
@@ -1076,25 +1124,59 @@ class ClaudeAPIService: APIServiceProtocol {
     /// tick contributed to 429s. The answer is cached on the profile so a
     /// lookup that cannot be repeated (offline, expired login) still has an
     /// answer to fall back on.
+    /// What asking Claude which organization a CLI login belongs to actually
+    /// established.
+    ///
+    /// One `String?` used to stand for four unrelated things, and the only
+    /// reading the caller could give the nil was "this credential is broken".
+    /// A personal Max/Pro account simply has no organization to report — a
+    /// complete, well-formed answer — and it was reaching people as a notice
+    /// telling them to re-sync a sign-in that was working perfectly. The
+    /// notice appeared on every profile except the one linked to a team
+    /// account, which was the clue that broke the case open. Separating the
+    /// outcomes is what lets each be handled for what it is.
+    private enum CLIOrganizationLookup {
+        /// The linked account belongs to this organization.
+        case resolved(String)
+        /// The profile response parsed and carries no organization at all:
+        /// what a personal subscription looks like. A settled fact, not a
+        /// failure — retrying cannot change it and there is nothing to fix.
+        ///
+        /// Carries no identifier, deliberately, so it cannot satisfy the
+        /// caller's `cliOrganizationId == organizationId` guard by any route.
+        /// That guard is what stops one account's figure being read with
+        /// another account's token, and no new case may weaken it.
+        case noOrganization
+        /// The request did not come back usable, or its body would not
+        /// decode. Worth retrying, and latched for the rest of the run so one
+        /// failure does not become a request on every refresh tick.
+        case lookupFailed
+        /// The app cancelled its own request because a later refresh
+        /// superseded this one. Not a failure and not an answer: nothing is
+        /// latched and nothing is reported.
+        case cancelled
+    }
+
     private func cliOrganizationID(
         for profile: Profile,
         credential: (credentialsJSON: String, accessToken: String)
-    ) async -> String? {
+    ) async -> CLIOrganizationLookup {
         let fingerprint = credential.credentialsJSON.hashValue
         if cliOrganizationCredentialHashes[profile.id] == fingerprint,
            let cached = profile.cliOrganizationId {
-            return cached
+            return .resolved(cached)
         }
 
         if failedCLIOrganizationLookups.contains(profile.id) {
             if failedCLIOrganizationLookupFingerprints[profile.id] == fingerprint {
                 // The same credential that already failed this run: honor
                 // the short-circuit rather than repeating a lookup that can
-                // only fail again. Nil for the same reason the live failure
-                // above answers nil — the cached id belongs to whichever
-                // credential last resolved successfully, which is not this
-                // one.
-                return nil
+                // only fail again. Answered as a failure rather than with the
+                // cached id for the reason spelled out in
+                // `recordFailedOrganizationLookup(for:fingerprint:)` — the
+                // cached id belongs to whichever credential last resolved
+                // successfully, which is not this one.
+                return .lookupFailed
             }
             // A different credential is presented than the one that failed
             // — the profile was re-linked to a different Claude Code
@@ -1104,34 +1186,50 @@ class ClaudeAPIService: APIServiceProtocol {
             failedCLIOrganizationLookupFingerprints.removeValue(forKey: profile.id)
         }
 
-        guard
-            let data = await performOAuthRequest(
-                urlString: Self.oauthProfileURL,
-                accessToken: credential.accessToken
-            ),
-            let response = try? JSONDecoder().decode(
-                OAuthProfileResponse.self,
-                from: data
-            ),
-            let uuid = response.organization?.uuid
-        else {
-            failedCLIOrganizationLookups.insert(profile.id)
-            failedCLIOrganizationLookupFingerprints[profile.id] = fingerprint
-            LoggingService.shared.logWarning(
-                "Could not establish which organization the linked Claude "
-                + "Code account belongs to; the member's own extra usage is "
-                + "skipped rather than attributed on a cached answer."
+        let data: Data
+        switch await performOAuthRequest(
+            urlString: Self.oauthProfileURL,
+            accessToken: credential.accessToken
+        ) {
+        case .succeeded(let payload):
+            data = payload
+        case .failed:
+            return recordFailedOrganizationLookup(
+                for: profile,
+                fingerprint: fingerprint
             )
-            // Deliberately nil, not `profile.cliOrganizationId`.
-            //
-            // The cached id was resolved from a *different* credential — this
-            // lookup only runs because the fingerprint changed. Answering
-            // with it let the caller's organization-match guard pass on the
-            // strength of the previous account's identity and then read the
-            // member figure with the new account's token, which is exactly
-            // the cross-account attribution this guard exists to stop. One
-            // failed request was enough to reach it.
-            return nil
+        case .cancelled:
+            // Nothing recorded and nothing reported. Latching a failure the
+            // app inflicted on itself would suppress the answer the
+            // superseding refresh is about to produce, for the rest of the
+            // run — which is how a launch-time teardown turned into a
+            // permanent notice about the user's sign-in.
+            return .cancelled
+        }
+
+        guard let response = try? JSONDecoder().decode(
+            OAuthProfileResponse.self,
+            from: data
+        ) else {
+            return recordFailedOrganizationLookup(
+                for: profile,
+                fingerprint: fingerprint
+            )
+        }
+
+        guard let uuid = response.organization?.uuid else {
+            // The response is intact and simply carries no organization,
+            // which is what a personal Max/Pro subscription looks like. Not
+            // latched in `failedCLIOrganizationLookups`: nothing failed, and
+            // a retry would only ask the same settled question again.
+            LoggingService.shared.logDebug(
+                "The Claude Code account linked to profile "
+                + "'\(profile.name)' reports no organization, which is what "
+                + "a personal subscription looks like; there is no "
+                + "organization-scoped member figure to show and nothing to "
+                + "fix."
+            )
+            return .noOrganization
         }
 
         cliOrganizationCredentialHashes[profile.id] = fingerprint
@@ -1140,17 +1238,61 @@ class ClaudeAPIService: APIServiceProtocol {
         if profile.cliOrganizationId != uuid {
             profileManager.updateCliOrganizationId(uuid, for: profile.id)
         }
-        return uuid
+        return .resolved(uuid)
     }
 
-    /// A GET against an `api.anthropic.com` OAuth endpoint. Every failure is
-    /// answered with nil: none of these responses is worth failing a whole
-    /// refresh over.
+    /// Records a genuine organization-lookup failure and answers with it.
+    ///
+    /// The answer is deliberately `.lookupFailed`, never the profile's cached
+    /// `cliOrganizationId`. That cached id was resolved from a *different*
+    /// credential — this lookup only runs because the fingerprint changed.
+    /// Answering with it let the caller's organization-match guard pass on
+    /// the strength of the previous account's identity and then read the
+    /// member figure with the new account's token, which is exactly the
+    /// cross-account attribution that guard exists to stop. One failed
+    /// request was enough to reach it.
+    private func recordFailedOrganizationLookup(
+        for profile: Profile,
+        fingerprint: Int
+    ) -> CLIOrganizationLookup {
+        failedCLIOrganizationLookups.insert(profile.id)
+        failedCLIOrganizationLookupFingerprints[profile.id] = fingerprint
+        LoggingService.shared.logWarning(
+            "Could not establish which organization the linked Claude "
+            + "Code account belongs to; the member's own extra usage is "
+            + "skipped rather than attributed on a cached answer."
+        )
+        return .lookupFailed
+    }
+
+    /// What a GET against an `api.anthropic.com` OAuth endpoint came back
+    /// with.
+    ///
+    /// This used to be a bare `Data?`, which made "the app tore its own
+    /// request down" indistinguishable from "the server refused this
+    /// credential". The refresh engine cancels in-flight work whenever a
+    /// later refresh supersedes an earlier one, and that happens routinely —
+    /// twice on every launch, before this change — so a self-inflicted
+    /// teardown was being reported to people as a problem with their sign-in.
+    private enum OAuthRequestOutcome {
+        case succeeded(Data)
+        /// The app cancelled the request itself. No verdict of any kind: the
+        /// refresh that superseded this one is already asking the same
+        /// question.
+        case cancelled
+        /// Offline, refused, rate limited, timed out, or a non-200 status.
+        /// Worth retrying, and never a statement about the credential.
+        case failed
+    }
+
+    /// A GET against an `api.anthropic.com` OAuth endpoint. No failure is
+    /// worth failing a whole refresh over, so each is classified and handed
+    /// back rather than thrown.
     private func performOAuthRequest(
         urlString: String,
         accessToken: String
-    ) async -> Data? {
-        guard let url = URL(string: urlString) else { return nil }
+    ) async -> OAuthRequestOutcome {
+        guard let url = URL(string: urlString) else { return .failed }
         var request = buildAuthenticatedRequest(
             url: url,
             auth: .cliOAuth(accessToken)
@@ -1173,8 +1315,8 @@ class ClaudeAPIService: APIServiceProtocol {
                 duration: Date().timeIntervalSince(startTime),
                 error: nil
             )
-            guard statusCode == 200 else { return nil }
-            return data
+            guard statusCode == 200 else { return .failed }
+            return .succeeded(data)
         } catch {
             NetworkLoggerService.shared.logRequest(
                 url: urlString,
@@ -1185,13 +1327,30 @@ class ClaudeAPIService: APIServiceProtocol {
                 duration: Date().timeIntervalSince(startTime),
                 error: error
             )
-            return nil
+            // `URLError.cancelled` (-999) is what a superseded refresh looks
+            // like from down here; `Task.isCancelled` covers a structured
+            // cancellation that was noticed before URLSession reported one.
+            // Neither says anything at all about the login, and treating
+            // them as a failure is what put a credential complaint on screen
+            // for work the app had just cancelled on purpose.
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                return .cancelled
+            }
+            return .failed
         }
     }
 
     /// Copies a member's extra usage onto the usage record, leaving the
     /// fields nil whenever the figure could not be established.
-    private func applyPersonalExtraUsage(
+    ///
+    /// Internal rather than private so a test can assert the one property
+    /// that matters about the superseded case and cannot be observed from
+    /// outside: that a record already carrying a figure comes back out of
+    /// here still carrying it. Every path through `fetchUsageData` builds a
+    /// fresh record, so from there "wrote nothing" and "wrote nil" look
+    /// identical — and those are the two behaviours this function exists to
+    /// keep apart.
+    func applyPersonalExtraUsage(
         to usage: inout ClaudeUsage,
         profile: Profile,
         organizationId: String
@@ -1203,7 +1362,35 @@ class ClaudeAPIService: APIServiceProtocol {
         case .available(let extraUsage):
             guard let used = extraUsage.usedCredits,
                   let limit = extraUsage.monthlyLimit else {
-                usage.personalExtraUsageIssue = .signInUnusable
+                // A complete, well-formed answer that happens to carry no
+                // figure: the request was authorized, `is_enabled` came back
+                // true, and the credit fields are simply absent. That is the
+                // same class of settled answer as extra usage being switched
+                // off, two lines below, and that one is silent.
+                //
+                // It used to be recorded as `.signInUnusable`, so a request
+                // that succeeded produced a notice telling people to re-sync
+                // a sign-in that had just worked — and this branch logged
+                // nothing at all, which is why the notice appeared on nearly
+                // every profile while the log showed almost no warnings.
+                // Nothing here is actionable by the reader, so nothing is
+                // shown; which field was absent is logged instead, because
+                // that is the first thing anyone diagnosing this will want.
+                let absentField: String
+                switch (extraUsage.usedCredits, extraUsage.monthlyLimit) {
+                case (nil, nil):
+                    absentField = "usedCredits and monthlyLimit"
+                case (nil, _):
+                    absentField = "usedCredits"
+                default:
+                    absentField = "monthlyLimit"
+                }
+                LoggingService.shared.logDebug(
+                    "Extra usage is enabled for profile '\(profile.name)' "
+                    + "but the response carried no \(absentField); treating "
+                    + "it as a settled 'no figure here' answer rather than as "
+                    + "a problem with the sign-in."
+                )
                 return
             }
             usage.personalCostUsed = used
@@ -1212,6 +1399,12 @@ class ClaudeAPIService: APIServiceProtocol {
         case .issue(let issue):
             usage.personalExtraUsageIssue = issue
         case .notApplicable:
+            break
+        case .superseded:
+            // Deliberately no write of any kind — not the figure, not the
+            // issue, not a cleared field. A superseding refresh is already in
+            // flight with the same question, so the record keeps whatever it
+            // was carrying until that one answers.
             break
         }
     }

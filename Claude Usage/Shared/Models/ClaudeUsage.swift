@@ -132,9 +132,31 @@ struct ClaudeUsage: Codable, Equatable {
         /// this, and re-syncing only re-imports it, so it is kept apart from
         /// `signInUnusable` whose remedy really is a re-sync.
         case signInHasNoToken
-        /// One is linked and its sign-in is current, but it could not be
-        /// used this time. Re-syncing is the right remedy here.
+        /// One is linked and its sign-in is current, but the app could not
+        /// make it produce a reading.
+        ///
+        /// This used to be the catch-all every unclassified outcome fell
+        /// into, and its message told people to re-sync. That was wrong on
+        /// two counts. The app already performs the equivalent of a re-sync
+        /// on its own — `adoptLiveCLILogin(for:replacing:)` is deliberately
+        /// the same read the button performs, and it runs before this verdict
+        /// is reached — so the instruction asked for a step that had just
+        /// been taken and failed. And the Re-sync import validates JSON shape
+        /// only, so a tokenless blob can overwrite a working login and read
+        /// back as valid: the advice could destroy the very credential it was
+        /// meant to repair. What is left here is a statement of fact with no
+        /// instruction attached.
         case signInUnusable
+        /// The reading could not be taken this time, for a reason that says
+        /// nothing about the credential: the request timed out, was refused
+        /// by the server, or came back as something that would not decode.
+        ///
+        /// Kept apart from `signInUnusable` because the sign-in is not
+        /// implicated at all, and apart from silence because the figure does
+        /// exist and simply is not here yet. Its message is a plain statement
+        /// with no remedy, since the only thing anyone can do is wait for the
+        /// next refresh — which the app performs unaided.
+        case temporarilyUnavailable
         /// The linked account is signed in to a different organization than
         /// the one being displayed, so its figures describe someone else's
         /// context.
