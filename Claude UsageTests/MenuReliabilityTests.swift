@@ -2928,8 +2928,9 @@ final class MenuReliabilityTests: HostedAppTestCase {
     /// against `lastRefreshTriggerTime`, and until a dispatch recorded it the
     /// only writers were profile activation, the popover, and the two
     /// credentials-changed paths — so the elapsed time it measured was
-    /// really "time since the last profile switch", almost always enormous,
-    /// and the guard never once fired. The comment at that call site says it
+    /// really "time since the last profile switch", almost always enormous.
+    /// Those four could still trip the guard, so it was not inert — but no
+    /// refresh cadence ever reached it. The comment at that call site says it
     /// exists to "avoid duplicate on startup"; this is what makes that true.
     ///
     /// Not what caused the observed double fan-out — that was a genuine

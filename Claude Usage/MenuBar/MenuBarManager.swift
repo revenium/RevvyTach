@@ -636,12 +636,14 @@ class MenuBarManager: NSObject, ObservableObject {
         guard !profiles.isEmpty else { return }
         dispatchedUsageFanOuts &+= 1
         // The network-availability guard debounces against this, and until
-        // it was recorded here it debounced against nothing: the only writers
+        // it was recorded here no fan-out ever moved it: the only writers
         // were profile activation, the popover, and the two credentials
         // -changed paths, so `elapsedSinceLastTrigger` was really "time since
         // the last profile switch" and was almost always enormous. The
-        // comment at that call site says the check exists to "avoid duplicate
-        // on startup", and it could not do that. A Wi-Fi interface that drops
+        // guard could still fire from one of those four, so it was not inert
+        // — but the comment at that call site says the check exists to
+        // "avoid duplicate on startup", and against a refresh cadence it
+        // never saw it could not do that. A Wi-Fi interface that drops
         // and returns twice in quick succession — which is how a real stall
         // recovery looks — would otherwise fan out once per path update, each
         // one cancelling the last.
