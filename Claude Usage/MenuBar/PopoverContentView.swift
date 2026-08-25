@@ -1292,14 +1292,15 @@ struct StatusBannerView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.primary)
                 .lineLimit(2)
-                // Without this the `Spacer()` below hands the text its
-                // single-line ideal width and `lineLimit(2)` never gets a
-                // second line to use: every banner longer than ~225pt was
-                // truncated mid-word, including the existing claude.ai one
-                // ("claude.ai rejected this session ke…"). The limit is the
-                // budget the copy is measured against in
-                // `PopoverHeaderLocalizationFitTests`; this is what makes it
-                // the real one.
+                // Without `.fixedSize` here the text keeps its single-line
+                // ideal width and `lineLimit(2)` never gets a second line to
+                // use; the explicit `maxWidth: .infinity` frame below is what
+                // then gives that second line somewhere to go. Without both,
+                // every banner longer than ~225pt was truncated mid-word,
+                // including the existing claude.ai one ("claude.ai rejected
+                // this session ke…"). The limit is the budget the copy is
+                // measured against in `PopoverHeaderLocalizationFitTests`;
+                // this is what makes it the real one.
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if onTap != nil {
@@ -1321,9 +1322,10 @@ struct StatusBannerView: View {
         .padding(.top, 6)
         // Without an explicit hit-testing shape, `onTapGesture` only
         // registers over the row's rendered content (icon/text), not the
-        // `Spacer()` that fills most of the row — including the area right
-        // under the chevron the layout draws to invite a tap. That made the
-        // affordance look dead even though the closure was reachable.
+        // expanded text view's `maxWidth: .infinity` frame that fills most
+        // of the row — including the area right under the chevron the
+        // layout draws to invite a tap. That made the affordance look dead
+        // even though the closure was reachable.
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
     }
