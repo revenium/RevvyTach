@@ -673,6 +673,10 @@ struct MenuBarIconRenderer {
         let displayText: String
         let statusLevel: UsageStatusLevel
         let sessionResetTime: Date?  // Only populated for session metric
+
+        var isUnknown: Bool {
+            displayText == MenuBarUnknownWindows.dashGlyph
+        }
     }
 
     private func getMetricData(
@@ -705,7 +709,9 @@ struct MenuBarIconRenderer {
 
             return MetricData(
                 percentage: displayPercentage,
-                displayText: "\(Int(displayPercentage))%",
+                displayText: usage.sessionPercentageAvailable
+                    ? "\(Int(displayPercentage))%"
+                    : MenuBarUnknownWindows.dashGlyph,
                 statusLevel: statusLevel,
                 sessionResetTime: usage.sessionResetTime
             )
@@ -863,14 +869,9 @@ struct MenuBarIconRenderer {
             ofSize: 9,
             weight: .medium
         )
-        let batteryTextAttributes = textAttributes(
-            font: batteryLabelFont,
-            fallbackSize: 9,
-            color: textColor.withAlphaComponent(0.85)
-        )
-
         // Show metric label if enabled, otherwise show percentage
         let text: NSString
+        let batteryTextColor: NSColor
         if showNextSessionTime && metricType == .session, let resetTime = metricData.sessionResetTime {
             if showIconName {
                 // Show "S (→2H)" when labels enabled
@@ -879,13 +880,23 @@ struct MenuBarIconRenderer {
                 // Show just "→2H" when labels disabled
                 text = resetTime.timeRemainingHoursString() as NSString
             }
+            batteryTextColor = textColor.withAlphaComponent(0.85)
         } else if showIconName {
             // Show full word: "Session" or "Week"
             text = (metricType == .session ? "Session" : "Week") as NSString
+            batteryTextColor = textColor.withAlphaComponent(0.85)
         } else {
             // No label mode - show percentage instead
-            text = "\(Int(metricData.percentage))%" as NSString
+            text = metricData.displayText as NSString
+            batteryTextColor = metricData.isUnknown
+                ? foregroundColor.withAlphaComponent(0.55)
+                : textColor.withAlphaComponent(0.85)
         }
+        let batteryTextAttributes = textAttributes(
+            font: batteryLabelFont,
+            fallbackSize: 9,
+            color: batteryTextColor
+        )
 
         let textSize = batteryTextAttributes.map {
             text.size(withAttributes: $0)
@@ -1029,23 +1040,37 @@ struct MenuBarIconRenderer {
         let percentageFont: NSFont? = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)  // Larger font
         let fillColor: NSColor = getColorForMode(colorMode, statusLevel: metricData.statusLevel, singleColorHex: singleColorHex, isDarkMode: isDarkMode)
 
-        var fullText = ""
-
-        if showIconName {
-            fullText = "\(metricType.prefixText) \(metricData.displayText)"
-        } else {
-            fullText = metricData.displayText
-        }
-
         let attributes = textAttributes(
             font: percentageFont,
             fallbackSize: 12,
             color: fillColor
         )
+        let attributedText = attributes.map { attributes in
+            let text = NSMutableAttributedString()
+            if showIconName {
+                text.append(
+                    NSAttributedString(
+                        string: "\(metricType.prefixText) ",
+                        attributes: attributes
+                    )
+                )
+            }
+            var valueAttributes = attributes
+            if metricData.isUnknown {
+                valueAttributes[.foregroundColor] = menuBarForegroundColor(
+                    isDarkMode: isDarkMode
+                ).withAlphaComponent(0.55)
+            }
+            text.append(
+                NSAttributedString(
+                    string: metricData.displayText,
+                    attributes: valueAttributes
+                )
+            )
+            return text
+        }
 
-        let textSize = attributes.map {
-            fullText.size(withAttributes: $0)
-        } ?? .zero
+        let textSize = attributedText?.size() ?? .zero
         let hasPaceDot = showPaceMarker && paceStatus != nil
         let paceDotExtra: CGFloat = hasPaceDot ? 8 : 0  // dot(4) + gaps(2+2)
         let image = NSImage(size: NSSize(width: textSize.width + 2 + paceDotExtra, height: 18))
@@ -1054,9 +1079,7 @@ struct MenuBarIconRenderer {
         defer { image.unlockFocus() }
 
         let textY = (18 - textSize.height) / 2
-        if let attributes {
-            fullText.draw(at: NSPoint(x: 2, y: textY), withAttributes: attributes)
-        }
+        attributedText?.draw(at: NSPoint(x: 2, y: textY))
 
         // Pace dot after text
         if showPaceMarker, let pace = paceStatus {

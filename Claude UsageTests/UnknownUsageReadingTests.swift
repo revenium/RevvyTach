@@ -441,6 +441,123 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         return profile
     }
 
+    private func maximumRasterAlpha(in image: NSImage) throws -> CGFloat {
+        var proposedRect = NSRect(origin: .zero, size: image.size)
+        let source = try XCTUnwrap(
+            image.cgImage(
+                forProposedRect: &proposedRect,
+                context: nil,
+                hints: nil
+            )
+        )
+        let bytesPerRow = source.width * 4
+        var pixels = [UInt8](
+            repeating: 0,
+            count: bytesPerRow * source.height
+        )
+        try pixels.withUnsafeMutableBytes { storage in
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: storage.baseAddress,
+                    width: source.width,
+                    height: source.height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            )
+            context.clear(
+                CGRect(x: 0, y: 0, width: source.width, height: source.height)
+            )
+            context.draw(
+                source,
+                in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: source.width,
+                    height: source.height
+                )
+            )
+        }
+        let maximum = stride(from: 3, to: pixels.count, by: 4)
+            .map { pixels[$0] }
+            .max() ?? 0
+        return CGFloat(maximum) / 255
+    }
+
+    func testLegacySingleProfileSessionDistinguishesUnreadFromMeasuredZero()
+        throws
+    {
+        let renderer = MenuBarIconRenderer()
+        let globalConfig = MenuBarIconConfiguration(
+            colorMode: .monochrome,
+            showIconNames: false,
+            showTimeMarker: false,
+            showPaceMarker: false,
+            usePaceColoring: false
+        )
+        let unread = ClaudeUsage.empty
+        var measuredZero = ClaudeUsage.empty
+        measuredZero.sessionPercentageAvailable = true
+
+        func render(_ usage: ClaudeUsage, style: MenuBarIconStyle) -> NSImage {
+            renderer.createImage(
+                for: .session,
+                config: MetricIconConfig(
+                    metricType: .session,
+                    isEnabled: true,
+                    iconStyle: style
+                ),
+                globalConfig: globalConfig,
+                usage: usage,
+                apiUsage: nil,
+                isDarkMode: false,
+                colorMode: globalConfig.colorMode,
+                singleColorHex: globalConfig.singleColorHex,
+                showIconName: globalConfig.showIconNames,
+                showNextSessionTime: false
+            )
+        }
+
+        XCTAssertFalse(unread.sessionPercentageAvailable)
+        XCTAssertEqual(measuredZero.sessionPercentage, 0)
+        XCTAssertTrue(measuredZero.sessionPercentageAvailable)
+
+        for style in [MenuBarIconStyle.battery, .percentageOnly] {
+            let unreadImage = render(unread, style: style)
+            let zeroImage = render(measuredZero, style: style)
+            XCTAssertNotEqual(
+                try XCTUnwrap(
+                    StatusBarUIManager.imageFingerprint(unreadImage)
+                ),
+                try XCTUnwrap(
+                    StatusBarUIManager.imageFingerprint(zeroImage)
+                ),
+                "\(style): the legacy single-profile icon must not render "
+                    + "an unread session window as a measured 0%."
+            )
+        }
+
+        let unreadAlpha = try maximumRasterAlpha(
+            in: render(unread, style: .percentageOnly)
+        )
+        let measuredZeroAlpha = try maximumRasterAlpha(
+            in: render(measuredZero, style: .percentageOnly)
+        )
+        XCTAssertEqual(
+            unreadAlpha,
+            0.55,
+            accuracy: 0.08,
+            "The unknown dash must use the established dimmed treatment."
+        )
+        XCTAssertGreaterThan(
+            measuredZeroAlpha,
+            unreadAlpha + 0.25,
+            "A genuine measured 0% must remain more opaque than unknown."
+        )
+    }
+
     func testNeverLoadedProfileRendersDifferentlyFromZeroPercentProfile() {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
