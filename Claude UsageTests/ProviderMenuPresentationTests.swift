@@ -1538,15 +1538,20 @@ final class ProviderMenuPresentationTests: HostedAppTestCase {
         throws
     {
         let renderer = MenuBarIconRenderer()
-        let common: (UsageStatusLevel, UsageStatusLevel) -> (NSSize, Data) = {
+        let common: (
+            UsageStatusLevel,
+            UsageStatusLevel,
+            String?
+        ) -> (NSSize, Data) = {
             sessionStatus,
-            weekStatus in
+            weekStatus,
+            profileName in
             let image = renderer.createMultiProfilePercentage(
                 sessionPercentage: 3,
                 weekPercentage: 85,
                 sessionStatus: sessionStatus,
                 weekStatus: weekStatus,
-                profileName: "j@",
+                profileName: profileName,
                 monochromeMode: false,
                 isDarkMode: true
             )
@@ -1556,14 +1561,18 @@ final class ProviderMenuPresentationTests: HostedAppTestCase {
             )
         }
 
-        let healthy = common(.safe, .safe)
-        let criticalWeek = common(.safe, .critical)
-        let criticalSession = common(.critical, .safe)
+        let healthy = common(.safe, .safe, "j@")
+        let criticalWeek = common(.safe, .critical, "j@")
+        let criticalSession = common(.critical, .safe, "j@")
+        let unlabeledHealthy = common(.safe, .safe, nil)
+        let unlabeledCritical = common(.safe, .critical, nil)
 
         XCTAssertEqual(criticalWeek.0, healthy.0)
         XCTAssertEqual(criticalSession.0, healthy.0)
         XCTAssertNotEqual(criticalWeek.1, healthy.1)
         XCTAssertNotEqual(criticalSession.1, healthy.1)
+        XCTAssertNotEqual(unlabeledCritical.1, unlabeledHealthy.1)
+        XCTAssertNotEqual(unlabeledCritical.0, .zero)
     }
 
     /// `updateProviderMultiProfileButtons` chooses between the compact

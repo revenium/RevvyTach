@@ -2007,14 +2007,15 @@ struct MenuBarIconRenderer {
                 let rangeWidth = attributed.attributedSubstring(
                     from: range
                 ).size().width
+                let underlineY = max(1.0, textY - 1)
                 let underline = NSBezierPath()
                 underline.move(
-                    to: NSPoint(x: textX + prefixWidth, y: textY - 1)
+                    to: NSPoint(x: textX + prefixWidth, y: underlineY)
                 )
                 underline.line(
                     to: NSPoint(
                         x: textX + prefixWidth + rangeWidth,
-                        y: textY - 1
+                        y: underlineY
                     )
                 )
                 underline.lineWidth = 1.5
