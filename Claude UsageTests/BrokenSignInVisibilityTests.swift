@@ -700,22 +700,38 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 + "colourblindness\n"
                 + ring.map
         )
+        // Relative rather than absolute: on a 1x/headless raster the stroke
+        // itself only reaches partial alpha (a 1.0pt stroke landing on a
+        // single device pixel), so what distinguishes a real ring from a
+        // filled blob isn't "the stroke is near-opaque" but "the stroke is
+        // substantially more opaque than the ring's own punched-out
+        // centre" — a filled shape collapses that gap toward zero at any
+        // scale.
         XCTAssertGreaterThan(
-            ring.strokeAlpha,
-            0.9,
-            "the ring's own stroke is missing or too faint to see\n"
+            ring.strokeAlpha - ring.centreAlpha,
+            0.4,
+            "the ring's stroke is not meaningfully more opaque than its "
+                + "own hollow centre\n"
                 + ring.map
         )
 
         // Shape is the encoding that survives colourblindness, but the two
         // colours still have to be two colours: if the ring came back red
         // the marker would have lost half its redundancy silently. Green is
-        // what separates systemOrange from systemRed.
+        // what separates systemOrange from systemRed. Compared as intrinsic
+        // (alpha-normalized) colour rather than the raw composited channel,
+        // since a partially-transparent amber stroke composites toward
+        // whatever's underneath and dilutes the raw green reading.
+        let ringIntrinsicGreen = ring.strokeAlpha > 0
+            ? ring.strokeGreen / ring.strokeAlpha : 0
+        let discIntrinsicGreen = disc.centreAlpha > 0
+            ? disc.centreGreen / disc.centreAlpha : 0
         XCTAssertGreaterThan(
-            ring.strokeGreen - disc.centreGreen,
-            0.2,
-            "the ring was not drawn in amber — \(ring.strokeGreen) against "
-                + "the disc's \(disc.centreGreen)"
+            ringIntrinsicGreen - discIntrinsicGreen,
+            0.25,
+            "the ring was not drawn in amber (intrinsic green "
+                + "\(ringIntrinsicGreen)) against the disc's red "
+                + "(intrinsic green \(discIntrinsicGreen))"
         )
     }
 
@@ -728,8 +744,14 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         /// 2.5pt out from the middle — where the ring's stroke lives. Taken
         /// as a maximum over several offsets rather than one sample because
         /// a single fixed offset can still straddle a pixel boundary within
-        /// the bitmap's own 2x grid; sampling several offsets and taking the
-        /// max is cheap insurance against that, independent of host scale.
+        /// the sampling bitmap's own grid; sampling several offsets and
+        /// taking the max is cheap insurance against that. This value is
+        /// compared against `centreAlpha` (not against an absolute
+        /// threshold) because the raster's actual detail is fixed at
+        /// `applyAttentionMarker` draw time by the host's current scale —
+        /// resampling at a fixed grid here cannot recover detail that was
+        /// never drawn, so a relative/normalized comparison is what stays
+        /// robust across 1x and 2x hosts.
         let strokeAlpha: CGFloat
         let strokeGreen: CGFloat
         let map: String
@@ -740,10 +762,14 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     ) throws -> Marker {
         // Rasterize at a fixed 2x scale rather than relying on
         // `tiffRepresentation`, whose backing scale tracks the host's
-        // display: on a 1x/headless runner the marker's 1.0pt stroke lands
-        // on a single device pixel and samples come back partial-alpha,
-        // making the assertions below flaky depending on where the test
-        // happens to run.
+        // display. This no longer recovers any lost detail — the source
+        // image's actual sharpness was fixed by `applyAttentionMarker` at
+        // draw time (1x on headless CI, 2x on a Retina dev Mac), and
+        // resampling it here can't add detail that was never drawn. It's
+        // kept purely for a stable, deterministic sampling grid so pixel
+        // offsets below are host-independent; the assertions themselves are
+        // now relative/normalized so they hold regardless of the source
+        // raster's actual scale.
         let pointSize = render.image.size
         let fixedScale: CGFloat = 2.0
         let bitmap = try XCTUnwrap(NSBitmapImageRep(
