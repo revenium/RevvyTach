@@ -682,6 +682,50 @@ class ClaudeAPIService: APIServiceProtocol {
     /// Profiles whose organization lookup already failed this app run.
     private var failedCLIOrganizationLookups: Set<UUID> = []
 
+    /// Profiles whose CLI login answered "no organization", paired with the
+    /// fingerprint of the credential that answered. An absent entry means the
+    /// question has not been settled for the credential now being presented.
+    ///
+    /// **Strictly not a failure record, and must never be folded into
+    /// `failedCLIOrganizationLookups`.** That set suppresses a lookup that
+    /// went wrong; this one remembers a lookup that went right and returned a
+    /// complete answer — a personal Max/Pro subscription with no organization
+    /// behind it. They differ in what they cause: a suppressed failure still
+    /// reports a problem to the reader, a remembered settled answer stays
+    /// silent. Merging them would put the notice back on every personal
+    /// account, which is the whole defect this area was rewritten for.
+    ///
+    /// Remembered at all because of request volume, not correctness. The
+    /// comment above the sequenced requests in `fetchUsageData` records what
+    /// is at stake: extra per-profile requests on every tick, multiplied
+    /// across every selected profile, were a meaningful contributor to this
+    /// API's 429 responses. `noOrganization` is the *common* answer on a
+    /// machine holding mostly personal subscriptions, so asking again on
+    /// every refresh would add one GET per such profile per tick forever, for
+    /// an answer that cannot change while the credential does not.
+    ///
+    /// Keyed on the credential fingerprint, exactly like the resolved-id
+    /// cache above, and that is what makes it safe rather than merely small:
+    ///
+    /// - a profile re-linked to a different Claude Code account presents a
+    ///   different credential, misses this cache, and is asked again
+    ///   immediately — the case that actually matters, and the same property
+    ///   `failedCLIOrganizationLookupFingerprints` exists to give the failure
+    ///   latch;
+    /// - Anthropic's OAuth rotates the refresh token on use, so the
+    ///   fingerprint changes of its own accord over time and the answer is
+    ///   re-checked without any timer to maintain;
+    /// - an app restart asks again, which is what happened before this cache
+    ///   existed and was never a complaint.
+    ///
+    /// It carries no organization identifier, deliberately, so a cache hit
+    /// can no more satisfy the caller's `cliOrganizationId == organizationId`
+    /// guard than a fresh `noOrganization` can. Anything that made this
+    /// answer with an id — including "helpfully" falling back to
+    /// `profile.cliOrganizationId` — would reinstate the cross-account
+    /// attribution that guard exists to stop.
+    private var cliLoginsWithoutOrganization: [UUID: Int] = [:]
+
     /// The credential fingerprint in use the last time a profile's entry in
     /// `failedCLIOrganizationLookups` was recorded. `cliOrganizationCredentialHashes`
     /// is only ever written on a *successful* lookup, so it cannot answer
@@ -1167,6 +1211,13 @@ class ClaudeAPIService: APIServiceProtocol {
             return .resolved(cached)
         }
 
+        // The other settled answer, remembered the same way and for the same
+        // reason. See `cliLoginsWithoutOrganization` for why this is a cache
+        // of a good answer and not a suppression of a bad one.
+        if cliLoginsWithoutOrganization[profile.id] == fingerprint {
+            return .noOrganization
+        }
+
         if failedCLIOrganizationLookups.contains(profile.id) {
             if failedCLIOrganizationLookupFingerprints[profile.id] == fingerprint {
                 // The same credential that already failed this run: honor
@@ -1229,12 +1280,17 @@ class ClaudeAPIService: APIServiceProtocol {
                 + "organization-scoped member figure to show and nothing to "
                 + "fix."
             )
+            cliLoginsWithoutOrganization[profile.id] = fingerprint
             return .noOrganization
         }
 
         cliOrganizationCredentialHashes[profile.id] = fingerprint
         failedCLIOrganizationLookups.remove(profile.id)
         failedCLIOrganizationLookupFingerprints.removeValue(forKey: profile.id)
+        // One remembered answer per profile. The record being dropped was
+        // taken against a different credential, so keeping it could only ever
+        // serve a login this profile has stopped presenting.
+        cliLoginsWithoutOrganization.removeValue(forKey: profile.id)
         if profile.cliOrganizationId != uuid {
             profileManager.updateCliOrganizationId(uuid, for: profile.id)
         }

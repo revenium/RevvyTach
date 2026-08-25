@@ -2020,9 +2020,13 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// one of the maintainer's profiles except the single team account — the
     /// only one with an organization to report.
     ///
-    /// Two fetches, because "not latched as a failure" is only observable
-    /// over time: a latched failure short-circuits and never asks again, so
-    /// asking again is the proof that nothing was latched.
+    /// Two fetches, because the settled answer has to hold across refreshes
+    /// rather than merely be right once. What proves it is not being treated
+    /// as a *failure* is the silence: a latched failure short-circuits too,
+    /// but goes on reporting `.temporarilyUnavailable` to the reader every
+    /// time — see
+    /// `testAFailedProfileRequestIsLatchedUnlikeAMissingOrganization`, which
+    /// is the same shape with the opposite verdict.
     func testAnAccountWithNoOrganizationStaysSilentAndIsNotLatched()
         async throws
     {
@@ -2061,9 +2065,9 @@ final class PersonalExtraUsageTests: XCTestCase {
             StubClaudeEndpointsURLProtocol.requestedURLs.filter {
                 $0.hasSuffix("/api/oauth/profile")
             }.count,
-            2,
-            "a settled answer is not a failure, so it must not be latched "
-                + "into the failed-lookup short-circuit"
+            1,
+            "the answer cannot change while the credential does not, so it "
+                + "is asked once rather than on every refresh"
         )
         XCTAssertFalse(
             StubClaudeEndpointsURLProtocol.requestedURLs.contains {
@@ -2072,6 +2076,140 @@ final class PersonalExtraUsageTests: XCTestCase {
             "with no organization there is nothing to scope a member figure "
                 + "to, so the member endpoint must never be asked"
         )
+    }
+
+    /// The settled answer is remembered against the credential that gave it,
+    /// and only against that one.
+    ///
+    /// Both halves are load-bearing, and each guards a different way of
+    /// "simplifying" this back into a defect. Dropping the memory returns one
+    /// profile GET per personal profile per refresh tick — and on a machine
+    /// holding mostly personal subscriptions that is most of them, against an
+    /// API whose 429 responses this file already blames on exactly that kind
+    /// of per-tick per-profile traffic. Keying it on the profile alone
+    /// instead of the credential would make a profile re-linked to a
+    /// different Claude Code account keep answering with the old account's
+    /// verdict, so a member who moved onto a team would never see their own
+    /// figure again until the app restarted.
+    func testASettledNoOrganizationAnswerIsRememberedPerCredential()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthProfileCarriesOrganization: false
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let profile = try seededProfile(profileID)
+        for _ in 0..<2 {
+            _ = try await service.fetchUsageData(
+                sessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: teamOrganizationID,
+                profile: profile
+            )
+        }
+
+        XCTAssertEqual(
+            profileLookupCount(),
+            1,
+            "two refreshes over one unchanged credential must ask once"
+        )
+
+        // The profile is re-linked: a different Claude Code login is now
+        // presented. The remembered answer belonged to the old credential and
+        // says nothing about this one.
+        var relinked = profile
+        relinked.cliCredentialsJSON = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+
+        let afterRelink = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: relinked
+        )
+
+        XCTAssertEqual(
+            profileLookupCount(),
+            2,
+            "a different credential has not been asked yet, so it must be"
+        )
+        XCTAssertNil(
+            afterRelink.personalExtraUsageIssue,
+            "this account still reports no organization; remembering that "
+                + "must never turn into reporting a problem"
+        )
+    }
+
+    /// A remembered "no organization" must stay incapable of satisfying the
+    /// organization-match guard.
+    ///
+    /// The guard is what stops one account's member figure being read with
+    /// another account's token, and the cache is the obvious place for
+    /// someone to reintroduce that by answering a hit with
+    /// `profile.cliOrganizationId` — a value resolved from a *different*
+    /// credential. Here the profile carries exactly that: a cached id
+    /// matching the organization on screen, which would pass the guard if it
+    /// were ever returned.
+    func testARememberedNoOrganizationNeverSatisfiesTheOrganizationGuard()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        ProfileManager(profileStore: store)
+            .updateCliOrganizationId(teamOrganizationID, for: profileID)
+        var profile = try seededProfile(profileID)
+        profile.cliOrganizationId = teamOrganizationID
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthProfileCarriesOrganization: false
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        for _ in 0..<2 {
+            let usage = try await service.fetchUsageData(
+                sessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: teamOrganizationID,
+                profile: profile
+            )
+            XCTAssertNil(usage.personalCostUsed)
+            XCTAssertNil(usage.personalExtraUsageIssue)
+        }
+
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "no member figure may be attributed on an organization this "
+                + "credential never reported — cached or fresh"
+        )
+    }
+
+    /// How many times the CLI profile endpoint has been asked since the stub
+    /// was installed. The whole point of the cache is that this stops
+    /// growing, so it is counted rather than described.
+    private func profileLookupCount() -> Int {
+        StubClaudeEndpointsURLProtocol.requestedURLs.filter {
+            $0.hasSuffix("/api/oauth/profile")
+        }.count
     }
 
     /// The contrast that makes the test above mean something: a profile
