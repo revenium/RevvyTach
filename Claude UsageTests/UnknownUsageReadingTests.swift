@@ -537,25 +537,22 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
                 "\(style): the legacy single-profile icon must not render "
                     + "an unread session window as a measured 0%."
             )
+            let unreadAlpha = try maximumRasterAlpha(in: unreadImage)
+            let measuredZeroAlpha = try maximumRasterAlpha(in: zeroImage)
+            XCTAssertEqual(
+                unreadAlpha,
+                0.55,
+                accuracy: 0.08,
+                "\(style): the unknown dash must use the established "
+                    + "dimmed treatment."
+            )
+            XCTAssertGreaterThan(
+                measuredZeroAlpha,
+                unreadAlpha + 0.25,
+                "\(style): a genuine measured 0% must remain more opaque "
+                    + "than unknown."
+            )
         }
-
-        let unreadAlpha = try maximumRasterAlpha(
-            in: render(unread, style: .percentageOnly)
-        )
-        let measuredZeroAlpha = try maximumRasterAlpha(
-            in: render(measuredZero, style: .percentageOnly)
-        )
-        XCTAssertEqual(
-            unreadAlpha,
-            0.55,
-            accuracy: 0.08,
-            "The unknown dash must use the established dimmed treatment."
-        )
-        XCTAssertGreaterThan(
-            measuredZeroAlpha,
-            unreadAlpha + 0.25,
-            "A genuine measured 0% must remain more opaque than unknown."
-        )
     }
 
     func testNeverLoadedProfileRendersDifferentlyFromZeroPercentProfile() {
