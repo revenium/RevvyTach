@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.10] - 2026-08-25
+
+### Fixed
+
+- **The menu bar now says which of an account's two sign-ins is broken.** A
+  Claude profile has two credentials that fail independently and are repaired on
+  different screens: the claude.ai session key, which produces every number the
+  app shows, and the Claude Code sign-in, which produces only your own extra-usage
+  figure. Previously the menu bar said nothing at all when either broke — the app
+  knew, but only the popover mentioned it, in grey text, so a signed-out account
+  looked completely normal until you went looking. The icon now carries a mark
+  naming the credential at fault, and the tooltip and VoiceOver label say it in
+  words. The two marks differ in shape as well as colour, because red against
+  amber is one of the first pairs to become indistinguishable for a colourblind
+  viewer.
+
+- **A single-profile menu bar icon no longer shows `0%` for a window it has not
+  measured.** `0%` is the most reassuring number the icon could display for
+  something unknown, and it is plausible, so a glance at the menu bar said "you
+  have used nothing" about a window the app had never read. Unmeasured windows
+  now draw the same dimmed no-reading mark the multi-profile display already
+  used. A genuine, measured `0%` still shows as `0%`. This covers the session
+  window, the weekly window, and every icon style — the battery, the progress bar
+  and the ring — in each of the label configurations, not only the plain
+  percentage view.
+
 ## [4.0.9] - 2026-08-24
 
 ### Fixed
