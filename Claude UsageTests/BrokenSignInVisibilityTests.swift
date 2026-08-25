@@ -430,6 +430,80 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
+    /// Why the marker is its own pass rather than an extra argument to
+    /// `applyProviderBadge`, which is the other overlay this icon already
+    /// has.
+    ///
+    /// The badge is applied BEFORE the line that decides template rendering:
+    ///
+    ///     badgedImage.isTemplate = useMonochrome
+    ///         && !config.showPaceMarker
+    ///         && !badgeStyle.showsTint
+    ///
+    /// A marker drawn inside the badge pass would be inside `badgedImage`
+    /// when that runs, and for a monochrome user with no pace marker and an
+    /// untinted badge it evaluates to `true` — AppKit then redraws the whole
+    /// image from its alpha channel in the menu bar's foreground colour and
+    /// the red dot becomes the same grey as the icon it sits on. The one
+    /// person who most needs a coloured alarm is the one who switched every
+    /// other colour off. Marking after that assignment, and forcing
+    /// `isTemplate` back off, is what keeps the dot red.
+    func testMarkedIconIsNeverTemplateRendered() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let profile = makeProfile(issue: .signInExpired)
+        var monochrome = MultiProfileDisplayConfig()
+        monochrome.useSystemColor = true
+        monochrome.showPaceMarker = false
+
+        for isActive in [false, true] {
+            let marked = manager.renderProfileMenuBar(
+                for: profile,
+                config: monochrome,
+                isDarkMode: false,
+                isActive: isActive,
+                needsAttention: true
+            )
+            XCTAssertFalse(
+                marked.image.isTemplate,
+                "template rendering would repaint the marker in the menu "
+                    + "bar's foreground colour, hiding it from exactly the "
+                    + "monochrome users who have no other colour to notice"
+            )
+        }
+    }
+
+    /// The premise of the test above, asserted rather than assumed: the
+    /// healthy monochrome icon really is template-rendered, so "the marker
+    /// would have been flattened" is a live hazard and not a hypothetical.
+    /// It also pins that nothing changed for unmarked icons.
+    func testUnmarkedMonochromeIconIsStillTemplateRendered() throws {
+        try XCTSkipIf(
+            ProfileManager.shared.providerBadgeStyle.showsTint,
+            "a tinted badge already forces isTemplate off, so this run "
+                + "cannot demonstrate the flattening hazard"
+        )
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let profile = makeProfile(issue: nil)
+        var monochrome = MultiProfileDisplayConfig()
+        monochrome.useSystemColor = true
+        monochrome.showPaceMarker = false
+
+        let plain = manager.renderProfileMenuBar(
+            for: profile,
+            config: monochrome,
+            isDarkMode: false,
+            isActive: false
+        )
+        XCTAssertTrue(
+            plain.image.isTemplate,
+            "an untinted monochrome icon is template-rendered, as it always "
+                + "has been — which is exactly why a marker drawn before "
+                + "that assignment would lose its colour"
+        )
+    }
+
     /// The active-profile underline is drawn onto a taller canvas; the marker
     /// runs after it and must not undo that.
     func testMarkerPreservesTheActiveProfileUnderlineGeometry() {
