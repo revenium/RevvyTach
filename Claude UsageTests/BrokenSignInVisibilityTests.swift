@@ -692,9 +692,16 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 + "make it the same shape as the Claude Code ring\n"
                 + disc.map
         )
+        // Compared against the disc's own centre, not a constant: a fixed
+        // threshold measures the rasterizer's antialiasing bleed at
+        // whatever scale the host happens to draw at (a hollow ~2-device-
+        // pixel hole reads a real alpha at 1x, near-zero at 2x), not the
+        // product claim. The claim is that these two marks differ in the
+        // middle — comparing both markers from the same render pass, at
+        // the same host scale, states exactly that at any scale.
         XCTAssertLessThan(
             ring.centreAlpha,
-            0.1,
+            disc.centreAlpha - 0.5,
             "the Claude Code marker read as a filled blob, not a ring — "
                 + "the one encoding that survives both menu-bar size and "
                 + "colourblindness\n"
