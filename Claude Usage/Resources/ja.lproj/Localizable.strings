@@ -1252,6 +1252,7 @@
 "menubar.accessibility.state.no_data" = "使用状況データなし";
 "menubar.accessibility.profile.active" = "%@、アクティブなプロファイル";
 "menubar.accessibility.profile.inactive" = "%@、非アクティブなプロファイル";
+"menubar.accessibility.state.sign_in_needs_attention" = "サインインの確認が必要";
 "menubar.overflow.header" = "その他のプロファイル";
 "menubar.overflow.accessibility_label" = "他に%@個のプロファイル";
 "menu.provider.open_profile" = "%@を開く";

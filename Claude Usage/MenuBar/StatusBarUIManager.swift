@@ -205,11 +205,18 @@ final class StatusBarUIManager {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
+    /// `needsAttention` appends the same "sign-in needs attention" fact the
+    /// popover header verdict already states (`popover.normalized.health.
+    /// sign_in_problem`), so the wording names the problem rather than the
+    /// dot that represents it — the one thing VoiceOver and a tooltip have
+    /// in common with the visual marker is what they must say, not how they
+    /// say it.
     static func profileAccessibilityLabel(
         _ baseLabel: String,
-        isActive: Bool
+        isActive: Bool,
+        needsAttention: Bool = false
     ) -> String {
-        String(
+        let label = String(
             format: ProviderUILocalization.text(
                 isActive
                     ? "menubar.accessibility.profile.active"
@@ -219,6 +226,11 @@ final class StatusBarUIManager {
                     : "%@, inactive profile"
             ),
             baseLabel
+        )
+        guard needsAttention else { return label }
+        return label + ", " + ProviderUILocalization.text(
+            "menubar.accessibility.state.sign_in_needs_attention",
+            fallback: "sign-in needs attention"
         )
     }
 
@@ -1583,7 +1595,8 @@ final class StatusBarUIManager {
                 + Self.sessionAccessibilityValue(for: render)
             let label = Self.profileAccessibilityLabel(
                 baseLabel,
-                isActive: isActive
+                isActive: isActive,
+                needsAttention: attentionProfileIDs.contains(profile.id)
             )
             button.setAccessibilityLabel(label)
             button.toolTip = label

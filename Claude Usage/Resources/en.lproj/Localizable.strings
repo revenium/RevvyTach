@@ -1266,6 +1266,7 @@
 "menubar.accessibility.state.no_data" = "no usage data";
 "menubar.accessibility.profile.active" = "%@, active profile";
 "menubar.accessibility.profile.inactive" = "%@, inactive profile";
+"menubar.accessibility.state.sign_in_needs_attention" = "sign-in needs attention";
 "menubar.overflow.header" = "More Profiles";
 "menubar.overflow.accessibility_label" = "%@ more profiles";
 "menu.provider.open_profile" = "Open %@";

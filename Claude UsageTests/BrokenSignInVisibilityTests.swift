@@ -504,6 +504,96 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
+    // MARK: - The marker in the accessibility label and tooltip
+
+    /// The dot is invisible to VoiceOver and to anyone who only hovers the
+    /// icon. `updateMultiProfileButtons` is the one path that both marks
+    /// the icon and rebuilds the label every render, so it is the one place
+    /// this fact must reach both surfaces.
+    func testAttentionProfileAccessibilityLabelNamesTheProblem() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let profile = makeProfile(issue: .signInExpired)
+        manager.setupMultiProfile(
+            profiles: [profile],
+            target: manager,
+            action: #selector(NSObject.description)
+        )
+
+        manager.updateMultiProfileButtons(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig(),
+            attentionProfileIDs: [profile.id]
+        )
+
+        guard let button = manager.button(for: profile.id) else {
+            return XCTFail("expected a status item for the marked profile")
+        }
+        let expectedFragment = ProviderUILocalization.text(
+            "menubar.accessibility.state.sign_in_needs_attention",
+            fallback: "sign-in needs attention"
+        )
+        XCTAssertTrue(
+            button.accessibilityLabel()?.contains(expectedFragment) ?? false,
+            "the accessibility label did not name the sign-in problem: "
+                + "\(button.accessibilityLabel() ?? "nil")"
+        )
+        XCTAssertTrue(
+            button.toolTip?.contains(expectedFragment) ?? false,
+            "the tooltip did not name the sign-in problem: "
+                + "\(button.toolTip ?? "nil")"
+        )
+    }
+
+    /// The mirror of the test above: a profile with no sign-in problem must
+    /// not gain the wording just because the render pass ran again — a
+    /// permanent complaint on a working profile is the same crying-wolf
+    /// failure the marker itself avoids.
+    func testUnmarkedProfileAccessibilityLabelDoesNotNameTheProblem() {
+        let manager = retain(StatusBarUIManager())
+        defer { manager.cleanup() }
+        let profile = makeProfile(issue: nil)
+        manager.setupMultiProfile(
+            profiles: [profile],
+            target: manager,
+            action: #selector(NSObject.description)
+        )
+
+        manager.updateMultiProfileButtons(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig()
+        )
+
+        guard let button = manager.button(for: profile.id) else {
+            return XCTFail("expected a status item for the profile")
+        }
+        let fragment = ProviderUILocalization.text(
+            "menubar.accessibility.state.sign_in_needs_attention",
+            fallback: "sign-in needs attention"
+        )
+        XCTAssertFalse(
+            button.accessibilityLabel()?.contains(fragment) ?? true
+        )
+        XCTAssertFalse(button.toolTip?.contains(fragment) ?? true)
+    }
+
+    /// `profileAccessibilityLabel` is the one function both call sites share,
+    /// so its own contract is worth pinning directly: the attention wording
+    /// is appended, not substituted, and comes after the active/inactive
+    /// fact rather than replacing it.
+    func testProfileAccessibilityLabelHelperAppendsAttentionWording() {
+        let plain = StatusBarUIManager.profileAccessibilityLabel(
+            "Claude, r3, 2% used",
+            isActive: false
+        )
+        let marked = StatusBarUIManager.profileAccessibilityLabel(
+            "Claude, r3, 2% used",
+            isActive: false,
+            needsAttention: true
+        )
+        XCTAssertEqual(marked, plain + ", sign-in needs attention")
+    }
+
     /// The active-profile underline is drawn onto a taller canvas; the marker
     /// runs after it and must not undo that.
     func testMarkerPreservesTheActiveProfileUnderlineGeometry() {

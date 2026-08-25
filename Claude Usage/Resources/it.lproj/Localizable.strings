@@ -1252,6 +1252,7 @@
 "menubar.accessibility.state.no_data" = "Nessun dato di utilizzo";
 "menubar.accessibility.profile.active" = "%@, profilo attivo";
 "menubar.accessibility.profile.inactive" = "%@, profilo inattivo";
+"menubar.accessibility.state.sign_in_needs_attention" = "accesso da verificare";
 "menubar.overflow.header" = "Altri Profili";
 "menubar.overflow.accessibility_label" = "%@ altri profili";
 "menu.provider.open_profile" = "Apri %@";

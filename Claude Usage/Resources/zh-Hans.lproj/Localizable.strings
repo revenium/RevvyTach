@@ -1248,6 +1248,7 @@
 "menubar.accessibility.state.no_data" = "无用量数据";
 "menubar.accessibility.profile.active" = "%@，活跃配置文件";
 "menubar.accessibility.profile.inactive" = "%@，非活跃配置文件";
+"menubar.accessibility.state.sign_in_needs_attention" = "登录需要处理";
 "menubar.overflow.header" = "更多配置文件";
 "menubar.overflow.accessibility_label" = "还有%@个配置文件";
 "menu.provider.open_profile" = "打开 %@";
