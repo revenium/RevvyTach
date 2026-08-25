@@ -1534,19 +1534,70 @@ final class ProviderMenuPresentationTests: HostedAppTestCase {
         )
     }
 
+    /// Composites a compact percentage icon onto the black background a dark
+    /// menu bar draws it against, then counts the two pixel populations the
+    /// readability fix is about: digits in the menu-bar foreground colour
+    /// (white) and the red critical signal. Filling the bitmap with opaque
+    /// black first sidesteps premultiplied-alpha ambiguity, and the
+    /// 0.4-alpha separator lands at mid-grey, below the foreground
+    /// threshold.
+    private func compactPercentagePixelCounts(
+        _ image: NSImage
+    ) throws -> (foreground: Int, red: Int) {
+        let width = Int(image.size.width.rounded())
+        let height = Int(image.size.height.rounded())
+        let rep = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: width,
+                pixelsHigh: height,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+        )
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+        let bounds = NSRect(x: 0, y: 0, width: width, height: height)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        NSColor.black.setFill()
+        bounds.fill()
+        image.draw(in: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+
+        var foreground = 0
+        var red = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                guard let pixel = rep.colorAt(x: x, y: y)?
+                    .usingColorSpace(.deviceRGB) else { continue }
+                let r = pixel.redComponent
+                let g = pixel.greenComponent
+                let b = pixel.blueComponent
+                if r > 0.7, g > 0.7, b > 0.7 { foreground += 1 }
+                if r > 0.5, g < 0.35, b < 0.35 { red += 1 }
+            }
+        }
+        return (foreground, red)
+    }
+
     func testCriticalCompactPercentageKeepsDimensionsAndChangesUnderlineOnly()
         throws
     {
         let renderer = MenuBarIconRenderer()
-        let common: (
+        let render: (
             UsageStatusLevel,
             UsageStatusLevel,
             String?
-        ) -> (NSSize, Data) = {
+        ) -> NSImage = {
             sessionStatus,
             weekStatus,
             profileName in
-            let image = renderer.createMultiProfilePercentage(
+            renderer.createMultiProfilePercentage(
                 sessionPercentage: 3,
                 weekPercentage: 85,
                 sessionStatus: sessionStatus,
@@ -1555,24 +1606,57 @@ final class ProviderMenuPresentationTests: HostedAppTestCase {
                 monochromeMode: false,
                 isDarkMode: true
             )
-            return (
-                image.size,
-                StatusBarUIManager.imageFingerprint(image) ?? Data()
-            )
+        }
+        let fingerprint: (NSImage) -> Data = {
+            StatusBarUIManager.imageFingerprint($0) ?? Data()
         }
 
-        let healthy = common(.safe, .safe, "j@")
-        let criticalWeek = common(.safe, .critical, "j@")
-        let criticalSession = common(.critical, .safe, "j@")
-        let unlabeledHealthy = common(.safe, .safe, nil)
-        let unlabeledCritical = common(.safe, .critical, nil)
+        let healthy = render(.safe, .safe, "j@")
+        let criticalWeek = render(.safe, .critical, "j@")
+        let criticalSession = render(.critical, .safe, "j@")
+        let unlabeledHealthy = render(.safe, .safe, nil)
+        let unlabeledCritical = render(.safe, .critical, nil)
 
-        XCTAssertEqual(criticalWeek.0, healthy.0)
-        XCTAssertEqual(criticalSession.0, healthy.0)
-        XCTAssertNotEqual(criticalWeek.1, healthy.1)
-        XCTAssertNotEqual(criticalSession.1, healthy.1)
-        XCTAssertNotEqual(unlabeledCritical.1, unlabeledHealthy.1)
-        XCTAssertNotEqual(unlabeledCritical.0, .zero)
+        XCTAssertEqual(criticalWeek.size, healthy.size)
+        XCTAssertEqual(criticalSession.size, healthy.size)
+        XCTAssertNotEqual(fingerprint(criticalWeek), fingerprint(healthy))
+        XCTAssertNotEqual(fingerprint(criticalSession), fingerprint(healthy))
+        XCTAssertEqual(unlabeledCritical.size, unlabeledHealthy.size)
+        XCTAssertNotEqual(
+            fingerprint(unlabeledCritical),
+            fingerprint(unlabeledHealthy)
+        )
+        XCTAssertNotEqual(unlabeledCritical.size, .zero)
+
+        // The unlabelled icons carry no profile label, so every
+        // foreground-coloured pixel below is a digit. A healthy icon draws
+        // both digits in their status colours (green), so it has none; the
+        // critical icon must have some, which is exactly what the old
+        // all-red critical text did not produce.
+        let healthyPixels = try compactPercentagePixelCounts(unlabeledHealthy)
+        let criticalPixels = try compactPercentagePixelCounts(
+            unlabeledCritical
+        )
+        XCTAssertEqual(
+            healthyPixels.foreground,
+            0,
+            "Healthy digits should stay in their status colour"
+        )
+        XCTAssertEqual(
+            healthyPixels.red,
+            0,
+            "A healthy icon should carry no red signal"
+        )
+        XCTAssertGreaterThan(
+            criticalPixels.foreground,
+            0,
+            "Critical digits must render in the menu-bar foreground colour"
+        )
+        XCTAssertGreaterThan(
+            criticalPixels.red,
+            0,
+            "The red underline must still mark the critical window"
+        )
     }
 
     /// `updateProviderMultiProfileButtons` chooses between the compact
