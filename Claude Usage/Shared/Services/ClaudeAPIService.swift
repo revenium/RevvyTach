@@ -679,8 +679,57 @@ class ClaudeAPIService: APIServiceProtocol {
     /// from. An absent entry means the lookup has not run yet this app run.
     private var cliOrganizationCredentialHashes: [UUID: Int] = [:]
 
-    /// Profiles whose organization lookup already failed this app run.
-    private var failedCLIOrganizationLookups: Set<UUID> = []
+    /// Counts passes over a member's extra usage: one per
+    /// `applyPersonalExtraUsage`, which is one per profile per refresh.
+    ///
+    /// Exists so a failure can be remembered for the length of one reading
+    /// without outliving it. Nothing here schedules anything — the refresh
+    /// interval is already the cadence, and a second one would create two
+    /// answers to "when is this retried".
+    private var personalExtraUsagePass: UInt64 = 0
+
+    /// A profile's organization lookup that failed, with the credential it
+    /// failed for and the pass it failed in.
+    ///
+    /// **The pass is what keeps the promise on screen true.** A failure used
+    /// to be latched for the whole app run, which was defensible while the
+    /// outcome rendered as "couldn't be read with the Claude Code account
+    /// linked here" — a sentence that promises nothing. It is not defensible
+    /// now: a transient failure reports `.temporarilyUnavailable`, whose text
+    /// says the reading will be retried automatically, and a run-long latch
+    /// meant it never was. The member's figure could not come back until the
+    /// credential changed or the app restarted. Widen this back to the app
+    /// run and the popover resumes promising a retry that does not happen —
+    /// which is the exact defect this whole area was rewritten to remove, one
+    /// layer further down.
+    ///
+    /// The comment this replaces argued the opposite, that repeating the
+    /// lookup could "only fail again". That is true of a credential the
+    /// server rejected and false of a request that timed out or hit a 5xx,
+    /// and those two are no longer the same outcome: a rejected credential
+    /// never reaches here, and what does reach here is precisely the
+    /// retryable kind.
+    ///
+    /// What the record still buys is one lookup per profile per reading, no
+    /// matter how many times that reading consults it. Note what it does
+    /// *not* do: keyed by profile, it has never deduplicated across profiles
+    /// that share one credential, and it must not be re-keyed to. Keying this
+    /// area on a credential alone is what starved every profile but the first
+    /// of its recovery attempt once before.
+    private struct FailedOrganizationLookup {
+        /// Which credential failed. A later call presenting a *different*
+        /// fingerprint means the profile was re-linked to another Claude Code
+        /// account since, so the old verdict says nothing about this login and
+        /// must not suppress a retry with it — that retry happens
+        /// immediately, not on the next pass.
+        let credentialFingerprint: Int
+        /// Which reading recorded it. Honored only while that reading is
+        /// still the one in progress.
+        let pass: UInt64
+    }
+
+    /// Profiles whose organization lookup failed, keyed by profile.
+    private var failedCLIOrganizationLookups: [UUID: FailedOrganizationLookup] = [:]
 
     /// Profiles whose CLI login answered "no organization", paired with the
     /// fingerprint of the credential that answered. An absent entry means the
@@ -710,13 +759,23 @@ class ClaudeAPIService: APIServiceProtocol {
     /// - a profile re-linked to a different Claude Code account presents a
     ///   different credential, misses this cache, and is asked again
     ///   immediately — the case that actually matters, and the same property
-    ///   `failedCLIOrganizationLookupFingerprints` exists to give the failure
-    ///   latch;
-    /// - Anthropic's OAuth rotates the refresh token on use, so the
-    ///   fingerprint changes of its own accord over time and the answer is
-    ///   re-checked without any timer to maintain;
+    ///   `FailedOrganizationLookup.credentialFingerprint` gives the failure
+    ///   record;
     /// - an app restart asks again, which is what happened before this cache
     ///   existed and was never a complaint.
+    ///
+    /// A rotated token is explicitly **not** a reason to forget the answer,
+    /// and `usableCLICredential` rolls this entry forward onto the refreshed
+    /// fingerprint exactly as it does the resolved-id cache beside it. The
+    /// tempting reasoning — that Anthropic's OAuth rotates on use, so
+    /// rotation gives a free periodic re-check at no cost — is wrong, and was
+    /// believed here before a reviewer caught it. Rotation happens on the
+    /// *common* path, not occasionally, so leaving the entry behind defeats
+    /// the cache almost every refresh and restores the per-tick request
+    /// volume, and the 429 exposure, that it exists to remove. A profile that
+    /// genuinely joins an organization is picked up on re-link or on the next
+    /// app start, which is what happened before this cache existed and was
+    /// never a complaint. Do not "simplify" the rollforward away.
     ///
     /// It carries no organization identifier, deliberately, so a cache hit
     /// can no more satisfy the caller's `cliOrganizationId == organizationId`
@@ -725,15 +784,6 @@ class ClaudeAPIService: APIServiceProtocol {
     /// `profile.cliOrganizationId` — would reinstate the cross-account
     /// attribution that guard exists to stop.
     private var cliLoginsWithoutOrganization: [UUID: Int] = [:]
-
-    /// The credential fingerprint in use the last time a profile's entry in
-    /// `failedCLIOrganizationLookups` was recorded. `cliOrganizationCredentialHashes`
-    /// is only ever written on a *successful* lookup, so it cannot answer
-    /// "has the credential changed since the failure" — this does. A later
-    /// call presenting a different fingerprint means the profile was
-    /// re-linked to a different Claude Code account since that failure, and
-    /// the failure must not suppress a retry with the new credential.
-    private var failedCLIOrganizationLookupFingerprints: [UUID: Int] = [:]
 
     /// The member's figure, or the reason it is missing. The reason reaches
     /// the popover: "link an account" and "renew the one you have" send a
@@ -1038,6 +1088,19 @@ class ClaudeAPIService: APIServiceProtocol {
         if cliOrganizationCredentialHashes[profile.id] == fingerprint {
             cliOrganizationCredentialHashes[profile.id] = refreshed.hashValue
         }
+        // And for the same reason, so does the answer that there is no
+        // organization. Without this the settled answer is keyed to a
+        // fingerprint the profile stops presenting the moment its token
+        // rotates — which Anthropic's OAuth does on every use — so the cache
+        // would miss on essentially every refresh after a rotation and go on
+        // asking anyway. It would look present and do nothing.
+        //
+        // Both rolls are guarded on the pre-refresh fingerprint matching, so
+        // a profile whose answer was recorded against some other credential
+        // is never touched.
+        if cliLoginsWithoutOrganization[profile.id] == fingerprint {
+            cliLoginsWithoutOrganization[profile.id] = refreshed.hashValue
+        }
         return (refreshed, accessToken)
     }
 
@@ -1218,23 +1281,31 @@ class ClaudeAPIService: APIServiceProtocol {
             return .noOrganization
         }
 
-        if failedCLIOrganizationLookups.contains(profile.id) {
-            if failedCLIOrganizationLookupFingerprints[profile.id] == fingerprint {
-                // The same credential that already failed this run: honor
-                // the short-circuit rather than repeating a lookup that can
-                // only fail again. Answered as a failure rather than with the
-                // cached id for the reason spelled out in
-                // `recordFailedOrganizationLookup(for:fingerprint:)` — the
-                // cached id belongs to whichever credential last resolved
+        if let failure = failedCLIOrganizationLookups[profile.id] {
+            if failure.credentialFingerprint != fingerprint {
+                // A different credential than the one that failed: the
+                // profile was re-linked to another Claude Code account since.
+                // That verdict says nothing about this login, so it is
+                // discarded and this credential is asked now — not on some
+                // later pass.
+                failedCLIOrganizationLookups.removeValue(forKey: profile.id)
+            } else if failure.pass == personalExtraUsagePass {
+                // The same credential, inside the same reading that already
+                // asked. Asking twice for one reading could only produce the
+                // same answer, so the recorded one is reused. Answered as a
+                // failure rather than with the profile's cached organization
+                // id, for the reason spelled out in
+                // `recordFailedOrganizationLookup(for:fingerprint:)` — that
+                // id belongs to whichever credential last resolved
                 // successfully, which is not this one.
                 return .lookupFailed
+            } else {
+                // The same credential, but a later reading. This is the
+                // automatic retry the notice promises the user, and it is the
+                // only thing that can bring the figure back after a timeout
+                // or a 5xx. Dropping the record is what performs it.
+                failedCLIOrganizationLookups.removeValue(forKey: profile.id)
             }
-            // A different credential is presented than the one that failed
-            // — the profile was re-linked to a different Claude Code
-            // account since then. That earlier failure says nothing about
-            // this credential, so it must not suppress a retry with it.
-            failedCLIOrganizationLookups.remove(profile.id)
-            failedCLIOrganizationLookupFingerprints.removeValue(forKey: profile.id)
         }
 
         let data: Data
@@ -1285,8 +1356,7 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         cliOrganizationCredentialHashes[profile.id] = fingerprint
-        failedCLIOrganizationLookups.remove(profile.id)
-        failedCLIOrganizationLookupFingerprints.removeValue(forKey: profile.id)
+        failedCLIOrganizationLookups.removeValue(forKey: profile.id)
         // One remembered answer per profile. The record being dropped was
         // taken against a different credential, so keeping it could only ever
         // serve a login this profile has stopped presenting.
@@ -1311,8 +1381,10 @@ class ClaudeAPIService: APIServiceProtocol {
         for profile: Profile,
         fingerprint: Int
     ) -> CLIOrganizationLookup {
-        failedCLIOrganizationLookups.insert(profile.id)
-        failedCLIOrganizationLookupFingerprints[profile.id] = fingerprint
+        failedCLIOrganizationLookups[profile.id] = FailedOrganizationLookup(
+            credentialFingerprint: fingerprint,
+            pass: personalExtraUsagePass
+        )
         LoggingService.shared.logWarning(
             "Could not establish which organization the linked Claude "
             + "Code account belongs to; the member's own extra usage is "
@@ -1411,6 +1483,11 @@ class ClaudeAPIService: APIServiceProtocol {
         profile: Profile,
         organizationId: String
     ) async {
+        // One reading begins here. Stamped rather than cleared, so a record
+        // from an earlier reading is recognised as stale instead of being
+        // wiped — the difference matters for the re-link case, which has to
+        // compare fingerprints before it can decide anything.
+        personalExtraUsagePass &+= 1
         switch await personalExtraUsage(
             for: profile,
             organizationId: organizationId

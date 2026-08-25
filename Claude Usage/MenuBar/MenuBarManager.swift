@@ -593,10 +593,28 @@ class MenuBarManager: NSObject, ObservableObject {
 
     /// The single place a fan-out leaves this manager, so the count above
     /// cannot drift from what was actually dispatched.
-    private func dispatchRefresh(
+    ///
+    /// The emptiness guard belongs here rather than at the call sites, and
+    /// that is the whole point of funnelling through one function: a call
+    /// that covers no profiles refreshed nothing, so counting it would make
+    /// `dispatchedUsageFanOuts` claim work that never happened. The delayed
+    /// launch fetch reads that count to decide whether a real fan-out already
+    /// covered the selected profiles, so an inflated count makes it skip —
+    /// and the launch-at-login case, where nothing is refreshable when
+    /// `setup()` runs, is exactly where an empty call is plausible. Getting
+    /// this wrong turns one launch refreshing twice into one launch
+    /// refreshing not at all.
+    ///
+    /// Internal so the invariant can be asserted directly. It is not
+    /// reachable from today's call sites — `refreshAllSelectedProfiles`
+    /// returns early on an empty selection and the single-profile path passes
+    /// exactly one profile — so a behavioural test through them would prove
+    /// nothing, while the guarantee two doc comments make would go untested.
+    func dispatchRefresh(
         profiles: [Profile],
         trigger: UsageRefreshTrigger
     ) {
+        guard !profiles.isEmpty else { return }
         dispatchedUsageFanOuts &+= 1
         dispatchUsageRefresh(profiles, trigger)
     }

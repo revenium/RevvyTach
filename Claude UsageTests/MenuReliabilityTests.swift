@@ -2887,6 +2887,41 @@ final class MenuReliabilityTests: HostedAppTestCase {
         XCTAssertEqual(dispatched.first?.count, 2)
     }
 
+    /// A fan-out covering no profiles refreshed nothing, so it must not be
+    /// counted as one.
+    ///
+    /// `dispatchedUsageFanOuts` is what the delayed launch fetch consults to
+    /// decide whether a real fan-out already covered the selected profiles.
+    /// Counting an empty call makes that check skip the fetch, which turns
+    /// this branch's defect — one launch refreshing twice — into the opposite
+    /// one, a launch-at-login that refreshes not at all. Two doc comments in
+    /// this area promise the count only moves for work actually dispatched;
+    /// this is what makes the promise true rather than aspirational.
+    func testAnEmptyFanOutIsNeitherCountedNorDispatched() {
+        let (manager, _) = makeMultiProfileManagerForLaunchSequence()
+        var dispatched: [[UUID]] = []
+        manager.dispatchUsageRefresh = { profiles, _ in
+            dispatched.append(profiles.map(\.id))
+        }
+
+        let before = manager.dispatchedUsageFanOuts
+        manager.dispatchRefresh(profiles: [], trigger: .startup)
+
+        XCTAssertEqual(
+            manager.dispatchedUsageFanOuts,
+            before,
+            "nothing was refreshed, so nothing may be counted"
+        )
+        XCTAssertTrue(
+            dispatched.isEmpty,
+            "an empty fan-out must not reach the refresh runtime either"
+        )
+
+        // And the launch-at-login path it protects still fires afterwards.
+        manager.performDelayedLaunchRefresh(fanOutsWhenScheduled: before)
+        XCTAssertEqual(dispatched.count, 1)
+    }
+
     /// Two profiles selected for display, both refreshable, in multi-profile
     /// mode — the shape the maintainer's machine launches in.
     private func makeMultiProfileManagerForLaunchSequence()
