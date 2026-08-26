@@ -4146,7 +4146,7 @@ class MenuBarManager: NSObject, ObservableObject {
                 for: candidate.providerID
             ).supports(.automaticProfileSwitch),
                   candidate.providerID == .claude,
-                  candidate.hasUsageCredentials else {
+                  candidate.hasImmediatelyUsableCredentials else {
                 continue
             }
 

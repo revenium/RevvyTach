@@ -44,14 +44,18 @@ enum ClaudeCLITokenRefresher {
     /// login sends them round a loop where the button appears to work and
     /// changes nothing, because re-syncing copies a login, it does not renew
     /// one.
-    enum RefreshFailure: Equatable {
+    enum RefreshFailure: Equatable, Sendable {
         /// The account's login is too old to renew. Signing in again fixes it.
         case expired
+        /// The request was cancelled or timed out after dispatch, so the
+        /// server may already have spent the refresh token. Replaying this
+        /// credential could turn an uncertain result into `invalid_grant`.
+        case indeterminate
         /// Anything else: offline, a server error, a malformed credential.
         case unavailable
     }
 
-    enum RefreshOutcome: Equatable {
+    enum RefreshOutcome: Equatable, Sendable {
         case renewed(String)
         case failed(RefreshFailure)
     }
@@ -125,6 +129,13 @@ enum ClaudeCLITokenRefresher {
                 + "\(error.localizedDescription). The stored credential is "
                 + "unchanged."
             )
+            let urlError = error as? URLError
+            if Task.isCancelled
+                || urlError?.code == .cancelled
+                || urlError?.code == .timedOut
+            {
+                return .failed(.indeterminate)
+            }
             return .failed(.unavailable)
         }
 

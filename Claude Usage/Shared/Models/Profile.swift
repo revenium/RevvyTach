@@ -359,16 +359,42 @@ struct Profile: Codable, Identifiable, Equatable {
         apiSessionKey != nil && apiOrganizationId != nil
     }
 
-    /// True if profile has credentials that can fetch usage data (Claude.ai, CLI OAuth, or API Console)
-    /// Note: System keychain fallback is handled in ClaudeAPIService.getAuthentication() during actual API calls
+    /// True when usage can be fetched now or after renewing/adopting a linked
+    /// terminal login during the refresh attempt.
     var hasUsageCredentials: Bool {
-        hasClaudeAI || hasAPIConsole || hasValidCLIOAuth
+        hasClaudeAI || hasAPIConsole || hasRenewableCLILogin
     }
 
     /// True if profile has CLI OAuth credentials that are not expired
     var hasValidCLIOAuth: Bool {
         guard let cliJSON = cliCredentialsJSON else { return false }
-        return !ClaudeCodeSyncService.shared.isTokenExpired(cliJSON)
+        let sync = ClaudeCodeSyncService.shared
+        return sync.extractAccessToken(from: cliJSON) != nil
+            && !sync.isTokenExpired(cliJSON)
+    }
+
+    /// True if usage can be fetched without first repairing a terminal login.
+    var hasImmediatelyUsableCredentials: Bool {
+        hasClaudeAI || hasAPIConsole || hasValidCLIOAuth
+    }
+
+    /// True if the terminal login can be used now or repaired before refresh.
+    /// A linked account remains eligible because its live Claude Code login can
+    /// be adopted even when the stored snapshot is missing or no longer usable.
+    var hasRenewableCLILogin: Bool {
+        if let cliAccountName,
+           !cliAccountName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty {
+            return true
+        }
+        guard let cliJSON = cliCredentialsJSON,
+              ClaudeCodeSyncService.shared.extractAccessToken(
+                  from: cliJSON
+              ) != nil else {
+            return false
+        }
+        return hasValidCLIOAuth
+            || ClaudeCLITokenRefresher.refreshToken(in: cliJSON) != nil
     }
 
     var hasAnyCredentials: Bool {

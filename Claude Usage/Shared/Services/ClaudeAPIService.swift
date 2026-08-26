@@ -1,5 +1,80 @@
 import Foundation
 
+/// A cancellation-aware view onto work whose lifetime belongs to a service.
+/// Cancelling the caller resolves only this waiter; it never reaches the task
+/// producing the value.
+private nonisolated final class ServiceOwnedTaskWaiter<Value: Sendable>:
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value?, Never>?
+    private var result: Value?
+    private var isResolved = false
+
+    func value() async -> Value? {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if isResolved {
+                let result = self.result
+                lock.unlock()
+                continuation.resume(returning: result)
+            } else {
+                self.continuation = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func finish(with result: Value) {
+        resolve(with: result)
+    }
+
+    func cancel() {
+        resolve(with: nil)
+    }
+
+    private func resolve(with result: Value?) {
+        lock.lock()
+        guard !isResolved else {
+            lock.unlock()
+            return
+        }
+        isResolved = true
+        self.result = result
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: result)
+    }
+}
+
+/// Facts reported by all callers sharing one token refresh. This stays
+/// lock-backed because a cancellation handler can run on any executor.
+private nonisolated final class CLIRefreshObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancellationObserved = false
+    private var terminalOnlyLogRequested = false
+
+    func observeCancellation() {
+        lock.lock()
+        cancellationObserved = true
+        lock.unlock()
+    }
+
+    func requestTerminalOnlyLog() {
+        lock.lock()
+        terminalOnlyLogRequested = true
+        lock.unlock()
+    }
+
+    func snapshot() -> (cancelled: Bool, terminalOnly: Bool) {
+        lock.lock()
+        let snapshot = (cancellationObserved, terminalOnlyLogRequested)
+        lock.unlock()
+        return snapshot
+    }
+}
+
 /// Service for fetching usage data directly from Claude's API
 class ClaudeAPIService: APIServiceProtocol {
     // MARK: - Types
@@ -73,6 +148,10 @@ class ClaudeAPIService: APIServiceProtocol {
     ///
     private let renewedCredentialWriter: (RenewedCLICredential, UUID) throws -> Void
 
+    /// Destination for lifecycle messages. Injectable so terminal-only
+    /// renewal tests can prove a failed refresh never announces success.
+    private let loggingService: LoggingService
+
     /// One renewal on its way to the credential store.
     ///
     /// A struct rather than two more closure arguments because both fields are
@@ -100,7 +179,8 @@ class ClaudeAPIService: APIServiceProtocol {
         sessionKeyValidator: SessionKeyValidator = SessionKeyValidator(),
         profileManager: ProfileManager? = nil,
         systemCredentialsReader: (() throws -> String?)? = nil,
-        renewedCredentialWriter: ((RenewedCLICredential, UUID) throws -> Void)? = nil
+        renewedCredentialWriter: ((RenewedCLICredential, UUID) throws -> Void)? = nil,
+        loggingService: LoggingService = .shared
     ) {
         // Default path: ~/.claude-session-key
         self.sessionKeyPath = sessionKeyPath ?? Constants.ClaudePaths.homeDirectory
@@ -125,6 +205,7 @@ class ClaudeAPIService: APIServiceProtocol {
                     rotatedFrom: renewal.rotatedFrom
                 )
             }
+        self.loggingService = loggingService
     }
 
     // MARK: - Session Key Management
@@ -632,13 +713,15 @@ class ClaudeAPIService: APIServiceProtocol {
     /// cannot succeed until that credential is replaced, which
     /// `forgetRenewalFailures(for:nowPresenting:)` detects.
     ///
-    /// Everything else — offline, a 500, a timeout — is now retried on the
-    /// next tick. It used to land in a companion set that was never cleared,
-    /// so one bad moment disabled renewal of that credential for the rest of
-    /// the process. This app runs for days at a time, so "the network blipped
-    /// once" and "this login is dead" became the same outcome, and the second
-    /// is what the popover reported.
+    /// Definite failures such as offline and 500 are retried on the next tick.
+    /// A timeout after dispatch is different: the server may already have
+    /// rotated the token, so it is tracked separately below and never replayed.
     private var expiredCLILogins: Set<Int> = []
+
+    /// Credentials whose token exchange ended without a knowable answer after
+    /// dispatch. Retrying one risks submitting a refresh token the server has
+    /// already consumed; only a replacement login may clear this verdict.
+    private var indeterminateCLILogins: Set<Int> = []
 
     /// Stored credentials this run has already tried to replace with the
     /// CLI's own live login, keyed to when that attempt happened, so the
@@ -696,6 +779,44 @@ class ClaudeAPIService: APIServiceProtocol {
     /// not fire and the profile kept the previous account's identity until
     /// the app restarted.
     private var renewedCLICredentials: [UUID: (base: Int, credentialsJSON: String)] = [:]
+
+    /// One token exchange per linked Claude Code account and credential.
+    ///
+    /// The task is deliberately unstructured and retained by the service. A
+    /// refresh token may be rotated as soon as the OAuth server receives the
+    /// request, so cancelling this work after the request starts can discard
+    /// the only usable replacement. Callers therefore cancel only their own
+    /// wait; the exchange, profile write, and Claude Code Keychain mirror run
+    /// to completion here. A superseding caller presenting the same login
+    /// joins this entry instead of spending the old refresh token again.
+    private struct CLIRefreshKey: Hashable, Sendable {
+        let account: String
+        let credentialFingerprint: Int
+    }
+
+    private enum ShieldedCLIRefreshResult: Sendable {
+        case renewed(credentialsJSON: String, accessToken: String)
+        case failed(ClaudeCLITokenRefresher.RefreshFailure)
+    }
+
+    /// One stored profile credential participating in a shared exchange.
+    ///
+    /// Profiles can legitimately share a linked Claude Code account and its
+    /// credential snapshot. The exchange spends that snapshot's refresh token
+    /// once, but every profile that supplied the snapshot needs the rotated
+    /// copy persisted before another refresh can present the spent token.
+    private struct CLIRefreshParticipant {
+        let profile: Profile
+        let baseCredentialFingerprint: Int
+    }
+
+    private struct InFlightCLIRefresh {
+        let task: Task<ShieldedCLIRefreshResult, Never>
+        let observation: CLIRefreshObservation
+        var participants: [CLIRefreshParticipant]
+    }
+
+    private var inFlightCLIRefreshes: [CLIRefreshKey: InFlightCLIRefresh] = [:]
 
     /// The CLI credential each profile's organization was last resolved
     /// from. An absent entry means the lookup has not run yet this app run.
@@ -1019,6 +1140,7 @@ class ClaudeAPIService: APIServiceProtocol {
         lastSeenCredentialFingerprints[profileID] = fingerprint
         guard let previous, previous != fingerprint else { return }
         expiredCLILogins.remove(previous)
+        indeterminateCLILogins.remove(previous)
         // The adoption attempt recorded against the retired credential goes
         // with it, for the same reason: if that credential is ever presented
         // again it deserves a fresh look at the CLI's live login rather than
@@ -1042,8 +1164,10 @@ class ClaudeAPIService: APIServiceProtocol {
     /// it was.
     private func usableCLICredential(
         for profile: Profile,
-        credentialsJSON: String
+        credentialsJSON: String,
+        logNoBrowserRenewal: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
+        guard !Task.isCancelled else { return nil }
         let sync = ClaudeCodeSyncService.shared
         if !sync.isTokenExpired(credentialsJSON),
            let accessToken = sync.extractAccessToken(from: credentialsJSON) {
@@ -1058,83 +1182,215 @@ class ClaudeAPIService: APIServiceProtocol {
         // credential returned early forever, and the notice's promise that
         // signing back in was enough was false for exactly the credentials
         // it was shown for.
-        guard !expiredCLILogins.contains(fingerprint) else {
-            return await adoptLiveCLILogin(for: profile, replacing: credentialsJSON)
+        guard !expiredCLILogins.contains(fingerprint),
+              !indeterminateCLILogins.contains(fingerprint) else {
+            return await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal
+            )
         }
 
-        let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
-            from: credentialsJSON,
-            forAccountNamed: profile.cliAccountName
-        )
-        guard
-            case .renewed(let refreshed) = outcome,
-            let accessToken = sync.extractAccessToken(from: refreshed)
-        else {
+        guard let outcome = await shieldedCLIRefresh(
+            for: profile,
+            credentialsJSON: credentialsJSON,
+            logNoBrowserRenewal: logNoBrowserRenewal
+        ) else { return nil }
+        guard case .renewed(let refreshed, let accessToken) = outcome else {
             // Our own snapshot cannot be renewed. Before telling anyone their
             // sign-in expired, look at the login Claude Code itself is
             // holding — the remedy the message used to ask for by hand.
             if let adopted = await adoptLiveCLILogin(
                 for: profile,
-                replacing: credentialsJSON
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal
             ) {
                 return adopted
             }
             if case .failed(.expired) = outcome {
                 expiredCLILogins.insert(fingerprint)
+            } else if case .failed(.indeterminate) = outcome {
+                indeterminateCLILogins.insert(fingerprint)
             }
             return nil
         }
-        expiredCLILogins.remove(fingerprint)
-
-        do {
-            // `credentialsJSON` is the credential whose refresh token was
-            // just spent. Claude Code may be relying on that same token, in
-            // which case this renewal has invalidated its login unless the
-            // rotated one is written back into it.
-            try renewedCredentialWriter(
-                RenewedCLICredential(
-                    credentialsJSON: refreshed,
-                    rotatedFrom: credentialsJSON
-                ),
-                profile.id
-            )
-        } catch {
-            // The stored credential is untouched. The renewed token still
-            // works for this run, so use it rather than discarding a
-            // successful renewal because persistence failed.
-            LoggingService.shared.logWarning(
-                "Could not store the renewed Claude Code token: "
-                + "\(error.localizedDescription). The saved credential is "
-                + "unchanged."
-            )
-        }
-        // Keyed on the profile's own stored credential, not `credentialsJSON`
-        // — that argument may already be a renewal from earlier in this run,
-        // and chaining fingerprints would lose the link back to the account
-        // the profile is actually bound to.
-        renewedCLICredentials[profile.id] = (
-            base: profile.cliCredentialsJSON?.hashValue ?? credentialsJSON.hashValue,
-            credentialsJSON: refreshed
-        )
-        // A rotated token is not a different account, so the organization
-        // already resolved for this profile still stands.
-        if cliOrganizationCredentialHashes[profile.id] == fingerprint {
-            cliOrganizationCredentialHashes[profile.id] = refreshed.hashValue
-        }
-        // And for the same reason, so does the answer that there is no
-        // organization. Without this the settled answer is keyed to a
-        // fingerprint the profile stops presenting the moment its token
-        // rotates — which Anthropic's OAuth does on every use — so the cache
-        // would miss on essentially every refresh after a rotation and go on
-        // asking anyway. It would look present and do nothing.
-        //
-        // Both rolls are guarded on the pre-refresh fingerprint matching, so
-        // a profile whose answer was recorded against some other credential
-        // is never touched.
-        if cliLoginsWithoutOrganization[profile.id] == fingerprint {
-            cliLoginsWithoutOrganization[profile.id] = refreshed.hashValue
-        }
         return (refreshed, accessToken)
+    }
+
+    /// Starts or joins the non-cancellable part of a CLI token renewal.
+    /// Returning `nil` means only that this caller stopped waiting.
+    private func shieldedCLIRefresh(
+        for profile: Profile,
+        credentialsJSON: String,
+        logNoBrowserRenewal: Bool
+    ) async -> ShieldedCLIRefreshResult? {
+        let accountIdentity = profile.cliAccountName.map { "account:\($0)" }
+            ?? "profile:\(profile.id.uuidString)"
+        let key = CLIRefreshKey(
+            account: accountIdentity,
+            credentialFingerprint: credentialsJSON.hashValue
+        )
+        let participant = CLIRefreshParticipant(
+            profile: profile,
+            baseCredentialFingerprint: profile.cliCredentialsJSON?.hashValue
+                ?? credentialsJSON.hashValue
+        )
+
+        let refresh: InFlightCLIRefresh
+        if var existing = inFlightCLIRefreshes[key] {
+            if !existing.participants.contains(where: {
+                $0.profile.id == profile.id
+            }) {
+                existing.participants.append(participant)
+                inFlightCLIRefreshes[key] = existing
+            }
+            refresh = existing
+        } else {
+            let observation = CLIRefreshObservation()
+            let task = Task { @MainActor in
+                let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
+                    from: credentialsJSON,
+                    forAccountNamed: profile.cliAccountName
+                )
+                return self.finishShieldedCLIRefresh(
+                    outcome,
+                    for: profile,
+                    credentialsJSON: credentialsJSON,
+                    key: key,
+                    observation: observation
+                )
+            }
+            refresh = InFlightCLIRefresh(
+                task: task,
+                observation: observation,
+                participants: [participant]
+            )
+            inFlightCLIRefreshes[key] = refresh
+        }
+
+        if logNoBrowserRenewal {
+            refresh.observation.requestTerminalOnlyLog()
+        }
+
+        let waiter = ServiceOwnedTaskWaiter<ShieldedCLIRefreshResult>()
+        let refreshTask = refresh.task
+        Task.detached {
+            waiter.finish(with: await refreshTask.value)
+        }
+        return await withTaskCancellationHandler {
+            if Task.isCancelled {
+                refresh.observation.observeCancellation()
+                waiter.cancel()
+            }
+            return await waiter.value()
+        } onCancel: {
+            refresh.observation.observeCancellation()
+            waiter.cancel()
+        }
+    }
+
+    /// Completes every irreversible consequence of a successful exchange
+    /// before making its result visible to waiters.
+    private func finishShieldedCLIRefresh(
+        _ outcome: ClaudeCLITokenRefresher.RefreshOutcome,
+        for profile: Profile,
+        credentialsJSON: String,
+        key: CLIRefreshKey,
+        observation: CLIRefreshObservation
+    ) -> ShieldedCLIRefreshResult {
+        defer { inFlightCLIRefreshes.removeValue(forKey: key) }
+        let fingerprint = credentialsJSON.hashValue
+        let participants = inFlightCLIRefreshes[key]?.participants
+            ?? [
+                CLIRefreshParticipant(
+                    profile: profile,
+                    baseCredentialFingerprint: fingerprint
+                )
+            ]
+        guard
+            case .renewed(let refreshed) = outcome,
+            let accessToken = ClaudeCodeSyncService.shared.extractAccessToken(
+                from: refreshed
+            )
+        else {
+            if case .failed(let failure) = outcome {
+                return .failed(failure)
+            }
+            return .failed(.unavailable)
+        }
+
+        expiredCLILogins.remove(fingerprint)
+        indeterminateCLILogins.remove(fingerprint)
+        var persistedAny = false
+        for (index, participant) in participants.enumerated() {
+            do {
+                // Only the originating profile carries `rotatedFrom`: that
+                // makes the account-scoped Claude Code Keychain mirror run
+                // once while every profile gets its own durable store write.
+                try renewedCredentialWriter(
+                    RenewedCLICredential(
+                        credentialsJSON: refreshed,
+                        rotatedFrom: index == 0 ? credentialsJSON : nil
+                    ),
+                    participant.profile.id
+                )
+                persistedAny = true
+                // Keep the manager's copy in step with the durable write. A
+                // later metadata-only update saves this in-memory profile
+                // wholesale; leaving the spent credential here could
+                // otherwise overwrite the rotation that was just persisted.
+                if let profileIndex = profileManager.profiles.firstIndex(where: {
+                    $0.id == participant.profile.id
+                }) {
+                    profileManager.profiles[profileIndex].cliCredentialsJSON = refreshed
+                    if profileManager.activeProfile?.id == participant.profile.id {
+                        profileManager.activeProfile = profileManager.profiles[profileIndex]
+                    }
+                }
+            } catch {
+                // The renewed token still works for this run, so one profile's
+                // persistence failure must not stop the other shared copies
+                // from receiving the rotation.
+                LoggingService.shared.logWarning(
+                    "Could not store the renewed Claude Code token for profile "
+                    + "'\(participant.profile.name)': "
+                    + "\(error.localizedDescription). The saved credential is "
+                    + "unchanged."
+                )
+            }
+
+            renewedCLICredentials[participant.profile.id] = (
+                base: participant.baseCredentialFingerprint,
+                credentialsJSON: refreshed
+            )
+            if cliOrganizationCredentialHashes[participant.profile.id]
+                == participant.baseCredentialFingerprint {
+                cliOrganizationCredentialHashes[participant.profile.id] = refreshed.hashValue
+            }
+            if cliLoginsWithoutOrganization[participant.profile.id]
+                == participant.baseCredentialFingerprint {
+                cliLoginsWithoutOrganization[participant.profile.id] = refreshed.hashValue
+            }
+        }
+
+        let observed = observation.snapshot()
+        if observed.cancelled, persistedAny {
+            let accountName = profile.cliAccountName ?? profile.name
+            loggingService.log(
+                "Finished renewing the terminal sign-in for Claude Code "
+                + "account '\(accountName)' after its refresh job was "
+                + "cancelled; the rotated login was stored."
+            )
+        } else if observed.terminalOnly {
+            loggingService.log(
+                "Renewed the terminal sign-in for profile "
+                + "'\(profile.name)' without a browser sign-in."
+            )
+        }
+        return .renewed(
+            credentialsJSON: refreshed,
+            accessToken: accessToken
+        )
     }
 
     /// Adopts the login Claude Code itself is holding, when the app's own
@@ -1200,8 +1456,10 @@ class ClaudeAPIService: APIServiceProtocol {
     /// back to the unscoped read.
     private func adoptLiveCLILogin(
         for profile: Profile,
-        replacing stale: String
+        replacing stale: String,
+        logNoBrowserRenewal: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
+        guard !Task.isCancelled else { return nil }
         guard let accountName = profile.cliAccountName else { return nil }
 
         let key = AdoptionAttemptKey(
@@ -1233,6 +1491,7 @@ class ClaudeAPIService: APIServiceProtocol {
               !sync.isTokenExpired(live),
               let accessToken = sync.extractAccessToken(from: live)
         else { return nil }
+        guard !Task.isCancelled else { return nil }
 
         do {
             // No refresh token was spent here — this credential is Claude
@@ -1253,11 +1512,18 @@ class ClaudeAPIService: APIServiceProtocol {
             )
         }
 
-        LoggingService.shared.log(
-            "Recovered the member's own extra usage for profile "
-            + "'\(profile.name)' by adopting the login Claude Code is "
-            + "currently holding; the stored copy could no longer be renewed."
-        )
+        if logNoBrowserRenewal {
+            loggingService.log(
+                "Adopted Claude Code's live login for profile "
+                + "'\(profile.name)' without a browser sign-in."
+            )
+        } else {
+            LoggingService.shared.log(
+                "Recovered the member's own extra usage for profile "
+                + "'\(profile.name)' by adopting the login Claude Code is "
+                + "currently holding; the stored copy could no longer be renewed."
+            )
+        }
 
         renewedCLICredentials[profile.id] = (
             base: profile.cliCredentialsJSON?.hashValue ?? stale.hashValue,
@@ -1947,6 +2213,65 @@ class ClaudeAPIService: APIServiceProtocol {
             code: .sessionKeyNotFound,
             message: "Missing credentials for the selected profile",
             isRecoverable: false
+        )
+    }
+
+    /// Captures a terminal-only profile after giving its stored login the
+    /// same renewal and live-login recovery opportunity used by the member
+    /// extra-usage path. Browser-backed profiles deliberately never enter
+    /// this method from the refresh engine, so their existing request and
+    /// renewal sequence stays unchanged.
+    func captureUsageRequestPreparingTerminalSignIn(
+        for profile: Profile
+    ) async throws -> CapturedUsageRequest {
+        guard profile.claudeSessionKey == nil else {
+            return try captureUsageRequest(for: profile)
+        }
+
+        let presented: String
+        let sourceWhenUnchanged: CapturedUsageFetchSource
+        if let renewal = renewedCLICredentials[profile.id],
+           renewal.base == profile.cliCredentialsJSON?.hashValue {
+            presented = renewal.credentialsJSON
+            sourceWhenUnchanged = .profileCLI
+        } else if let stored = profile.cliCredentialsJSON {
+            renewedCLICredentials[profile.id] = nil
+            presented = stored
+            sourceWhenUnchanged = .profileCLI
+        } else if let live = try systemCredentialsReader(
+            profile.cliAccountName
+        ) {
+            presented = live
+            sourceWhenUnchanged = .systemCLI
+        } else {
+            throw AppError(
+                code: .sessionKeyNotFound,
+                message: "Missing credentials for the selected profile",
+                isRecoverable: false
+            )
+        }
+
+        forgetRenewalFailures(for: profile.id, nowPresenting: presented)
+        guard let usable = await usableCLICredential(
+            for: profile,
+            credentialsJSON: presented,
+            logNoBrowserRenewal: true
+        ) else {
+            throw AppError(
+                code: .sessionKeyNotFound,
+                message: "Missing credentials for the selected profile",
+                isRecoverable: false
+            )
+        }
+
+        return CapturedUsageRequest(
+            source: usable.credentialsJSON == presented
+                ? sourceWhenUnchanged
+                : .profileCLI,
+            sessionKey: nil,
+            organizationID: nil,
+            oauthAccessToken: usable.accessToken,
+            profileID: profile.id
         )
     }
 

@@ -4,6 +4,80 @@ import UsageCore
 
 final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
+    func testExpiredRefreshableTerminalLoginRemainsUsageEligible() {
+        let profile = Profile(
+            name: "Renewable terminal login",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"accessToken":"expired","refreshToken":"renew-me","expiresAt":1}}"#
+        )
+
+        XCTAssertFalse(profile.hasValidCLIOAuth)
+        XCTAssertTrue(profile.hasRenewableCLILogin)
+        XCTAssertTrue(profile.hasUsageCredentials)
+        XCTAssertFalse(profile.hasImmediatelyUsableCredentials)
+    }
+
+    @MainActor
+    func testExpiredTokenlessTerminalLoginIsNotUsageEligible() {
+        let profile = Profile(
+            name: "Dead terminal login",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"accessToken":"expired","expiresAt":1}}"#
+        )
+
+        XCTAssertFalse(profile.hasValidCLIOAuth)
+        XCTAssertFalse(profile.hasRenewableCLILogin)
+        XCTAssertFalse(profile.hasUsageCredentials)
+        XCTAssertFalse(profile.hasImmediatelyUsableCredentials)
+    }
+
+    @MainActor
+    func testLinkedTerminalAccountRemainsUsageEligibleForLiveLoginAdoption() {
+        let profile = Profile(
+            name: "Linked terminal account",
+            cliAccountName: "linked-account"
+        )
+
+        XCTAssertTrue(profile.hasRenewableCLILogin)
+        XCTAssertTrue(profile.hasUsageCredentials)
+        XCTAssertFalse(profile.hasImmediatelyUsableCredentials)
+    }
+
+    @MainActor
+    func testTokenlessBlobWithoutExpiryIsNotUsageEligible() {
+        let profile = Profile(
+            name: "Tokenless terminal blob",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"subscriptionType":"pro"}}"#
+        )
+
+        XCTAssertFalse(profile.hasValidCLIOAuth)
+        XCTAssertFalse(profile.hasRenewableCLILogin)
+        XCTAssertFalse(profile.hasUsageCredentials)
+        XCTAssertFalse(profile.hasImmediatelyUsableCredentials)
+    }
+
+    @MainActor
+    func testRefreshTokenOnlyBlobIsNotUsageEligible() {
+        let profile = Profile(
+            name: "Refresh metadata without a login",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"refreshToken":"orphaned-refresh-token","expiresAt":1}}"#
+        )
+
+        XCTAssertFalse(profile.hasValidCLIOAuth)
+        XCTAssertFalse(profile.hasRenewableCLILogin)
+        XCTAssertFalse(profile.hasUsageCredentials)
+    }
+
+    @MainActor
+    func testBlankLinkedTerminalAccountIsNotUsageEligible() {
+        let profile = Profile(
+            name: "Blank linked account",
+            cliAccountName: "  \n "
+        )
+
+        XCTAssertFalse(profile.hasRenewableCLILogin)
+        XCTAssertFalse(profile.hasUsageCredentials)
+    }
+
+    @MainActor
     func testLegacyProfileDefaultsToClaudeAndRevisionZero() throws {
         let original = Profile(name: "Legacy")
         let encoded = try JSONEncoder().encode(original)

@@ -430,7 +430,8 @@ func makeIsolatedClaudeAPIService(
     profileManager: ProfileManager,
     store: ProfileStore,
     systemCredentials: @escaping () throws -> String? = { nil },
-    renewals: RenewedCredentialRecorder? = nil
+    renewals: RenewedCredentialRecorder? = nil,
+    loggingService: LoggingService = .shared
 ) -> ClaudeAPIService {
     let cliSync = ClaudeCodeSyncService(
         profileStore: store,
@@ -457,7 +458,8 @@ func makeIsolatedClaudeAPIService(
                 for: profileID,
                 rotatedFrom: renewal.rotatedFrom
             )
-        }
+        },
+        loggingService: loggingService
     )
 }
 
