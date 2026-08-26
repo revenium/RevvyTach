@@ -22,7 +22,7 @@ final class SharedDataStoreTests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let defaults, let defaultsSuiteName {
-            HostedTestDefaults.reset(defaults, suiteName: defaultsSuiteName)
+            HostedTestDefaults.finish(defaults, suiteName: defaultsSuiteName)
         }
         defaults = nil
         defaultsSuiteName = nil

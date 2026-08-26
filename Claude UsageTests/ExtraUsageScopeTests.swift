@@ -847,7 +847,7 @@ final class ExtraUsageScopeTests: XCTestCase {
         )
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
         addTeardownBlock {
-            HostedTestDefaults.reset(defaults, suiteName: suiteName)
+            HostedTestDefaults.finish(defaults, suiteName: suiteName)
         }
         let store = makeIsolatedProfileStore(
             defaults: defaults,

@@ -81,7 +81,7 @@ final class DistributionConfigurationTests: XCTestCase {
             "DistributionConfigurationTests"
         )
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
-        defer { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suiteName) }
         defaults.set(
             "https://example.invalid/legacy-appcast.xml",
             forKey: SparkleUpdateConfiguration.legacyFeedOverrideDefaultsKey

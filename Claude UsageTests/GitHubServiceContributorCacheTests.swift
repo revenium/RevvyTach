@@ -25,7 +25,7 @@ final class GitHubServiceContributorCacheTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        HostedTestDefaults.finish(defaults, suiteName: suiteName)
         defaults = nil
         suiteName = nil
         try super.tearDownWithError()

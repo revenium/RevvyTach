@@ -114,7 +114,7 @@ final class StatusItemPositionSanitizerTests: XCTestCase {
             "StatusItemPositionSanitizerTests"
         )
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
-        addTeardownBlock { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
+        addTeardownBlock { HostedTestDefaults.finish(defaults, suiteName: suiteName) }
 
         let staleKey = keyPrefix + "claude-usage-tracker.profile.stale"
         let keptKey = keyPrefix + "claude-usage-tracker.profile.kept"

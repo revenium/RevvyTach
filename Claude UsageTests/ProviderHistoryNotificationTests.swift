@@ -24,7 +24,7 @@ final class ProviderHistoryNotificationTests: HostedAppTestCase {
         let (defaults, suiteName) = try HostedTestDefaults.defaults(
             "test.notification.keys"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suiteName) }
 
         XCTAssertTrue(
             DataStore.masterSwitchEnabled(in: defaults),
@@ -2597,7 +2597,7 @@ final class ProviderHistoryNotificationTests: HostedAppTestCase {
             withIntermediateDirectories: true
         )
         addTeardownBlock {
-            HostedTestDefaults.reset(defaults, suiteName: suiteName)
+            HostedTestDefaults.finish(defaults, suiteName: suiteName)
             try? FileManager.default.removeItem(at: rootURL)
         }
         return (defaults, rootURL)

@@ -48,8 +48,8 @@ final class LegacyIdentityMigrationServiceTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        HostedTestDefaults.reset(defaults, suiteName: currentSuiteName)
-        HostedTestDefaults.reset(legacyDefaults, suiteName: legacySuiteName)
+        HostedTestDefaults.finish(defaults, suiteName: currentSuiteName)
+        HostedTestDefaults.finish(legacyDefaults, suiteName: legacySuiteName)
         defaults = nil
         legacyDefaults = nil
         currentSuiteName = nil

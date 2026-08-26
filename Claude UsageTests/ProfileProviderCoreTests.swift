@@ -594,7 +594,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let root = try makeTemporaryDirectory()
         defer {
-            HostedTestDefaults.reset(defaults, suiteName: suite)
+            HostedTestDefaults.finish(defaults, suiteName: suite)
             try? FileManager.default.removeItem(at: root)
         }
         let profileFixture = try fixtureData(
@@ -2458,7 +2458,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
@@ -2530,7 +2530,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
@@ -2586,7 +2586,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
@@ -2646,7 +2646,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         defaults.set(true, forKey: "didMigrateToProfilesV3")
         let store = retain(makeIsolatedProfileStore(
@@ -2699,7 +2699,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2761,7 +2761,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2815,7 +2815,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         secrets.writeError = ProviderTestError.expected
@@ -2882,7 +2882,7 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
         let (defaults, suite) = try HostedTestDefaults.defaults(
             "ProfileProviderCoreTests"
         )
-        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        defer { HostedTestDefaults.finish(defaults, suiteName: suite) }
         HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,

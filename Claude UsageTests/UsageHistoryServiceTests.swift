@@ -873,7 +873,7 @@ final class UsageHistoryServiceTests: XCTestCase {
             withIntermediateDirectories: true
         )
         addTeardownBlock {
-            HostedTestDefaults.reset(defaults, suiteName: suiteName)
+            HostedTestDefaults.finish(defaults, suiteName: suiteName)
             try? FileManager.default.removeItem(at: rootURL)
         }
         return (defaults, rootURL)

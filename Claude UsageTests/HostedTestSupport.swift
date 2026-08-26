@@ -77,6 +77,18 @@ enum HostedTestDefaults {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    /// Clears a test domain and then removes its backing file after the test
+    /// has finished using that domain. This must not run during setup: deleting
+    /// a live CFPreferences backing file immediately before writing can corrupt
+    /// the domain on older macOS runtimes.
+    static func finish(_ defaults: UserDefaults, suiteName: String) {
+        reset(defaults, suiteName: suiteName)
+        // Wait for cfprefsd to apply the removal before unlinking. Otherwise it
+        // can apply a queued write after the file is gone and recreate it.
+        _ = defaults.synchronize()
+        removeBackingFile(suiteName: suiteName)
+    }
+
     fileprivate static func removeBackingFilesAtProcessExit() {
         suiteNamesLock.lock()
         let names = suiteNames
@@ -85,18 +97,28 @@ enum HostedTestDefaults {
         let preferences = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Preferences")
         for name in names {
-            let preferenceFile = preferences
-                .appendingPathComponent("\(name).plist")
-            if FileManager.default.fileExists(atPath: preferenceFile.path) {
-                do {
-                    try FileManager.default.removeItem(at: preferenceFile)
-                } catch {
-                    NSLog(
-                        "Hosted test process-exit cleanup could not remove %@: %@",
-                        preferenceFile.path,
-                        String(describing: error)
-                    )
-                }
+            removeBackingFile(suiteName: name, preferences: preferences)
+        }
+    }
+
+    private static func removeBackingFile(
+        suiteName: String,
+        preferences: URL? = nil
+    ) {
+        let preferences = preferences
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Preferences")
+        let preferenceFile = preferences
+            .appendingPathComponent("\(suiteName).plist")
+        if FileManager.default.fileExists(atPath: preferenceFile.path) {
+            do {
+                try FileManager.default.removeItem(at: preferenceFile)
+            } catch {
+                NSLog(
+                    "Hosted test cleanup could not remove %@: %@",
+                    preferenceFile.path,
+                    String(describing: error)
+                )
             }
         }
     }
