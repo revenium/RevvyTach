@@ -110,10 +110,11 @@ final class StatusItemPositionSanitizerTests: XCTestCase {
     // MARK: - sanitize(defaults:screens:) integration
 
     func testSanitizeRemovesOnlyStaleKeysFromDefaults() throws {
-        let suiteName = "StatusItemPositionSanitizerTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "StatusItemPositionSanitizerTests"
+        )
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        addTeardownBlock { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
 
         let staleKey = keyPrefix + "claude-usage-tracker.profile.stale"
         let keptKey = keyPrefix + "claude-usage-tracker.profile.kept"

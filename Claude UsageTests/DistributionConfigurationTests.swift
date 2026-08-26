@@ -77,9 +77,11 @@ final class DistributionConfigurationTests: XCTestCase {
     }
 
     func testLegacyFeedOverrideIsRemovedBeforeUpdaterConstruction() throws {
-        let suiteName = "DistributionConfigurationTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "DistributionConfigurationTests"
+        )
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        defer { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
         defaults.set(
             "https://example.invalid/legacy-appcast.xml",
             forKey: SparkleUpdateConfiguration.legacyFeedOverrideDefaultsKey

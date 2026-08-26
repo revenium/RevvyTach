@@ -588,12 +588,13 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     func testGoldenLegacyMigrationPreservesDataAndSafeDiagnostics()
         throws
     {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let root = try makeTemporaryDirectory()
         defer {
-            defaults.removePersistentDomain(forName: suite)
+            HostedTestDefaults.reset(defaults, suiteName: suite)
             try? FileManager.default.removeItem(at: root)
         }
         let profileFixture = try fixtureData(
@@ -2454,10 +2455,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
 
     @MainActor
     func testTombstonedClaudeCannotConsumeLegacyMigration() throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2525,10 +2527,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
 
     @MainActor
     func testLegacyMigrationTargetsClaudeWhenCodexIsActive() throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2580,10 +2583,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
 
     @MainActor
     func testChoosingClaudeImportsLegacySettingsAndCredentials() throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2639,10 +2643,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testExistingV3MarkerSeedsMetadataMarkerWithoutClobberingSettings()
         throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         defaults.set(true, forKey: "didMigrateToProfilesV3")
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
@@ -2691,10 +2696,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testChoosingCodexThenAddingFirstClaudeImportsLegacyExactlyOnce()
         throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
@@ -2752,10 +2758,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
     @MainActor
     func testAddingSecondClaudeDoesNotRetargetUnresolvedLegacyMigration()
         throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),
@@ -2805,10 +2812,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
 
     @MainActor
     func testFailedPostClaudeMigrationPreservesSourceAndRetries() throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let secrets = ProviderSecretStore()
         secrets.writeError = ProviderTestError.expected
         let store = retain(makeIsolatedProfileStore(
@@ -2871,10 +2879,11 @@ final class ProfileProviderCoreTests: HostedAppTestCase {
 
     @MainActor
     func testCodexOnlyMigrationPreservesLegacySourcesAndMarkers() throws {
-        let suite = "ProfileProviderCoreTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.removePersistentDomain(forName: suite)
+        let (defaults, suite) = try HostedTestDefaults.defaults(
+            "ProfileProviderCoreTests"
+        )
+        defer { HostedTestDefaults.reset(defaults, suiteName: suite) }
+        HostedTestDefaults.reset(defaults, suiteName: suite)
         let store = retain(makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: ProviderSecretStore(),

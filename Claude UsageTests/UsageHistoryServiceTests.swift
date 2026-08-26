@@ -862,9 +862,10 @@ final class UsageHistoryServiceTests: XCTestCase {
         defaults: UserDefaults,
         rootURL: URL
     ) {
-        let suiteName = "UsageHistoryServiceTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "UsageHistoryServiceTests"
+        )
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("UsageHistoryServiceTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
@@ -872,7 +873,7 @@ final class UsageHistoryServiceTests: XCTestCase {
             withIntermediateDirectories: true
         )
         addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
+            HostedTestDefaults.reset(defaults, suiteName: suiteName)
             try? FileManager.default.removeItem(at: rootURL)
         }
         return (defaults, rootURL)

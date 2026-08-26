@@ -13,13 +13,27 @@ import XCTest
 /// `DataStore.masterSwitchEnabled(in:)` exists to prevent for the
 /// notifications master switch (see `ProviderHistoryNotificationTests`).
 final class MenuBarOverflowModeTests: XCTestCase {
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        let (testDefaults, testSuiteName) = try HostedTestDefaults.defaults(
+            "MenuBarOverflowModeTests"
+        )
+        suiteName = testSuiteName
+        defaults = testDefaults
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+    }
+
+    override func tearDownWithError() throws {
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        defaults = nil
+        suiteName = nil
+        try super.tearDownWithError()
+    }
+
     private func makeIsolatedDefaults() -> UserDefaults {
-        let suiteName =
-            "MenuBarOverflowModeTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
         return defaults
     }
 

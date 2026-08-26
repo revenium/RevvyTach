@@ -51,31 +51,25 @@ enum HostedTestDefaults {
     private static let processSalt = UUID().uuidString
     private static let suiteNamesLock = NSLock()
     private static var suiteNames: Set<String> = []
-    private static var defaultsBySuiteName: [String: UserDefaults] = [:]
     private static let processExitCleanup: Void = {
         atexit(removeHostedTestDefaultsBackingsAtProcessExit)
     }()
 
-    /// Returns the one defaults object for this suite in this test process.
+    /// Returns a unique defaults object for this call in this test process.
     ///
-    /// Recreating `UserDefaults(suiteName:)` for the same suite in every test
-    /// method can double-free CFPreferences state on older macOS runtimes when
-    /// those objects are reset and released independently. The per-process
-    /// salt keeps concurrent test hosts isolated; this cache keeps each host
-    /// to one instance per suite.
+    /// CFPreferences can corrupt a named domain when a test host reuses it
+    /// across test methods on older macOS runtimes. The per-process salt keeps
+    /// concurrent test hosts isolated, while the per-call UUID prevents any
+    /// domain from being reused inside one host.
     static func defaults(_ prefix: String) throws -> (UserDefaults, String) {
-        let name = "\(prefix).\(processSalt)"
+        let name = "\(prefix).\(processSalt).\(UUID().uuidString)"
         _ = processExitCleanup
         suiteNamesLock.lock()
         defer { suiteNamesLock.unlock() }
-        if let defaults = defaultsBySuiteName[name] {
-            return (defaults, name)
-        }
+        suiteNames.insert(name)
         guard let defaults = UserDefaults(suiteName: name) else {
             throw Error.couldNotCreateSuite(name)
         }
-        suiteNames.insert(name)
-        defaultsBySuiteName[name] = defaults
         return (defaults, name)
     }
 
@@ -100,19 +94,7 @@ enum HostedTestDefaults {
     fileprivate static func removeBackingFilesAtProcessExit() {
         suiteNamesLock.lock()
         let names = suiteNames
-        var cachedDefaults = defaultsBySuiteName
-        defaultsBySuiteName.removeAll()
         suiteNamesLock.unlock()
-
-        // Ensure cfprefsd applies the final removal before the cache releases
-        // its last defaults instances.
-        for (name, defaults) in cachedDefaults {
-            defaults.removePersistentDomain(forName: name)
-            _ = defaults.synchronize()
-        }
-        // Release the defaults before deleting their plists; otherwise their
-        // deinitialization can re-flush a suite after cleanup has unlinked it.
-        cachedDefaults.removeAll()
 
         let preferences = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Preferences")

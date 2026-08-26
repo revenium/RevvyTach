@@ -73,7 +73,18 @@ for pattern in \
     'ClaudeUsageTests.CurrentUsage.*.plist' \
     'ClaudeUsageTests.ProfileSecurity.*.plist' \
     'test.notification.keys.*.plist' \
-    'ClaudeUsageTests.SharedDataStoreTests.*.plist'; do
+    'ClaudeUsageTests.SharedDataStoreTests.*.plist' \
+    'ProviderHistoryNotificationTests.*.plist' \
+    'UsageHistoryServiceTests.*.plist' \
+    'ProfileProviderCoreTests.*.plist' \
+    'KeychainOwnershipAdoptionServiceTests.*.plist' \
+    'MenuBarOverflowModeTests.*.plist' \
+    'ProfileKeychainDomainMigrationServiceTests.*.plist' \
+    'LegacyBundleRelocationServiceTests.*.plist' \
+    'GitHubServiceContributorCacheTests.*.plist' \
+    'StatusItemPositionSanitizerTests.*.plist' \
+    'DistributionConfigurationTests.*.plist' \
+    'ExtraUsageScopeTests.*.plist'; do
     for preference_file in "$preferences"/$~pattern(N); do
         print -r -- "$preference_file" >> "$targets"
     done

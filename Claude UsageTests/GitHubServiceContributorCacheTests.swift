@@ -16,14 +16,18 @@ final class GitHubServiceContributorCacheTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        suiteName =
-            "GitHubServiceContributorCacheTests.\(UUID().uuidString)"
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
+        let (testDefaults, testSuiteName) = try HostedTestDefaults.defaults(
+            "GitHubServiceContributorCacheTests"
+        )
+        suiteName = testSuiteName
+        defaults = testDefaults
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
     }
 
     override func tearDownWithError() throws {
-        defaults.removePersistentDomain(forName: suiteName)
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        defaults = nil
+        suiteName = nil
         try super.tearDownWithError()
     }
 

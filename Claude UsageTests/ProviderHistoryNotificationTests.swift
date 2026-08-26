@@ -2583,12 +2583,10 @@ final class ProviderHistoryNotificationTests: HostedAppTestCase {
         defaults: UserDefaults,
         rootURL: URL
     ) {
-        let suiteName =
-            "ProviderHistoryNotificationTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(
-            UserDefaults(suiteName: suiteName)
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "ProviderHistoryNotificationTests"
         )
-        defaults.removePersistentDomain(forName: suiteName)
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "ProviderHistoryNotificationTests-"
@@ -2599,7 +2597,7 @@ final class ProviderHistoryNotificationTests: HostedAppTestCase {
             withIntermediateDirectories: true
         )
         addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
+            HostedTestDefaults.reset(defaults, suiteName: suiteName)
             try? FileManager.default.removeItem(at: rootURL)
         }
         return (defaults, rootURL)

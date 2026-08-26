@@ -7,7 +7,6 @@ import XCTest
 /// through persistence and the popover label, and pin the organization
 /// selection that feeds it.
 final class ExtraUsageScopeTests: XCTestCase {
-
     // MARK: - Persistence compatibility
 
     /// Usage history written before the scope existed must still decode. A
@@ -101,7 +100,7 @@ final class ExtraUsageScopeTests: XCTestCase {
             StubOrganizationsURLProtocol.responseBody = nil
         }
 
-        let service = makeIsolatedService()
+        let service = try makeIsolatedService()
 
         do {
             let organizationId = try await service.fetchOrganizationId(
@@ -127,7 +126,7 @@ final class ExtraUsageScopeTests: XCTestCase {
             StubOrganizationsURLProtocol.responseBody = nil
         }
 
-        let service = makeIsolatedService()
+        let service = try makeIsolatedService()
 
         let organizationId = try await service.fetchOrganizationId(
             sessionKey: "sk-ant-sid01-fixture-session-key-value"
@@ -155,7 +154,7 @@ final class ExtraUsageScopeTests: XCTestCase {
             StubOrganizationsURLProtocol.responseBody = nil
         }
 
-        let service = makeIsolatedService()
+        let service = try makeIsolatedService()
 
         let organizationId = try await service.fetchOrganizationId(
             sessionKey: "sk-ant-sid01-fixture-session-key-value"
@@ -180,7 +179,7 @@ final class ExtraUsageScopeTests: XCTestCase {
             StubOrganizationsURLProtocol.responseBody = nil
         }
 
-        let service = makeIsolatedService()
+        let service = try makeIsolatedService()
 
         do {
             let organizationId = try await service.fetchOrganizationId(
@@ -842,10 +841,14 @@ final class ExtraUsageScopeTests: XCTestCase {
     // MARK: - Helpers
 
     @MainActor
-    private func makeIsolatedService() -> ClaudeAPIService {
-        let defaults = UserDefaults(
-            suiteName: "ExtraUsageScopeTests-\(UUID().uuidString)"
-        )!
+    private func makeIsolatedService() throws -> ClaudeAPIService {
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "ExtraUsageScopeTests"
+        )
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        addTeardownBlock {
+            HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        }
         let store = makeIsolatedProfileStore(
             defaults: defaults,
             secretStore: UnusedProfileSecretStore()

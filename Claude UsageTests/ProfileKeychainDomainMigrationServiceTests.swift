@@ -3,6 +3,26 @@ import XCTest
 
 @MainActor
 final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        let (testDefaults, testSuiteName) = try HostedTestDefaults.defaults(
+            "ProfileKeychainDomainMigrationServiceTests"
+        )
+        suiteName = testSuiteName
+        defaults = testDefaults
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+    }
+
+    override func tearDownWithError() throws {
+        HostedTestDefaults.reset(defaults, suiteName: suiteName)
+        defaults = nil
+        suiteName = nil
+        try super.tearDownWithError()
+    }
+
     private func makeStore(with profiles: [Profile]) throws -> ProfileStore {
         let store = retain(makeIsolatedProfileStore(
             defaults: FaultingProfileDefaults(),
@@ -17,9 +37,7 @@ final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
         profiles: [Profile],
         domain: ProfileKeychainDomain,
         access: SpyDomainAccess,
-        defaults: UserDefaults = UserDefaults(
-            suiteName: "ProfileKeychainDomainMigrationServiceTests.\(UUID())"
-        )!
+        defaults: UserDefaults? = nil
     ) throws -> (ProfileKeychainDomainMigrationService, ProfileStore) {
         let store = try makeStore(with: profiles)
         let resolver = ProfileKeychainDomainResolver {
@@ -29,7 +47,7 @@ final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
             resolver: resolver,
             domainAccess: access,
             profileStore: store,
-            defaults: defaults
+            defaults: defaults ?? self.defaults
         ))
         return (service, store)
     }
@@ -91,9 +109,6 @@ final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
             account: account
         )
         access.refuseFileReads = true
-        let defaults = UserDefaults(
-            suiteName: "ProfileKeychainDomainMigrationServiceTests.\(UUID())"
-        )!
         let (service, _) = try makeService(
             profiles: [profile],
             domain: .dataProtection,
@@ -138,9 +153,6 @@ final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
             service: KeychainService.profileSecretsService,
             account: account
         )
-        let defaults = UserDefaults(
-            suiteName: "ProfileKeychainDomainMigrationServiceTests.\(UUID())"
-        )!
         let (service, _) = try makeService(
             profiles: [profile],
             domain: .dataProtection,
@@ -202,9 +214,6 @@ final class ProfileKeychainDomainMigrationServiceTests: HostedAppTestCase {
     func testALocatorWithNoLegacyItemIsNotAFailure() throws {
         let profile = Profile(name: "NothingToMigrate")
         let access = SpyDomainAccess()
-        let defaults = UserDefaults(
-            suiteName: "ProfileKeychainDomainMigrationServiceTests.\(UUID())"
-        )!
         let (service, _) = try makeService(
             profiles: [profile],
             domain: .dataProtection,
