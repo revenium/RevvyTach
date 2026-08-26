@@ -75,20 +75,6 @@ enum HostedTestDefaults {
 
     static func reset(_ defaults: UserDefaults, suiteName: String) {
         defaults.removePersistentDomain(forName: suiteName)
-        let preferenceFile = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Preferences")
-            .appendingPathComponent("\(suiteName).plist")
-        if FileManager.default.fileExists(atPath: preferenceFile.path) {
-            do {
-                try FileManager.default.removeItem(at: preferenceFile)
-            } catch {
-                NSLog(
-                    "Hosted test cleanup could not remove %@: %@",
-                    preferenceFile.path,
-                    String(describing: error)
-                )
-            }
-        }
     }
 
     fileprivate static func removeBackingFilesAtProcessExit() {
