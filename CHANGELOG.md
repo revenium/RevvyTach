@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-08-26
+
+### Added
+
+- **Each Claude profile now has one Claude Account page for both sign-ins.**
+  Browser sign-in (claude.ai) and Terminal sign-in (Claude Code) each have their
+  own status and repair action, alongside an explanation of why a profile can
+  have both. This replaces the separate Claude.ai and CLI Account pages while
+  keeping the existing MCP, skills and shell controls together with the account.
+
+- **Profiles with only a Terminal sign-in now stay visibly marked as Setup
+  incomplete.** A red marker appears in the menu bar, an Incomplete badge appears
+  in Settings, and a popover banner takes you straight to the Claude Account
+  page. The warning clears the moment a Browser sign-in is saved; profiles with
+  only a Browser sign-in remain complete and un-warned.
+
+### Changed
+
+- **Claude setup now starts with the sign-in that produces the usage numbers.**
+  The wizard asks you to sign in to claude.ai, choose the organization, and then
+  link the Claude Code sign-in it detects or continue without it. It can no
+  longer create a profile with only the terminal half, which showed no usage
+  numbers and could silently stop working when that login expired.
+
+### Fixed
+
+- **A profile with only a Terminal sign-in is now renewed on schedule instead
+  of disappearing from usage reporting when its token expires.** The app keeps
+  the renewed login in step with the `claude` command. If switching profiles
+  interrupts a renewal already in flight, the renewal now finishes and stores
+  the rotated login instead of leaving you signed out; every profile sharing
+  that Claude Code login receives the rotated copy.
+
 ## [4.0.10] - 2026-08-25
 
 ### Fixed
