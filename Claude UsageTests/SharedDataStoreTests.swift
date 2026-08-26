@@ -24,7 +24,6 @@ final class SharedDataStoreTests: XCTestCase {
         if let defaults, let defaultsSuiteName {
             HostedTestDefaults.reset(defaults, suiteName: defaultsSuiteName)
         }
-        sharedDataStore = nil
         defaults = nil
         defaultsSuiteName = nil
 

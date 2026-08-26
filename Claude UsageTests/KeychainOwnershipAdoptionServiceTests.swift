@@ -36,7 +36,6 @@ final class KeychainOwnershipAdoptionServiceTests: XCTestCase {
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
         defaults = nil
         suiteName = nil
-        store = nil
         try super.tearDownWithError()
     }
 
