@@ -9,8 +9,11 @@ final class ProfileCurrentUsageIntegrationTests: HostedAppTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        suiteName = HostedTestDefaults.suiteName("ClaudeUsageTests.CurrentUsage")
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let (testDefaults, testSuiteName) = try HostedTestDefaults.defaults(
+            "ClaudeUsageTests.CurrentUsage"
+        )
+        suiteName = testSuiteName
+        defaults = testDefaults
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
     }
 

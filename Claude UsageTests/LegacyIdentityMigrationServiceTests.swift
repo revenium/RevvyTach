@@ -23,14 +23,16 @@ final class LegacyIdentityMigrationServiceTests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
 
-        currentSuiteName = HostedTestDefaults.suiteName(
+        let (currentDefaults, currentName) = try HostedTestDefaults.defaults(
             "LegacyIdentityMigrationServiceTests.current"
         )
-        legacySuiteName = HostedTestDefaults.suiteName(
+        let (testLegacyDefaults, legacyName) = try HostedTestDefaults.defaults(
             "LegacyIdentityMigrationServiceTests.legacy"
         )
-        defaults = try XCTUnwrap(UserDefaults(suiteName: currentSuiteName))
-        legacyDefaults = try XCTUnwrap(UserDefaults(suiteName: legacySuiteName))
+        currentSuiteName = currentName
+        legacySuiteName = legacyName
+        defaults = currentDefaults
+        legacyDefaults = testLegacyDefaults
         HostedTestDefaults.reset(defaults, suiteName: currentSuiteName)
         HostedTestDefaults.reset(legacyDefaults, suiteName: legacySuiteName)
 
@@ -48,7 +50,12 @@ final class LegacyIdentityMigrationServiceTests: XCTestCase {
     override func tearDownWithError() throws {
         HostedTestDefaults.reset(defaults, suiteName: currentSuiteName)
         HostedTestDefaults.reset(legacyDefaults, suiteName: legacySuiteName)
+        defaults = nil
+        legacyDefaults = nil
+        currentSuiteName = nil
+        legacySuiteName = nil
         try? FileManager.default.removeItem(at: applicationSupportURL)
+        applicationSupportURL = nil
 
         try super.tearDownWithError()
     }

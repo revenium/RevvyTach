@@ -19,9 +19,11 @@ final class ProviderHistoryNotificationTests: HostedAppTestCase {
     /// master switch would silently change migration from off-by-default to
     /// on-by-default for installs that never touched the old toggle. The two
     /// concerns therefore use two keys with two different defaults.
-    func testMasterSwitchAndLegacyMigrationKeysHaveIndependentDefaults() {
-        let suiteName = HostedTestDefaults.suiteName("test.notification.keys")
-        let defaults = UserDefaults(suiteName: suiteName)!
+    func testMasterSwitchAndLegacyMigrationKeysHaveIndependentDefaults()
+        throws {
+        let (defaults, suiteName) = try HostedTestDefaults.defaults(
+            "test.notification.keys"
+        )
         defer { HostedTestDefaults.reset(defaults, suiteName: suiteName) }
 
         XCTAssertTrue(

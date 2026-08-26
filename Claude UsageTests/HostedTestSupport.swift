@@ -39,60 +39,103 @@ class HostedAppTestCase: XCTestCase {
 ///
 /// A domain is unique to the current test process, so concurrent `xcodebuild`
 /// runs cannot read or overwrite one another. Within that process, a class
-/// reuses its domain and resets it between methods. `cfprefsd` can re-flush a
-/// removed domain at process exit, so a registered test-bundle observer removes
-/// all backing plists only after XCTest has finished every suite.
+/// reuses its domain and resets it between methods. Reset explicitly evicts
+/// the suite before unlinking its backing plist. A single process-exit pass
+/// repeats the unlink after `cfprefsd`'s final flush; it is not an XCTest
+/// observer, and every filesystem failure is caught and logged.
 enum HostedTestDefaults {
+    enum Error: Swift.Error {
+        case couldNotCreateSuite(String)
+    }
+
     private static let processSalt = UUID().uuidString
     private static let suiteNamesLock = NSLock()
     private static var suiteNames: Set<String> = []
-    private static let bundleObserver: TestDefaultsBundleObserver = {
-        let observer = TestDefaultsBundleObserver()
-        XCTestObservationCenter.shared.addTestObserver(observer)
-        return observer
+    private static var defaultsBySuiteName: [String: UserDefaults] = [:]
+    private static let processExitCleanup: Void = {
+        atexit(removeHostedTestDefaultsBackingsAtProcessExit)
     }()
 
-    static func suiteName(_ prefix: String) -> String {
+    /// Returns the one defaults object for this suite in this test process.
+    ///
+    /// Recreating `UserDefaults(suiteName:)` for the same suite in every test
+    /// method can double-free CFPreferences state on older macOS runtimes when
+    /// those objects are reset and released independently. The per-process
+    /// salt keeps concurrent test hosts isolated; this cache keeps each host
+    /// to one instance per suite.
+    static func defaults(_ prefix: String) throws -> (UserDefaults, String) {
         let name = "\(prefix).\(processSalt)"
-        _ = bundleObserver
         _ = processExitCleanup
         suiteNamesLock.lock()
+        defer { suiteNamesLock.unlock() }
+        if let defaults = defaultsBySuiteName[name] {
+            return (defaults, name)
+        }
+        guard let defaults = UserDefaults(suiteName: name) else {
+            throw Error.couldNotCreateSuite(name)
+        }
         suiteNames.insert(name)
-        suiteNamesLock.unlock()
-        return name
+        defaultsBySuiteName[name] = defaults
+        return (defaults, name)
     }
 
     static func reset(_ defaults: UserDefaults, suiteName: String) {
         defaults.removePersistentDomain(forName: suiteName)
+        let preferenceFile = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences")
+            .appendingPathComponent("\(suiteName).plist")
+        if FileManager.default.fileExists(atPath: preferenceFile.path) {
+            do {
+                try FileManager.default.removeItem(at: preferenceFile)
+            } catch {
+                NSLog(
+                    "Hosted test cleanup could not remove %@: %@",
+                    preferenceFile.path,
+                    String(describing: error)
+                )
+            }
+        }
     }
 
-    fileprivate static func removeBackingFilesAfterTestBundleFinishes() {
+    fileprivate static func removeBackingFilesAtProcessExit() {
         suiteNamesLock.lock()
         let names = suiteNames
+        var cachedDefaults = defaultsBySuiteName
+        defaultsBySuiteName.removeAll()
         suiteNamesLock.unlock()
+
+        // Ensure cfprefsd applies the final removal before the cache releases
+        // its last defaults instances.
+        for (name, defaults) in cachedDefaults {
+            defaults.removePersistentDomain(forName: name)
+            _ = defaults.synchronize()
+        }
+        // Release the defaults before deleting their plists; otherwise their
+        // deinitialization can re-flush a suite after cleanup has unlinked it.
+        cachedDefaults.removeAll()
 
         let preferences = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Preferences")
         for name in names {
-            try? FileManager.default.removeItem(
-                at: preferences.appendingPathComponent("\(name).plist")
-            )
+            let preferenceFile = preferences
+                .appendingPathComponent("\(name).plist")
+            if FileManager.default.fileExists(atPath: preferenceFile.path) {
+                do {
+                    try FileManager.default.removeItem(at: preferenceFile)
+                } catch {
+                    NSLog(
+                        "Hosted test process-exit cleanup could not remove %@: %@",
+                        preferenceFile.path,
+                        String(describing: error)
+                    )
+                }
+            }
         }
-    }
-
-    private static let processExitCleanup: Void = {
-        atexit(removeHostedTestDefaultsBackingsAtProcessExit)
-    }()
-}
-
-private final class TestDefaultsBundleObserver: NSObject, XCTestObservation {
-    func testBundleWillFinish(_ testBundle: Bundle) {
-        HostedTestDefaults.removeBackingFilesAfterTestBundleFinishes()
     }
 }
 
 private func removeHostedTestDefaultsBackingsAtProcessExit() {
-    HostedTestDefaults.removeBackingFilesAfterTestBundleFinishes()
+    HostedTestDefaults.removeBackingFilesAtProcessExit()
 }
 
 final class FaultingProfileDefaults: ProfileDefaultsStore {

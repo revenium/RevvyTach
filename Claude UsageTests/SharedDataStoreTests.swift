@@ -10,10 +10,9 @@ final class SharedDataStoreTests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
 
-        let suiteName = HostedTestDefaults.suiteName(
+        let (testDefaults, suiteName) = try HostedTestDefaults.defaults(
             "ClaudeUsageTests.SharedDataStoreTests"
         )
-        let testDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         HostedTestDefaults.reset(testDefaults, suiteName: suiteName)
 
         defaultsSuiteName = suiteName

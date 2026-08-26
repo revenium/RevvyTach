@@ -7,8 +7,11 @@ final class ProfileSecurityIntegrationTests: HostedAppTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        suiteName = HostedTestDefaults.suiteName("ClaudeUsageTests.ProfileSecurity")
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let (testDefaults, testSuiteName) = try HostedTestDefaults.defaults(
+            "ClaudeUsageTests.ProfileSecurity"
+        )
+        suiteName = testSuiteName
+        defaults = testDefaults
         HostedTestDefaults.reset(defaults, suiteName: suiteName)
     }
 
