@@ -66,6 +66,20 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Crash reports (on test failure)
+        if: failure()
+        run: |
+          echo "--- xcodebuild exited non-zero; looking for test-host crashes ---"
+          grep -c "Restarting after unexpected exit" build/Logs/Test/*.xcresult 2>/dev/null || true
+          for dir in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            [ -d "$dir" ] || continue
+            find "$dir" -name 'RevvyTach*' -newermt '-30 minutes' -print 2>/dev/null | while read -r report; do
+              echo "===== $report ====="
+              head -120 "$report"
+            done
+          done
+          echo "--- end crash reports ---"
+
       - name: Build Release
         run: |
           xcodebuild build \
