@@ -562,6 +562,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             ProviderPopoverHeader.attentionCredential(
                 providerID: .claude,
                 claudeUsage: usage,
+                credentialFailureStreak: 0,
                 healthStatus: .degraded
             ),
             .claudeCode
@@ -570,6 +571,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             ProviderPopoverHeader.attentionCredential(
                 providerID: .claude,
                 claudeUsage: nil,
+                credentialFailureStreak: 0,
                 healthStatus: .unauthenticated
             ),
             .claudeAI
@@ -578,6 +580,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             ProviderPopoverHeader.attentionCredential(
                 providerID: .claude,
                 claudeUsage: nil,
+                credentialFailureStreak: 0,
                 healthStatus: .healthy
             )
         )
@@ -588,10 +591,53 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             ProviderPopoverHeader.attentionCredential(
                 providerID: .codex,
                 claudeUsage: usage,
+                credentialFailureStreak: 0,
                 healthStatus: .unauthenticated
             ),
             "a non-Claude profile was told which of Claude's two "
                 + "credentials had failed"
+        )
+    }
+
+    /// Reproduces Tessie's finding on PR #94: the header used to pass a
+    /// hardcoded `0` for `credentialFailureStreak`, so a single transient
+    /// rejection (streak 1, health `.unauthenticated`) read as a SETTLED
+    /// failure — `MenuBarAttentionSignal`'s zero-streak branch — and marked
+    /// the header immediately, the exact crying-wolf this PR removes from
+    /// the menu bar icon. With the real streak threaded through: a streak
+    /// of 1 must raise no marker, while 0 (a settled sign-out with no
+    /// refresh currently failing) and 2 (two rejections in a row) both must.
+    func testHeaderMarkerRespectsTheCredentialFailureStreak() {
+        XCTAssertNil(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: nil,
+                credentialFailureStreak: 1,
+                healthStatus: .unauthenticated
+            ),
+            "a single transient credential rejection must not raise the "
+                + "header's marker"
+        )
+        XCTAssertEqual(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: nil,
+                credentialFailureStreak: 0,
+                healthStatus: .unauthenticated
+            ),
+            .claudeAI,
+            "a settled unauthenticated account with no failure currently "
+                + "in flight must still be marked"
+        )
+        XCTAssertEqual(
+            ProviderPopoverHeader.attentionCredential(
+                providerID: .claude,
+                claudeUsage: nil,
+                credentialFailureStreak: 2,
+                healthStatus: .unauthenticated
+            ),
+            .claudeAI,
+            "two consecutive credential rejections must raise the marker"
         )
     }
 
@@ -606,6 +652,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         let credential = ProviderPopoverHeader.attentionCredential(
             providerID: .claude,
             claudeUsage: usage,
+            credentialFailureStreak: 0,
             healthStatus: .degraded
         )
         XCTAssertNil(credential)
