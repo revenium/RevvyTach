@@ -104,6 +104,18 @@ nonisolated struct ProviderRefreshFailure:
     let occurredAt: Date
     let isRecoverable: Bool
     let consecutiveCount: Int
+    /// How many times IN A ROW the failure has been this same `kind`,
+    /// resetting to `1` whenever the kind changes. `consecutiveCount`
+    /// stays kind-agnostic (it feeds exponential backoff and the
+    /// popover's "consecutive failures" banner, both of which legitimately
+    /// want "any failure in a row"); this field is the one presenters use
+    /// to debounce a specific *kind* of failure — see
+    /// `MenuBarAttentionSignal`'s credential-failure streak, which must not
+    /// fire on the first credential rejection after an unrelated transport
+    /// failure. Defaults to `consecutiveCount` for call sites that don't
+    /// track kind history (a fresh failure has no prior kind to differ
+    /// from, so the two values coincide).
+    var sameKindConsecutiveCount: Int
     let legacyErrorCode: ErrorCode?
     /// Server-advertised retry delay (e.g. a 429's `Retry-After` header),
     /// when known. `nil` when the failure carried no such hint.
@@ -130,6 +142,7 @@ nonisolated struct ProviderRefreshFailure:
         occurredAt: Date,
         isRecoverable: Bool,
         consecutiveCount: Int,
+        sameKindConsecutiveCount: Int? = nil,
         legacyErrorCode: ErrorCode? = nil,
         retryAfter: TimeInterval? = nil,
         detail: String? = nil,
@@ -139,6 +152,8 @@ nonisolated struct ProviderRefreshFailure:
         self.occurredAt = occurredAt
         self.isRecoverable = isRecoverable
         self.consecutiveCount = consecutiveCount
+        self.sameKindConsecutiveCount =
+            sameKindConsecutiveCount ?? consecutiveCount
         self.legacyErrorCode = legacyErrorCode
         self.retryAfter = retryAfter
         self.detail = detail
@@ -1634,12 +1649,18 @@ final class UsageRefreshRuntime {
             state = .invalid
         }
         let cached = presentationStore.snapshot(for: profile.id)
+        let previousFailure = cached?.currentFailure
+        let sameKindConsecutiveCount: Int =
+            previousFailure?.kind == kind
+                ? (previousFailure?.sameKindConsecutiveCount ?? 0) + 1
+                : 1
         let failure = ProviderRefreshFailure(
             kind: kind,
             occurredAt: now(),
             isRecoverable: kind != .disabled,
             consecutiveCount:
-                (cached?.currentFailure?.consecutiveCount ?? 0) + 1
+                (previousFailure?.consecutiveCount ?? 0) + 1,
+            sameKindConsecutiveCount: sameKindConsecutiveCount
         )
         let candidate = UsageRefreshFailureCandidate(
             identity: ProviderRefreshIdentity(
@@ -1838,6 +1859,15 @@ actor UsageRefreshEngine {
         var pending: Request?
         var lastSuccess: Date?
         var consecutiveFailures: Int = 0
+        /// The `kind` of the most recent failure recorded on this slot,
+        /// paired with `sameKindConsecutiveFailures` below. Together they
+        /// let a new failure tell whether it continues the same streak or
+        /// starts a fresh one — see `ProviderRefreshFailure.sameKindConsecutiveCount`.
+        /// `nil` whenever `consecutiveFailures` is `0`.
+        var lastFailureKind: ProviderRefreshFailureKind?
+        /// How many failures in a row have been `lastFailureKind`. Reset
+        /// alongside `consecutiveFailures` on success.
+        var sameKindConsecutiveFailures: Int = 0
         /// Earliest time a non-user-initiated attempt may start again,
         /// set on failure and cleared on success. Manual refreshes bypass
         /// this entirely (see `start(_:generation:)`).
@@ -2220,6 +2250,8 @@ actor UsageRefreshEngine {
         if slot.identity != request.job.identity {
             slot.lastSuccess = nil
             slot.consecutiveFailures = 0
+            slot.lastFailureKind = nil
+            slot.sameKindConsecutiveFailures = 0
             slot.nextAllowedRetryAt = nil
         }
         slot.identity = request.job.identity
@@ -2423,6 +2455,8 @@ actor UsageRefreshEngine {
                 running.phase = .fetching
                 slot.lastSuccess = receipt.committedAt
                 slot.consecutiveFailures = 0
+                slot.lastFailureKind = nil
+                slot.sameKindConsecutiveFailures = 0
                 slot.nextAllowedRetryAt = nil
                 slot.running = running
 
@@ -2466,6 +2500,8 @@ actor UsageRefreshEngine {
                 currentRunning.phase = .fetching
                 currentSlot.lastSuccess = receipt.committedAt
                 currentSlot.consecutiveFailures = 0
+                currentSlot.lastFailureKind = nil
+                currentSlot.sameKindConsecutiveFailures = 0
                 currentSlot.nextAllowedRetryAt = nil
                 currentSlot.running = currentRunning
                 slots[request.job.identity.profileID] =
@@ -2519,6 +2555,12 @@ actor UsageRefreshEngine {
             for: error,
             count: slot.consecutiveFailures + 1
         )
+        let sameKindConsecutiveCount: Int =
+            slot.lastFailureKind == terminalFailure.kind
+                ? slot.sameKindConsecutiveFailures + 1
+                : 1
+        terminalFailure.sameKindConsecutiveCount =
+            sameKindConsecutiveCount
         let nextAllowedRetryAt = nextAllowedRetryAt(
             after: terminalFailure,
             refreshInterval: request.job.refreshInterval
@@ -2534,6 +2576,9 @@ actor UsageRefreshEngine {
         var presentationSlot = slot
         presentationSlot.running = running
         presentationSlot.consecutiveFailures += 1
+        presentationSlot.lastFailureKind = terminalFailure.kind
+        presentationSlot.sameKindConsecutiveFailures =
+            sameKindConsecutiveCount
         presentationSlot.nextAllowedRetryAt = nextAllowedRetryAt
         let snapshot = makeSnapshot(
             request,
@@ -2579,6 +2624,9 @@ actor UsageRefreshEngine {
         currentRunning.providerError = error
         currentRunning.phase = .fetching
         currentSlot.consecutiveFailures += 1
+        currentSlot.lastFailureKind = terminalFailure.kind
+        currentSlot.sameKindConsecutiveFailures =
+            sameKindConsecutiveCount
         currentSlot.nextAllowedRetryAt = nextAllowedRetryAt
         currentSlot.running = currentRunning
         slots[request.job.identity.profileID] = currentSlot
@@ -2619,10 +2667,13 @@ actor UsageRefreshEngine {
                 running.phase = .fetching
                 slot.running = running
                 let providerFailure = running.providerError.map {
-                    failure(
+                    var failure = failure(
                         for: $0,
                         count: slot.consecutiveFailures
                     )
+                    failure.sameKindConsecutiveCount =
+                        slot.sameKindConsecutiveFailures
+                    return failure
                 }
                 let snapshot = makeSnapshot(
                     request,

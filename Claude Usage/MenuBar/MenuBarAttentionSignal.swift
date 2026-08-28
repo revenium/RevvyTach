@@ -62,9 +62,11 @@ enum MenuBarAttentionSignal {
     ///     `temporarilyUnavailable` and `claudeAccountUnresolved` are settled
     ///     or transient and deliberately raise nothing.
     ///   - credentialFailureStreak: how many times in a row the claude.ai
-    ///     session key has been rejected — `ProviderRefreshFailure`'s own
-    ///     `consecutiveCount`, or `0` when the last attempt succeeded or
-    ///     failed for some other reason.
+    ///     session key has been rejected — `ProviderRefreshFailure`'s
+    ///     `sameKindConsecutiveCount`, or `0` when the last attempt
+    ///     succeeded or failed for some other reason. Kind-scoped
+    ///     deliberately: a transport failure immediately before the
+    ///     rejection must not count toward this streak.
     ///
     ///     A single rejection does not raise the marker. The count was
     ///     already tracked and simply never consulted, so one transient

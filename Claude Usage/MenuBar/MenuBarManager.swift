@@ -2962,7 +2962,11 @@ class MenuBarManager: NSObject, ObservableObject {
             credentialFailureStreak: {
                 guard let failure = snapshot?.currentFailure,
                       failure.isCredentialFailure else { return 0 }
-                return failure.consecutiveCount
+                // Same-kind, not overall, count: a transport failure
+                // immediately before this credential rejection must not
+                // count toward the threshold — see
+                // `ProviderRefreshFailure.sameKindConsecutiveCount`.
+                return failure.sameKindConsecutiveCount
             }(),
             healthStatus: snapshot?.report?.health.status,
             setupState: setupState
