@@ -108,6 +108,10 @@ struct ClaudeAccountView: View {
     @State private var terminalLinkVerification:
         ClaudeTerminalLinkVerificationState = .unverified
     @State private var showUnlinkConfirmation = false
+    /// The unlink confirmation raised from inside the terminal sign-in sheet.
+    /// It needs its own flag because it is presented on a different window
+    /// from the page-level one; see `terminalLinkSheet(profile:)`.
+    @State private var showUnlinkConfirmationInSheet = false
     @State private var showShellIntegration = false
     @State private var showSetupGuide = false
     @State private var copiedToClipboard = false
@@ -273,28 +277,54 @@ struct ClaudeAccountView: View {
         }
         .sheet(item: $terminalSheetTarget) { target in
             if let profile = target.profile(in: profileManager.profiles) {
-                ScrollView {
-                    VStack(
-                        alignment: .leading,
-                        spacing: DesignTokens.Spacing.section
-                    ) {
-                        SettingsPageHeader(
-                            title: "claude_account.terminal.link_sheet.title".localized,
-                            subtitle: "claude_account.terminal.link_sheet.subtitle".localized
-                        )
-                        cliAccountLinkingSection(profile: profile)
-                    }
-                    .padding()
-                }
-                .frame(width: 560, height: 560)
+                terminalLinkSheet(profile: profile)
             }
         }
         .sheet(isPresented: $showWhyBoth) {
             whyBothSheet
                 .frame(width: 540, height: 360)
         }
-        // Link confirmation alert
-        .alert("cli.link_confirm_title".localized, isPresented: $showLinkConfirmation) {
+        // Unlink confirmation alert for the button on the page itself. The
+        // sheet carries its own copy — a confirmation can only appear on the
+        // window whose button raised it.
+        .alert("cli.unlink_title".localized, isPresented: $showUnlinkConfirmation) {
+            unlinkConfirmationActions
+        } message: {
+            unlinkConfirmationMessage
+        }
+    }
+
+    // MARK: - Terminal Sign-In Sheet
+
+    /// The terminal sign-in sheet, with its confirmations attached to the
+    /// sheet itself.
+    ///
+    /// AppKit allows a window one attached sheet at a time. A confirmation
+    /// declared on the page behind this sheet is built but never attached, so
+    /// the button that raised it appears to do nothing — and the request is
+    /// not discarded either: it waits, and can surface as a confirmation out
+    /// of nowhere once this sheet closes. That is what "Link CLI Account" did
+    /// during onboarding. A confirmation has to belong to the window its
+    /// button lives on.
+    private func terminalLinkSheet(profile: Profile) -> some View {
+        ScrollView {
+            VStack(
+                alignment: .leading,
+                spacing: DesignTokens.Spacing.section
+            ) {
+                SettingsPageHeader(
+                    title: "claude_account.terminal.link_sheet.title".localized,
+                    subtitle: "claude_account.terminal.link_sheet.subtitle".localized
+                )
+                cliAccountLinkingSection(profile: profile)
+            }
+            .padding()
+        }
+        .frame(width: 560, height: 560)
+        .alert(
+            "cli.link_confirm_title".localized,
+            isPresented: $showLinkConfirmation
+        ) {
             Button("common.cancel".localized, role: .cancel) {}
             Button("cli.link_confirm_action".localized) {
                 if let profileID = linkConfirmationTargetID {
@@ -309,21 +339,33 @@ struct ClaudeAccountView: View {
                 )
             )
         }
-        // Unlink confirmation alert
-        .alert("cli.unlink_title".localized, isPresented: $showUnlinkConfirmation) {
-            Button("common.cancel".localized, role: .cancel) {}
-            Button("cli.unlink_action".localized, role: .destructive) {
-                if let profileID = unlinkConfirmationTargetID {
-                    performUnlinkAccount(profileID: profileID)
-                }
-            }
+        .alert(
+            "cli.unlink_title".localized,
+            isPresented: $showUnlinkConfirmationInSheet
+        ) {
+            unlinkConfirmationActions
         } message: {
-            if let profileID = unlinkConfirmationTargetID,
-               let name = profileManager.profiles.first(where: {
-                   $0.id == profileID
-               })?.cliAccountName {
-                Text(String(format: "cli.unlink_confirm".localized, name))
+            unlinkConfirmationMessage
+        }
+    }
+
+    @ViewBuilder
+    private var unlinkConfirmationActions: some View {
+        Button("common.cancel".localized, role: .cancel) {}
+        Button("cli.unlink_action".localized, role: .destructive) {
+            if let profileID = unlinkConfirmationTargetID {
+                performUnlinkAccount(profileID: profileID)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var unlinkConfirmationMessage: some View {
+        if let profileID = unlinkConfirmationTargetID,
+           let name = profileManager.profiles.first(where: {
+               $0.id == profileID
+           })?.cliAccountName {
+            Text(String(format: "cli.unlink_confirm".localized, name))
         }
     }
 
@@ -914,7 +956,9 @@ struct ClaudeAccountView: View {
 
             Button(action: {
                 unlinkConfirmationTargetID = profile.id
-                showUnlinkConfirmation = true
+                // This card only ever renders inside the terminal sign-in
+                // sheet, so the confirmation has to be the sheet's own.
+                showUnlinkConfirmationInSheet = true
             }) {
                 HStack(spacing: DesignTokens.Spacing.extraSmall) {
                     Image(systemName: "link.badge.minus")
