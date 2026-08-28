@@ -189,6 +189,8 @@
 "error.network_timeout.suggestion" = "Por favor intenta de nuevo. Si el problema persiste, verifica el estado de Claude en status.claude.com";
 "error.api_unauthorized" = "Acceso no autorizado";
 "error.api_unauthorized.suggestion" = "Tu clave de sesión puede haber expirado. Por favor actualízala en Ajustes";
+"error.api_forbidden" = "Acceso no permitido";
+"error.api_forbidden.suggestion" = "Esta cuenta no tiene permiso para leer esos datos. Tu sesión está bien y no necesitas hacer nada";
 "error.api_server_error" = "Error del servidor";
 "error.api_server_error.suggestion" = "El servidor encontró un error. Por favor intenta de nuevo más tarde";
 "error.api_rate_limited" = "Límite de tasa excedido";

@@ -1370,6 +1370,11 @@ class MenuBarManager: NSObject, ObservableObject {
             )
         case .apiUnauthorized:
             return .apiUnauthorized()
+        case .apiForbidden:
+            // Without this the code falls to `default:` and is described as
+            // "Usage refresh failed", losing the one thing worth saying
+            // about a 403: the sign-in is fine and there is nothing to do.
+            return .apiForbidden()
         case .apiRateLimited:
             return .apiRateLimited()
         case .apiServerError:
@@ -2954,8 +2959,15 @@ class MenuBarManager: NSObject, ObservableObject {
         return MenuBarAttentionSignal.attention(
             cliSignInIssue: (snapshot?.claudeUsage ?? profile.claudeUsage)?
                 .personalExtraUsageIssue,
-            hasCredentialError:
-                snapshot?.currentFailure?.isCredentialFailure ?? false,
+            credentialFailureStreak: {
+                guard let failure = snapshot?.currentFailure,
+                      failure.isCredentialFailure else { return 0 }
+                // Same-kind, not overall, count: a transport failure
+                // immediately before this credential rejection must not
+                // count toward the threshold — see
+                // `ProviderRefreshFailure.sameKindConsecutiveCount`.
+                return failure.sameKindConsecutiveCount
+            }(),
             healthStatus: snapshot?.report?.health.status,
             setupState: setupState
         )

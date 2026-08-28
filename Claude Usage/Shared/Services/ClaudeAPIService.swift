@@ -518,8 +518,18 @@ class ClaudeAPIService: APIServiceProtocol {
                     throw appError
                 }
 
-            case 401, 403:
+            case 401:
                 throw AppError.apiUnauthorized()
+
+            // Separate from 401 on purpose. claude.ai answers 403 to this
+            // organization list for some accounts while serving their
+            // per-organization endpoints normally, so treating it as a
+            // rejected session key marked working accounts as signed out.
+            case 403:
+                throw AppError.apiForbidden(
+                    statusDetail: "Organization list refused (HTTP 403); "
+                        + "the session key itself was accepted"
+                )
 
             case 429:
                 throw AppError.apiRateLimited()
@@ -2429,14 +2439,42 @@ class ClaudeAPIService: APIServiceProtocol {
             error: nil
         )
 
-        guard httpResponse.statusCode == 200 else {
+        // Every non-200 used to land on `.apiUnauthorized`, so a rate limit,
+        // a server fault or a permission refusal all told the reader their
+        // sign-in had failed — and, because that code drives the menu bar's
+        // credential marker, drew a red dot on an account that was fine.
+        // Only a 401 says anything about the credential.
+        switch httpResponse.statusCode {
+        case 200:
+            break
+        case 401:
             throw AppError(
                 code: .apiUnauthorized,
+                message: "OAuth Messages API rejected the CLI credential",
+                technicalDetails: "Status: 401",
+                isRecoverable: true,
+                recoverySuggestion:
+                    "Please re-sync your CLI account in Settings",
+                statusCode: 401
+            )
+        case 403:
+            throw AppError.apiForbidden(
+                statusDetail: "OAuth Messages API refused this account "
+                    + "(HTTP 403); the CLI credential was accepted"
+            )
+        case 429:
+            throw AppError.apiRateLimited()
+        case 500...599:
+            throw AppError.apiServerError(
+                statusCode: httpResponse.statusCode
+            )
+        default:
+            throw AppError(
+                code: .apiGenericError,
                 message: "OAuth Messages API request failed",
                 technicalDetails: "Status: \(httpResponse.statusCode)",
                 isRecoverable: true,
-                recoverySuggestion:
-                    "Please re-sync your CLI account in Settings"
+                statusCode: httpResponse.statusCode
             )
         }
 
@@ -2630,16 +2668,26 @@ class ClaudeAPIService: APIServiceProtocol {
         case 200:
             return data
 
-        case 401, 403:
+        case 401:
             // Include response body in error for debugging
             let responsePreview = String(data: data, encoding: .utf8)?.prefix(200) ?? "Unable to read response"
             throw AppError(
                 code: .apiUnauthorized,
                 message: "Unauthorized. Your session key may have expired.",
-                technicalDetails: "Endpoint: \(endpoint)\nStatus: \(httpResponse.statusCode)\nResponse: \(responsePreview)",
+                technicalDetails: "Endpoint: \(endpoint)\nStatus: 401\nResponse: \(responsePreview)",
                 isRecoverable: true,
                 recoverySuggestion: "Please update your session key in Settings",
-                statusCode: httpResponse.statusCode
+                statusCode: 401
+            )
+
+        // 403 is not a statement about the credential — the server
+        // authenticated us and refused the resource. It used to share the
+        // 401 branch above, which is how a permission answer reached people
+        // as "your session key may have expired".
+        case 403:
+            let responsePreview = String(data: data, encoding: .utf8)?.prefix(200) ?? "Unable to read response"
+            throw AppError.apiForbidden(
+                statusDetail: "Endpoint: \(endpoint)\nStatus: 403\nResponse: \(responsePreview)"
             )
 
         case 429:

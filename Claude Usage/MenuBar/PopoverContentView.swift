@@ -1531,7 +1531,8 @@ extension NormalizedUsagePresentation {
             emptyState: emptyState,
             readAt: readAt,
             legacyClaudeUsage: legacyClaudeUsage,
-            legacyClaudeAPIUsage: legacyClaudeAPIUsage
+            legacyClaudeAPIUsage: legacyClaudeAPIUsage,
+            credentialFailureStreak: credentialFailureStreak
         )
     }
 }

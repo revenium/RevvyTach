@@ -4009,6 +4009,88 @@ final class UsageRefreshEngineTests: HostedAppTestCase {
         )
     }
 
+    /// Reproduces the exact scenario Greptile flagged on PR #94: a
+    /// transport failure followed by a single credential rejection must
+    /// NOT raise `MenuBarAttentionSignal`'s credential marker — the streak
+    /// it reads (`sameKindConsecutiveCount`) has to reset when the failure
+    /// kind changes, even though the kind-agnostic `consecutiveCount` kept
+    /// climbing. Two consecutive credential rejections must still raise it.
+    func testMixedKindFailuresDoNotAdvanceTheSameKindStreak() async {
+        let identity = makeIdentity()
+        let context = makeContext(visible: [identity.profileID])
+        let harness = makeHarness(
+            identities: [identity],
+            context: context
+        )
+
+        // 1) A non-credential (transport) failure.
+        _ = await enqueue(
+            makeFailingJob(identity: identity),
+            on: harness,
+            context: context
+        )
+        await assertEventually {
+            harness.batches.snapshot.count == 1
+        }
+
+        // 2) A single credential (unauthenticated) rejection immediately
+        // after. Overall consecutiveCount is now 2, but the kind changed.
+        _ = await enqueue(
+            Self.makeJob(
+                identity: identity,
+                coreFetch: { throw UsageProviderError.unauthenticated }
+            ),
+            on: harness,
+            context: context
+        )
+        await assertEventually {
+            harness.batches.snapshot.count == 2
+        }
+
+        let afterFirstCredentialFailure = harness.store.snapshot(
+            for: identity.profileID
+        )?.currentFailure
+        XCTAssertEqual(
+            afterFirstCredentialFailure?.consecutiveCount,
+            2
+        )
+        XCTAssertEqual(
+            afterFirstCredentialFailure?.sameKindConsecutiveCount,
+            1,
+            "A single credential rejection right after an unrelated " +
+                "transport failure must not inherit that failure's count."
+        )
+
+        // 3) A second credential rejection in a row — the same-kind streak
+        // must now advance to 2, which is the threshold that raises the
+        // marker.
+        _ = await enqueue(
+            Self.makeJob(
+                identity: identity,
+                coreFetch: { throw UsageProviderError.unauthenticated }
+            ),
+            on: harness,
+            context: context
+        )
+        await assertEventually {
+            harness.batches.snapshot.count == 3
+        }
+
+        let afterSecondCredentialFailure = harness.store.snapshot(
+            for: identity.profileID
+        )?.currentFailure
+        XCTAssertEqual(
+            afterSecondCredentialFailure?.consecutiveCount,
+            3
+        )
+        XCTAssertEqual(
+            afterSecondCredentialFailure?.sameKindConsecutiveCount,
+            2,
+            "Two consecutive credential rejections must advance the " +
+                "same-kind streak to the threshold."
+        )
+    }
+
     func testFailureRetainsCachedUsageInPresentation() async throws {
         let identity = makeIdentity()
         let report = try makeReport(

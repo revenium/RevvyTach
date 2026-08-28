@@ -254,6 +254,8 @@
 "error.network_timeout.suggestion" = "Bitte versuchen Sie es erneut. Wenn das Problem weiterhin besteht, überprüfen Sie Claudes Status auf status.claude.com";
 "error.api_unauthorized" = "Unbefugter Zugriff";
 "error.api_unauthorized.suggestion" = "Ihr Sitzungsschlüssel ist möglicherweise abgelaufen. Bitte aktualisieren Sie ihn in den Einstellungen";
+"error.api_forbidden" = "Zugriff nicht gestattet";
+"error.api_forbidden.suggestion" = "Dieses Konto darf diese Daten nicht lesen. Ihre Anmeldung ist gültig, es ist nichts zu tun";
 "error.api_server_error" = "Serverfehler";
 "error.api_server_error.suggestion" = "Der Server hat einen Fehler festgestellt. Bitte versuchen Sie es später erneut";
 "error.api_rate_limited" = "Ratenlimit überschritten";

@@ -202,6 +202,12 @@ enum ErrorCode: String, CaseIterable {
     // MARK: - API Errors (3000-3099)
 
     case apiUnauthorized = "E3000"
+    /// The server knew who we were and refused the resource anyway (HTTP
+    /// 403). Deliberately distinct from `apiUnauthorized` (401): 403 says
+    /// nothing about the credential, and reporting it as an expired session
+    /// key put a red "sign in again" marker on accounts whose sign-in was
+    /// working — see `MenuBarAttentionSignal`.
+    case apiForbidden = "E3008"
     case apiInvalidResponse = "E3001"
     case apiServerError = "E3002"
     case apiRateLimited = "E3003"
@@ -358,9 +364,37 @@ extension AppError {
         return AppError(
             code: .apiUnauthorized,
             message: "error.api_unauthorized".localized,
-            technicalDetails: "API returned 401/403 - session key may be expired or invalid",
+            technicalDetails: "API returned 401 - session key may be expired or invalid",
             isRecoverable: true,
             recoverySuggestion: "error.api_unauthorized.suggestion".localized,
+            file: file,
+            line: line,
+            function: function
+        )
+    }
+
+    /// HTTP 403. The credential was accepted and the resource was refused.
+    ///
+    /// Kept apart from `apiUnauthorized` because the two need opposite
+    /// things from the reader: a 401 asks them to sign in again, a 403 asks
+    /// them to do nothing at all. Folding 403 into 401 is what made the menu
+    /// bar tell people their working sign-in had been rejected, so the
+    /// recovery suggestion here deliberately says no action is needed.
+    static func apiForbidden(
+        statusDetail: String? = nil,
+        file: String = #file,
+        line: Int = #line,
+        function: String = #function
+    ) -> AppError {
+        return AppError(
+            code: .apiForbidden,
+            message: "error.api_forbidden".localized,
+            technicalDetails: statusDetail
+                ?? "API returned 403 - the credential is valid but this "
+                + "resource is not permitted for this account",
+            isRecoverable: true,
+            recoverySuggestion: "error.api_forbidden.suggestion".localized,
+            statusCode: 403,
             file: file,
             line: line,
             function: function

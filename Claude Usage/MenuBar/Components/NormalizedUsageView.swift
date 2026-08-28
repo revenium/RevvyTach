@@ -303,6 +303,14 @@ struct NormalizedUsagePresentation: Equatable {
     let readAt: Date?
     let legacyClaudeUsage: ClaudeUsage?
     let legacyClaudeAPIUsage: APIUsage?
+    /// How many times in a row the claude.ai session key has been
+    /// rejected — `ProviderRefreshFailure.sameKindConsecutiveCount` when the
+    /// snapshot's current failure is a credential failure, else `0`. Feeds
+    /// `attentionCredential`'s streak so this header's marker uses the same
+    /// debounce as the menu bar icon's (`MenuBarManager.attention(for:)`);
+    /// without it, `attentionCredential` had no way to tell a single
+    /// transient rejection from a settled sign-out and marked both.
+    let credentialFailureStreak: Int
 
     var providerHeaderAccessibilityIdentifier: String {
         "popover.provider.header."
@@ -448,7 +456,12 @@ enum NormalizedUsagePresentationBuilder {
                 : nil,
             legacyClaudeAPIUsage: snapshot.providerID == .claude
                 ? snapshot.claudeAPIUsage
-                : nil
+                : nil,
+            credentialFailureStreak: {
+                guard let failure = snapshot.currentFailure,
+                      failure.isCredentialFailure else { return 0 }
+                return failure.sameKindConsecutiveCount
+            }()
         )
     }
 
@@ -692,7 +705,8 @@ enum NormalizedUsagePresentationBuilder {
             emptyState: .missingSnapshot,
             readAt: nil,
             legacyClaudeUsage: nil,
-            legacyClaudeAPIUsage: nil
+            legacyClaudeAPIUsage: nil,
+            credentialFailureStreak: 0
         )
     }
 
@@ -857,14 +871,18 @@ struct ProviderPopoverHeader: View {
     ///   would rather stay generic than attribute a failure it was not
     ///   given enough to attribute.
     ///
-    /// `hasCredentialError` is `false` because the header has no separate
-    /// claude.ai rejection signal — that one is the top-of-popover banner's.
-    /// Nothing is lost: a rejected session key arrives here as health
-    /// `.unauthenticated`, which the signal already reads as claude.ai.
+    /// `credentialFailureStreak` is `presentation.credentialFailureStreak`,
+    /// the same debounced count `MenuBarManager.attention(for:)` reads for
+    /// the menu bar icon. A single transient rejection must not raise this
+    /// header's marker any more than it raises the icon's — otherwise a
+    /// literal `0` here would tell the signal below "no failure at all",
+    /// and its `.unauthenticated` health branch would treat every rejection
+    /// as settled and mark it regardless of streak.
     private var attentionCredential: MenuBarAttentionSignal.Credential? {
         Self.attentionCredential(
             providerID: presentation.providerID,
             claudeUsage: presentation.legacyClaudeUsage,
+            credentialFailureStreak: presentation.credentialFailureStreak,
             healthStatus: presentation.healthStatus
         )
     }
@@ -876,12 +894,13 @@ struct ProviderPopoverHeader: View {
     static func attentionCredential(
         providerID: ProviderID,
         claudeUsage: ClaudeUsage?,
+        credentialFailureStreak: Int,
         healthStatus: ProviderHealthStatus?
     ) -> MenuBarAttentionSignal.Credential? {
         guard providerID == .claude else { return nil }
         return MenuBarAttentionSignal.attention(
             cliSignInIssue: claudeUsage?.personalExtraUsageIssue,
-            hasCredentialError: false,
+            credentialFailureStreak: credentialFailureStreak,
             healthStatus: healthStatus
         )
     }
