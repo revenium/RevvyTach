@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-08-28
+
+### Fixed
+
+- **Setting up a profile no longer stalls on a Link CLI Account button that does
+  nothing.** On the Terminal sign-in (Claude Code) step, pressing it produced no
+  confirmation, no account directory and no error, so the only way forward was to
+  dismiss the panel — which moved setup along with the terminal side still
+  unlinked. Unlink on that same panel behaved identically. The confirmation these
+  buttons ask for was being prepared on the settings page behind the panel, where
+  macOS will not show it; it was also not discarded, so it could reappear
+  unprompted once the panel closed. Introduced in 4.1.0.
+
 ## [4.1.0] - 2026-08-26
 
 ### Added
