@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.1.1] - 2026-08-28
+## [4.1.2] - 2026-08-28
 
 ### Fixed
+
+- **The menu bar no longer reports a broken sign-in that turns out to be fine.**
+  One refused request was enough to put the red marker on a profile, and opening
+  the popover forced a refresh that cleared it — so the warning was reliably gone
+  by the time anyone looked at it, on an account whose sign-in was working. The
+  menu bar icon and the popover header now both wait for two rejections in a row
+  of the same kind before naming a credential.
+
+- **A refused request is no longer reported as an expired sign-in.** When
+  claude.ai answers that an account is signed in but may not read a particular
+  thing, the app treated that as a rejected session key and asked people to sign
+  in again. It now says access is not permitted and that no action is needed.
 
 - **Setting up a profile no longer stalls on a Link CLI Account button that does
   nothing.** On the Terminal sign-in (Claude Code) step, pressing it produced no
