@@ -324,7 +324,7 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
         XCTAssertNil(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .healthy,
                 setupState: snapshotState
             )

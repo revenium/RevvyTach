@@ -881,7 +881,10 @@ struct ProviderPopoverHeader: View {
         guard providerID == .claude else { return nil }
         return MenuBarAttentionSignal.attention(
             cliSignInIssue: claudeUsage?.personalExtraUsageIssue,
-            hasCredentialError: false,
+            // The header has no separate credential-error signal of its own,
+            // so there is no streak to report; the health status is the only
+            // evidence this caller carries.
+            credentialFailureStreak: 0,
             healthStatus: healthStatus
         )
     }

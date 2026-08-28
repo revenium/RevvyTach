@@ -1592,6 +1592,46 @@ final class ProviderDiagnosticsTests: HostedAppTestCase {
         XCTAssertEqual(claudeError.code, .apiUnauthorized)
     }
 
+    /// A 403 must not come back out of the refresh boundary wearing the
+    /// 401 error code. `.apiUnauthorized` is what drives the menu bar's
+    /// credential marker and the "update your session key" advice, so a
+    /// permission refusal carrying it is what put a red dot on accounts
+    /// whose sign-in was working.
+    func testForbiddenFailureKeepsItsOwnCodeAndNeverReadsAsUnauthorized() {
+        let failure = ProviderRefreshFailure(
+            kind: .unsupportedAccount,
+            occurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+            isRecoverable: true,
+            consecutiveCount: 1,
+            legacyErrorCode: .apiForbidden
+        )
+
+        let error = MenuBarManager.appError(
+            for: failure,
+            providerID: .claude
+        )
+        XCTAssertEqual(error.code, .apiForbidden)
+        XCTAssertNotEqual(
+            error.code,
+            .apiUnauthorized,
+            "a 403 must never be reported as a rejected credential"
+        )
+        XCTAssertEqual(error.statusCode, 403)
+    }
+
+    /// The constructor is the single place the 403 wording lives, and the
+    /// wording is the fix: it has to say no action is needed, because the
+    /// credential it is talking about works.
+    func testForbiddenErrorIsRecoverableAndDistinctFromUnauthorized() {
+        let forbidden = AppError.apiForbidden()
+        XCTAssertEqual(forbidden.code, .apiForbidden)
+        XCTAssertTrue(forbidden.isRecoverable)
+        XCTAssertNotEqual(
+            forbidden.code.rawValue,
+            AppError.apiUnauthorized().code.rawValue
+        )
+    }
+
     func testCodexPersistenceFailureRetainsCanonicalStorageError() {
         let failure = ProviderRefreshFailure(
             kind: .persistence,

@@ -141,11 +141,74 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
+    // MARK: - One bad request is not a broken sign-in
+
+    /// The reported symptom: a red dot that is always gone by the time
+    /// anyone opens the popover. A single rejected refresh used to raise the
+    /// marker immediately, and opening the popover forces a refresh whose
+    /// success wipes it — so the icon accused a working credential and then
+    /// erased the evidence.
+    func testSingleCredentialRejectionRaisesNoMarker() {
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 1,
+                healthStatus: .healthy
+            ),
+            "one rejected refresh must not mark the icon"
+        )
+    }
+
+    /// The streak is the only thing separating a blip from a real problem,
+    /// so a credential that keeps being refused must still be named.
+    func testRepeatedCredentialRejectionRaisesTheClaudeAIMarker() {
+        for streak in [2, 3, 17] {
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: nil,
+                    credentialFailureStreak: streak,
+                    healthStatus: .healthy
+                ),
+                .claudeAI,
+                "a streak of \(streak) is a credential that stopped working"
+            )
+        }
+    }
+
+    /// The health verdict is derived from the same failure as the streak, so
+    /// if this branch ignored the streak it would hand back the marker the
+    /// threshold had just withheld — and the threshold would do nothing.
+    func testUnauthenticatedHealthDoesNotBypassTheStreakThreshold() {
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 1,
+                healthStatus: .unauthenticated
+            ),
+            "a single failure must not sneak the marker back in via health"
+        )
+    }
+
+    /// Zero is not "no problem" here — it means no failure is being
+    /// projected, so an unauthenticated verdict is a settled state carried
+    /// on the account rather than one bad request. That case is why the
+    /// health branch exists and must keep marking.
+    func testSettledUnauthenticatedAccountIsStillMarked() {
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 0,
+                healthStatus: .unauthenticated
+            ),
+            .claudeAI
+        )
+    }
+
     func testSetupIncompleteMenuAttentionClearsWithBrowserSignIn() {
         XCTAssertEqual(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .healthy,
                 setupState: .terminalOnly
             ),
@@ -155,7 +218,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertNil(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: nil,
-                    hasCredentialError: false,
+                    credentialFailureStreak: 0,
                     healthStatus: .healthy,
                     setupState: state
                 )
@@ -177,7 +240,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: .signInExpired,
-                hasCredentialError: true,
+                credentialFailureStreak: 2,
                 healthStatus: .unauthenticated,
                 setupState: .terminalOnly
             ),
@@ -273,7 +336,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertNil(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .healthy,
                 setupState: state
             )
@@ -572,7 +635,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: false,
+                    credentialFailureStreak: 0,
                     healthStatus: .degraded
                 ),
                 .claudeCode,
@@ -586,7 +649,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertNil(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .healthy
             )
         )
@@ -597,7 +660,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertNil(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: false,
+                    credentialFailureStreak: 0,
                     healthStatus: .degraded
                 ),
                 "\(String(describing: issue)) put a permanent red dot on a "
@@ -613,7 +676,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertNil(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .degraded
             )
         )
@@ -624,7 +687,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: true,
+                credentialFailureStreak: 2,
                 healthStatus: .healthy
             ),
             .claudeAI
@@ -632,7 +695,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(
             MenuBarAttentionSignal.attention(
                 cliSignInIssue: nil,
-                hasCredentialError: false,
+                credentialFailureStreak: 0,
                 healthStatus: .unauthenticated
             ),
             .claudeAI
@@ -648,7 +711,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: true,
+                    credentialFailureStreak: 2,
                     healthStatus: .degraded
                 ),
                 .claudeAI,
@@ -658,7 +721,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: false,
+                    credentialFailureStreak: 0,
                     healthStatus: .unauthenticated
                 ),
                 .claudeAI
@@ -679,7 +742,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: true,
+                    credentialFailureStreak: 2,
                     healthStatus: .degraded
                 ),
                 .claudeAI
@@ -695,7 +758,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: issue,
-                    hasCredentialError: false,
+                    credentialFailureStreak: 0,
                     healthStatus: .degraded
                 ) != nil,
                 banner(for: issue) != nil,

@@ -61,19 +61,33 @@ enum MenuBarAttentionSignal {
     ///     raise the marker; `notLinked`, `differentOrganization`,
     ///     `temporarilyUnavailable` and `claudeAccountUnresolved` are settled
     ///     or transient and deliberately raise nothing.
-    ///   - hasCredentialError: the claude.ai session key was rejected. Set
-    ///     only from the `.unauthenticated` refresh failures, which are
-    ///     reachable from the claude.ai error codes alone.
+    ///   - credentialFailureStreak: how many times in a row the claude.ai
+    ///     session key has been rejected — `ProviderRefreshFailure`'s own
+    ///     `consecutiveCount`, or `0` when the last attempt succeeded or
+    ///     failed for some other reason.
+    ///
+    ///     A single rejection does not raise the marker. The count was
+    ///     already tracked and simply never consulted, so one transient
+    ///     refusal lit the menu bar immediately, and because the flag is
+    ///     wiped by the next success, opening the popover — which forces a
+    ///     refresh — cleared it. That is the exact shape of crying wolf: a
+    ///     red dot that is always gone by the time anyone looks at it, on an
+    ///     account whose credential works. Two in a row is the smallest
+    ///     threshold that distinguishes a credential that stopped working
+    ///     from one request that did.
     ///   - healthStatus: the provider's own verdict on the account, so an
     ///     unauthenticated account is marked even on a tick where no refresh
     ///     failure is currently being projected.
     /// - Returns: the credential to name on the icon, or `nil` for no marker.
     static func attention(
         cliSignInIssue: ClaudeUsage.PersonalExtraUsageIssue?,
-        hasCredentialError: Bool,
+        credentialFailureStreak: Int,
         healthStatus: ProviderHealthStatus?,
         setupState: ClaudeSetupState? = nil
     ) -> Credential? {
+        /// The number of consecutive rejections before the icon says
+        /// anything. See `credentialFailureStreak`.
+        let credentialFailureThreshold = 2
         // A terminal-only profile is incomplete regardless of which generic
         // refresh error happens to be visible at the same time. Match the
         // popover banner so the icon and its repair destination keep naming
@@ -82,7 +96,9 @@ enum MenuBarAttentionSignal {
             return .setupIncomplete
         }
 
-        if hasCredentialError { return .claudeAI }
+        if credentialFailureStreak >= credentialFailureThreshold {
+            return .claudeAI
+        }
 
         // Exhaustive on purpose, with no `default:`, matching the discipline
         // in `ClaudeUsageProviderAdapter.accountHealth`: a newly added status
@@ -93,7 +109,16 @@ enum MenuBarAttentionSignal {
             // sign-in never lowers the account below `.degraded` — see
             // `ClaudeUsageProviderAdapter.accountHealth`, which maps every
             // CLI sign-in failure to `degraded(.authenticationRequired)`.
-            return .claudeAI
+            //
+            // A streak of exactly one is the blip the threshold above exists
+            // to absorb, and this branch must not smuggle it back in: the
+            // health verdict is derived from that same single failure, so
+            // returning here unconditionally would leave the threshold with
+            // nothing to do. Zero is different — no failure is being
+            // projected at all, so this is a settled verdict carried on the
+            // account rather than one bad request, and it is exactly the
+            // case this branch was added for.
+            return credentialFailureStreak == 0 ? .claudeAI : nil
         case .healthy, .degraded, .unavailable, .unsupported, nil:
             // `.degraded` is deliberately not a marker on its own. It is
             // raised for a figure that did not arrive as much as for a

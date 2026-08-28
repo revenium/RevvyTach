@@ -268,6 +268,8 @@
 "error.network_timeout.suggestion" = "请重试。如果问题持续存在，请检查 Claude 的状态 status.claude.com";
 "error.api_unauthorized" = "未授权访问";
 "error.api_unauthorized.suggestion" = "您的会话密钥可能已过期。请在设置中更新它";
+"error.api_forbidden" = "无权访问";
+"error.api_forbidden.suggestion" = "此账户无权读取该数据。您的登录状态正常，无需进行任何操作";
 "error.api_server_error" = "服务器错误";
 "error.api_server_error.suggestion" = "服务器遇到错误。请稍后重试";
 "error.api_rate_limited" = "超出速率限制";

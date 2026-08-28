@@ -3162,6 +3162,12 @@ actor UsageRefreshEngine {
             case .sessionKeyNotFound, .sessionKeyInvalid,
                     .sessionKeyExpired, .apiUnauthorized:
                 kind = .unauthenticated
+            // A 403 is the server declining to serve this account a
+            // resource, not declining the credential. It maps to the
+            // "account doesn't expose this" kind, which carries no
+            // credential marker — see `MenuBarAttentionSignal`.
+            case .apiForbidden:
+                kind = .unsupportedAccount
             case .networkTimeout:
                 kind = .timedOut
             case .apiInvalidResponse, .apiParsingFailed:
@@ -3224,6 +3230,7 @@ actor UsageRefreshEngine {
                 .sessionKeyInvalid,
                 .sessionKeyExpired,
                 .apiUnauthorized,
+                .apiForbidden,
                 .apiRateLimited,
                 .apiServerError,
                 .apiServiceUnavailable,

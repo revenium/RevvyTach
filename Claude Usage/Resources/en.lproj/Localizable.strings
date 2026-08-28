@@ -275,6 +275,8 @@
 "error.network_timeout.suggestion" = "Please try again. If the problem persists, check Claude's status at status.claude.com";
 "error.api_unauthorized" = "Unauthorized access";
 "error.api_unauthorized.suggestion" = "Your session key may have expired. Please update it in Settings";
+"error.api_forbidden" = "Access not permitted";
+"error.api_forbidden.suggestion" = "This account is not allowed to read that data. Your sign-in is fine and no action is needed";
 "error.api_server_error" = "Server error";
 "error.api_server_error.suggestion" = "The server encountered an error. Please try again later";
 "error.api_rate_limited" = "Rate limit exceeded";
