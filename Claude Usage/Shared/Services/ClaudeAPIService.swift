@@ -2323,8 +2323,9 @@ class ClaudeAPIService: APIServiceProtocol {
         // the browser sign-in below from being captured. Under the old
         // browser-first order this call was the last resort and a throw was
         // the only remaining answer; it no longer is.
-        if let systemCredentials = try? systemCredentialsReader(
-                profile.cliAccountName
+        if let accountName = profile.cliAccountName,
+           let systemCredentials = try? systemCredentialsReader(
+                accountName
            ),
            !ClaudeCodeSyncService.shared.isTokenExpired(
                 systemCredentials
@@ -2392,9 +2393,15 @@ class ClaudeAPIService: APIServiceProtocol {
             renewedCLICredentials[profile.id] = nil
             presented = stored
             sourceWhenUnchanged = .profileCLI
-        } else if let live = try? systemCredentialsReader(
-            profile.cliAccountName
-        ) {
+        } else if let accountName = profile.cliAccountName,
+                  let live = try? systemCredentialsReader(accountName) {
+            // `systemCredentialsReader` with a nil account name answers with
+            // whichever account happens to own the shared login Keychain
+            // item, which on a multi-account machine can be a different
+            // person's token entirely — the same trap `adoptLiveCLILogin`
+            // guards against above. A profile with no linked CLI account
+            // name is therefore treated as having nothing to prepare, never
+            // as a reason to fall back to that unscoped read.
             presented = live
             sourceWhenUnchanged = .systemCLI
         } else {
@@ -2497,24 +2504,50 @@ class ClaudeAPIService: APIServiceProtocol {
                     isRecoverable: false
                 )
             }
-            var usage = try await fetchUsageData(
-                oauthAccessToken: accessToken
-            )
-
-            // The organization-wide figure, when the profile also holds a
-            // browser sign-in. A supplement to numbers that already exist,
-            // never the trunk of the fetch — which is the whole of "when one
-            // sign-in is refused the other still produces numbers".
-            if request.checkOverage,
-               let sessionKey = request.sessionKey,
-               let organizationID = request.organizationID {
-                await applyOrganizationExtraUsage(
-                    to: &usage,
-                    organizationId: organizationID,
-                    sessionKey: sessionKey
+            do {
+                var usage = try await fetchUsageData(
+                    oauthAccessToken: accessToken
                 )
+
+                // The organization-wide figure, when the profile also holds a
+                // browser sign-in. A supplement to numbers that already exist,
+                // never the trunk of the fetch — which is the whole of "when
+                // one sign-in is refused the other still produces numbers".
+                if request.checkOverage,
+                   let sessionKey = request.sessionKey,
+                   let organizationID = request.organizationID {
+                    await applyOrganizationExtraUsage(
+                        to: &usage,
+                        organizationId: organizationID,
+                        sessionKey: sessionKey
+                    )
+                }
+                return usage
+            } catch let error as AppError where error.code == .apiUnauthorized {
+                // The Claude Code sign-in was refused, but a profile that
+                // also holds a browser sign-in still has a source for these
+                // numbers — the same "one credential's failure never loses
+                // the other's numbers" rule `applyOrganizationExtraUsage`
+                // above already follows. Only a terminal-only profile has
+                // nothing left to fall back to, so it still throws.
+                guard let sessionKey = request.sessionKey,
+                      let organizationID = request.organizationID else {
+                    throw error
+                }
+                var usage = try await fetchUsageData(
+                    sessionKey: sessionKey,
+                    organizationId: organizationID,
+                    profile: profile,
+                    checkOverageLimitEnabled: request.checkOverage
+                )
+                // The CLI refusal is the fact worth keeping on screen even
+                // though numbers were still produced: this is what
+                // `MenuBarAttentionSignal` and the Settings badge read to
+                // name the Claude Code sign-in rather than staying silent
+                // because the refresh, as a whole, succeeded.
+                usage.personalExtraUsageIssue = .signInUnusable
+                return usage
             }
-            return usage
         }
     }
 

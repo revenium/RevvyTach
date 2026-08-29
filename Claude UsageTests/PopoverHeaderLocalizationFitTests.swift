@@ -185,8 +185,20 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
     /// sidebar, less the page's 20pt horizontal padding on each side, less
     /// the card's 16pt (`Spacing.lg`) padding on each side, less the 15pt
     /// leading symbol and the 8pt (`Spacing.md`) gap after it.
-    private static let verdictTextWidth: CGFloat =
-        720 - 190 - 2 * 20 - 2 * 16 - 15 - 8
+    private static let verdictTextWidth: CGFloat = {
+        let windowWidth: CGFloat = 720
+        let sidebarWidth: CGFloat = 190
+        let pageHorizontalPadding: CGFloat = 20
+        let cardHorizontalPadding: CGFloat = 16
+        let leadingSymbolWidth: CGFloat = 15
+        let leadingSymbolGap: CGFloat = 8
+        return windowWidth
+            - sidebarWidth
+            - 2 * pageHorizontalPadding
+            - 2 * cardHorizontalPadding
+            - leadingSymbolWidth
+            - leadingSymbolGap
+    }()
 
     /// Every verdict the summary card can show, plus the two status pills
     /// added with them.
