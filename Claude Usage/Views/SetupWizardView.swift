@@ -963,6 +963,10 @@ struct EnterKeyStepSetup: View {
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
 
+                    Text("wizard.browser_sign_in.why".localized)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
                     ChromeAssistedSessionKeyEntry(
                         sessionKey: $wizardState.sessionKey,
                         validationState: wizardState.validationState,

@@ -1336,6 +1336,7 @@
 
 // Claude setup wizard: link terminal sign-in and review
 "wizard.browser_sign_in.title" = "Sign in to claude.ai";
+"wizard.browser_sign_in.why" = "Only needed to see your organization's extra-usage balance.";
 "wizard.organization.title" = "Organization";
 "wizard.link_terminal.title" = "Link Claude Code";
 "wizard.link_terminal.subtitle" = "Optional, recommended. This is what lets RevvyTach show your own extra usage and switch Claude Code between accounts.";

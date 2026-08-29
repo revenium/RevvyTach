@@ -1321,6 +1321,7 @@
 
 // Procedura Claude: collega l'accesso al terminale e rivedi
 "wizard.browser_sign_in.title" = "Accedi a claude.ai";
+"wizard.browser_sign_in.why" = "Serve solo per vedere il saldo di utilizzo extra della tua organizzazione.";
 "wizard.organization.title" = "Organizzazione";
 "wizard.link_terminal.title" = "Collega Claude Code";
 "wizard.link_terminal.subtitle" = "Facoltativo, consigliato. Permette a RevvyTach di mostrare il tuo utilizzo aggiuntivo e passare Claude Code da un account all'altro.";

@@ -1321,6 +1321,7 @@
 
 // Assistente Claude: vincular o início de sessão do terminal e rever
 "wizard.browser_sign_in.title" = "Iniciar sessão em claude.ai";
+"wizard.browser_sign_in.why" = "Necessário apenas para ver o saldo de uso extra da sua organização.";
 "wizard.organization.title" = "Organização";
 "wizard.link_terminal.title" = "Vincular Claude Code";
 "wizard.link_terminal.subtitle" = "Opcional, recomendado. Isto permite ao RevvyTach mostrar o seu uso adicional e alternar o Claude Code entre contas.";
