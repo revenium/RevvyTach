@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A signed-out browser account now says so instead of showing yesterday's
+  numbers.** When a claude.ai sign-in stops working, claude.ai refuses every
+  request with a "not permitted" answer rather than a "not signed in" one. Since
+  4.1.2 the app took that at face value: no warning in the menu bar, a Claude
+  Account page still reporting the browser sign-in as Working, the last good
+  reading held on screen for a day or more, and a weekly reset time already in
+  the past shown as resetting now. The app now reads what claude.ai actually
+  says in that refusal, marks the browser sign-in as needing attention, and
+  points you at Settings to sign in again. Refusals that really are about
+  permissions still say so and still ask for nothing.
+
 ## [4.1.2] - 2026-08-28
 
 ### Fixed

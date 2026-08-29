@@ -525,9 +525,16 @@ class ClaudeAPIService: APIServiceProtocol {
             // organization list for some accounts while serving their
             // per-organization endpoints normally, so treating it as a
             // rejected session key marked working accounts as signed out.
+            //
+            // With one exception, which only the body can identify: a dead
+            // browser session is also answered 403, as
+            // `account_session_invalid`. That one is a rejected session key
+            // and has to say so — see `ClaudeAISessionRefusal`.
             case 403:
-                throw AppError.apiForbidden(
-                    statusDetail: "Organization list refused (HTTP 403); "
+                throw ClaudeAISessionRefusal.error(
+                    endpoint: "/organizations",
+                    responseBody: data,
+                    forbiddenDetail: "Organization list refused (HTTP 403); "
                         + "the session key itself was accepted"
                 )
 
@@ -2443,7 +2450,11 @@ class ClaudeAPIService: APIServiceProtocol {
         // a server fault or a permission refusal all told the reader their
         // sign-in had failed — and, because that code drives the menu bar's
         // credential marker, drew a red dot on an account that was fine.
-        // Only a 401 says anything about the credential.
+        // On this host, api.anthropic.com, only a 401 says anything about
+        // the credential. (claude.ai is different: it answers a dead browser
+        // session with 403 `account_session_invalid`. That is handled where
+        // those requests are made — see `ClaudeAISessionRefusal` — and does
+        // not apply to the CLI OAuth token used here.)
         switch httpResponse.statusCode {
         case 200:
             break
@@ -2680,14 +2691,22 @@ class ClaudeAPIService: APIServiceProtocol {
                 statusCode: 401
             )
 
-        // 403 is not a statement about the credential — the server
+        // A 403 is usually not a statement about the credential — the server
         // authenticated us and refused the resource. It used to share the
         // 401 branch above, which is how a permission answer reached people
         // as "your session key may have expired".
+        //
+        // The exception is the one refusal that IS about the credential:
+        // claude.ai reports a dead browser session as 403
+        // `account_session_invalid`, on every endpoint. Only the body tells
+        // the two apart, so the body decides — see `ClaudeAISessionRefusal`.
         case 403:
-            let responsePreview = String(data: data, encoding: .utf8)?.prefix(200) ?? "Unable to read response"
-            throw AppError.apiForbidden(
-                statusDetail: "Endpoint: \(endpoint)\nStatus: 403\nResponse: \(responsePreview)"
+            let responsePreview = ClaudeAISessionRefusal.bodyPreview(data)
+            throw ClaudeAISessionRefusal.error(
+                endpoint: endpoint,
+                responseBody: data,
+                forbiddenDetail: "Endpoint: \(endpoint)\nStatus: 403\n"
+                    + "Response: \(responsePreview)"
             )
 
         case 429:

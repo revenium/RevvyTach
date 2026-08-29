@@ -3209,29 +3209,9 @@ actor UsageRefreshEngine {
             legacyErrorCode = Self.allowedLegacyRefreshCode(
                 appError.code
             )
-            switch appError.code {
-            case .sessionKeyNotFound, .sessionKeyInvalid,
-                    .sessionKeyExpired, .apiUnauthorized:
-                kind = .unauthenticated
-            // A 403 is the server declining to serve this account a
-            // resource, not declining the credential. It maps to the
-            // "account doesn't expose this" kind, which carries no
-            // credential marker — see `MenuBarAttentionSignal`.
-            case .apiForbidden:
-                kind = .unsupportedAccount
-            case .networkTimeout:
-                kind = .timedOut
-            case .apiInvalidResponse, .apiParsingFailed:
-                kind = .malformedResponse
-            case .storageWriteFailed:
-                kind = .persistence
-            case .apiRateLimited:
-                kind = .rateLimited
+            kind = Self.refreshFailureKind(for: appError.code)
+            if appError.code == .apiRateLimited {
                 retryAfter = appError.retryAfter
-            case .apiServerError, .apiServiceUnavailable:
-                kind = .serverError
-            default:
-                kind = .transport
             }
             recoverable = appError.isRecoverable
             if let statusCode = appError.statusCode {
@@ -3271,6 +3251,46 @@ actor UsageRefreshEngine {
             retryAfter: retryAfter,
             detail: detail
         )
+    }
+
+    /// Which refresh failure an `AppError` code describes.
+    ///
+    /// Pulled out of `failure(for:count:)` so the one decision that decides
+    /// whether the menu bar accuses a credential can be asserted directly.
+    /// `.unauthenticated` is the only kind that raises the credential
+    /// marker, so every code that belongs there and every code that must
+    /// stay out of it is a behaviour worth pinning.
+    static func refreshFailureKind(
+        for code: ErrorCode
+    ) -> ProviderRefreshFailureKind {
+        switch code {
+        case .sessionKeyNotFound, .sessionKeyInvalid,
+                .sessionKeyExpired, .apiUnauthorized:
+            // `sessionKeyExpired` is also how a claude.ai HTTP 403 whose
+            // body says `account_session_invalid` arrives — a dead browser
+            // session, which is a rejected credential however the server
+            // numbers it. See `ClaudeAISessionRefusal`.
+            return .unauthenticated
+        // An `apiForbidden` 403 is the server declining to serve this
+        // account a resource, not declining the credential. It maps to the
+        // "account doesn't expose this" kind, which carries no credential
+        // marker — see `MenuBarAttentionSignal`. Reaching this case already
+        // means the body said the credential itself was accepted.
+        case .apiForbidden:
+            return .unsupportedAccount
+        case .networkTimeout:
+            return .timedOut
+        case .apiInvalidResponse, .apiParsingFailed:
+            return .malformedResponse
+        case .storageWriteFailed:
+            return .persistence
+        case .apiRateLimited:
+            return .rateLimited
+        case .apiServerError, .apiServiceUnavailable:
+            return .serverError
+        default:
+            return .transport
+        }
     }
 
     private static func allowedLegacyRefreshCode(
