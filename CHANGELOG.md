@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   browser sign-in was also linked. It renews it either way, so those sign-ins
   now simply read as Working.
 
+- **The "browser sign-in has stopped working" message no longer says your
+  numbers are frozen.** They are not, once the Claude Code sign-in is doing the
+  reporting. It now says usage keeps updating and names what is actually lost:
+  your organization's extra usage.
+
 - **Setup starts with Claude Code.** The wizard asks for the terminal sign-in
   first, then offers the browser sign-in with a "Skip — I only use Claude Code"
   button. Previously the browser sign-in was step one with no way past it.

@@ -121,8 +121,17 @@ enum MenuBarAttentionSignal {
             return .claudeCode
         }
 
+        // Which credential an `.unauthenticated` refresh implicates now
+        // depends on which one was producing the numbers. On a profile with
+        // no browser sign-in at all there is no claude.ai credential to
+        // accuse, and saying "Claude.ai sign-in needs attention" there names
+        // something the person does not have — and, through the Settings
+        // relay, badges a row that reads "Optional". Both the streak and the
+        // health verdict are refresh-wide, so both are re-pointed together.
+        let credentialFailureNamesClaudeCode = setupState == .terminalOnly
+
         if credentialFailureStreak >= credentialFailureThreshold {
-            return .claudeAI
+            return credentialFailureNamesClaudeCode ? .claudeCode : .claudeAI
         }
 
         // Exhaustive on purpose, with no `default:`, matching the discipline
@@ -130,10 +139,15 @@ enum MenuBarAttentionSignal {
         // must not inherit "no marker" without anyone deciding.
         switch healthStatus {
         case .unauthenticated:
-            // Only ever the claude.ai session key. A broken Claude Code
-            // sign-in never lowers the account below `.degraded` — see
-            // `ClaudeUsageProviderAdapter.accountHealth`, which maps every
-            // CLI sign-in failure to `degraded(.authenticationRequired)`.
+            // The claude.ai session key, unless this profile has none — see
+            // `credentialFailureNamesClaudeCode` above. A broken Claude Code
+            // sign-in never lowers the account below `.degraded` on its own
+            // — see `ClaudeUsageProviderAdapter.accountHealth`, which maps
+            // every CLI sign-in failure to `degraded(.authenticationRequired)`
+            // — but a terminal-only profile whose CLI capture cannot produce
+            // a credential at all fails the whole refresh as
+            // `.unauthenticated`, and that failure is about the only sign-in
+            // it has.
             //
             // A streak of exactly one is the blip the threshold above exists
             // to absorb, and this branch must not smuggle it back in: the
@@ -143,7 +157,8 @@ enum MenuBarAttentionSignal {
             // projected at all, so this is a settled verdict carried on the
             // account rather than one bad request, and it is exactly the
             // case this branch was added for.
-            return credentialFailureStreak == 0 ? .claudeAI : nil
+            guard credentialFailureStreak == 0 else { return nil }
+            return credentialFailureNamesClaudeCode ? .claudeCode : .claudeAI
         case .healthy, .degraded, .unavailable, .unsupported, nil:
             // `.degraded` is deliberately not a marker on its own. It is
             // raised for a figure that did not arrive as much as for a

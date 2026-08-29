@@ -840,6 +840,53 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         }
     }
 
+    /// A profile with no browser sign-in cannot have a broken one. Both
+    /// inputs that used to mean "claude.ai" — the credential failure streak
+    /// and an `.unauthenticated` health verdict — are refresh-wide, and on a
+    /// terminal-only profile the refresh they describe was authenticated by
+    /// the Claude Code token. Naming claude.ai there points at a credential
+    /// the person does not have, and through the Settings relay it badges a
+    /// row that reads "Optional".
+    func testATerminalOnlyProfilesFailureNamesClaudeCodeNotClaudeAI() {
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 2,
+                healthStatus: .degraded,
+                setupState: .terminalOnly
+            ),
+            .claudeCode
+        )
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 0,
+                healthStatus: .unauthenticated,
+                setupState: .terminalOnly
+            ),
+            .claudeCode
+        )
+        // Unchanged wherever a browser sign-in actually exists.
+        for state: ClaudeSetupState? in [nil, .complete, .browserOnly] {
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: nil,
+                    credentialFailureStreak: 2,
+                    healthStatus: .degraded,
+                    setupState: state
+                ),
+                .claudeAI,
+                "\(String(describing: state)) still has a claude.ai sign-in"
+            )
+        }
+        // And the Settings row it feeds stays quiet, because that profile's
+        // browser row is "Optional", not broken.
+        XCTAssertEqual(
+            ClaudeAccountView.browserSummaryHealth(attention: .claudeCode),
+            .working
+        )
+    }
+
     /// A refused browser sign-in has to reach the icon on its own. It no
     /// longer fails the refresh, so neither the streak nor the health status
     /// carries it — this input is the only thing that does.

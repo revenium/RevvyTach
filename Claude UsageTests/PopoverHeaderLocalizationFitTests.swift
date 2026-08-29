@@ -198,7 +198,8 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
         "claude_account.subtitle",
         "claude_account.browser.missing_detail",
         "claude_account.summary.status.optional",
-        "claude_account.summary.status.recommended"
+        "claude_account.summary.status.recommended",
+        "claude_account.summary.verdict.browser_needs_attention"
     ]
 
     func testClaudeAccountVerdictsFitTheirCardInEveryLocale() throws {
