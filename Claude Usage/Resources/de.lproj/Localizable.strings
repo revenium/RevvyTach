@@ -1307,6 +1307,7 @@
 "claude_account.summary.verdict.browser_only" = "Nur Browser-Anmeldung — Die Nutzungsverfolgung funktioniert. Ihre eigene Zusatznutzung wird hier nicht angezeigt und RevvyTach kann Claude Code nicht zu diesem Konto wechseln.";
 "claude_account.summary.verdict.terminal_only" = "Einrichtung unvollständig — dieses Profil wird nicht mehr berichten. Nur die Terminal-Anmeldung ist verknüpft. RevvyTach kann sie nicht selbst erneuern; wenn die Anmeldung von Claude Code abläuft, wird dieses Profil keine Daten mehr melden. Fügen Sie die Browser-Anmeldung hinzu, um die Einrichtung abzuschließen.";
 "claude_account.summary.verdict.none" = "Einrichtung unvollständig — Fügen Sie die Browser-Anmeldung (claude.ai) hinzu, um die Nutzungsverfolgung zu starten.";
+"claude_account.summary.verdict.browser_needs_attention" = "Browser-Anmeldung funktioniert nicht mehr — claude.ai akzeptiert sie nicht mehr, daher sind Ihre Nutzungszahlen eingefroren. Melden Sie sich erneut an, um das zu beheben.";
 "claude_account.summary.browser.title" = "Browser-Anmeldung (claude.ai)";
 "claude_account.summary.terminal.title" = "Terminal-Anmeldung (Claude Code)";
 "claude_account.summary.status.working" = "Funktioniert";

@@ -1287,6 +1287,7 @@
 "claude_account.summary.verdict.browser_only" = "Connexion au navigateur uniquement — Le suivi fonctionne. Votre propre utilisation supplémentaire n'apparaîtra pas ici et RevvyTach ne pourra pas basculer Claude Code vers ce compte.";
 "claude_account.summary.verdict.terminal_only" = "Configuration incomplète — ce profil cessera de transmettre. Seule la connexion au terminal est liée. RevvyTach ne peut pas la renouveler seul ; lorsque la connexion de Claude Code expire, ce profil devient silencieux. Ajoutez la connexion au navigateur pour terminer la configuration.";
 "claude_account.summary.verdict.none" = "Configuration incomplète — Ajoutez la connexion au navigateur (claude.ai) pour commencer le suivi.";
+"claude_account.summary.verdict.browser_needs_attention" = "La connexion au navigateur ne fonctionne plus — claude.ai ne l'accepte plus, vos chiffres d'utilisation sont donc figés. Reconnectez-vous pour résoudre le problème.";
 "claude_account.summary.browser.title" = "Connexion au navigateur (claude.ai)";
 "claude_account.summary.terminal.title" = "Connexion au terminal (Claude Code)";
 "claude_account.summary.status.working" = "Opérationnelle";

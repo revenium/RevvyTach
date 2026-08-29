@@ -2960,7 +2960,7 @@ class MenuBarManager: NSObject, ObservableObject {
         let snapshot = profileUsagePresentations[profile.id]
         let setupState = snapshot?.claudeSetupState
             ?? profileManager.claudeSetupState(for: profile)
-        return MenuBarAttentionSignal.attention(
+        let credential = MenuBarAttentionSignal.attention(
             cliSignInIssue: (snapshot?.claudeUsage ?? profile.claudeUsage)?
                 .personalExtraUsageIssue,
             credentialFailureStreak: {
@@ -2975,6 +2975,13 @@ class MenuBarManager: NSObject, ObservableObject {
             healthStatus: snapshot?.report?.health.status,
             setupState: setupState
         )
+        // Publish the decision so Settings renders the same verdict. The
+        // streak and health status it is derived from live only in this
+        // snapshot, so without this relay the Claude Account page can only
+        // see that a session key is stored — which is how it came to badge a
+        // rejected claude.ai sign-in "Working" while the icon marked it.
+        ClaudeSignInAttentionStore.shared.record(credential, for: profile.id)
+        return credential
     }
 
     private func scheduleFreshnessDeadline(

@@ -1307,6 +1307,7 @@
 "claude_account.summary.verdict.browser_only" = "Solo accesso dal browser — Il monitoraggio funziona. Non vedrai qui il tuo utilizzo aggiuntivo e RevvyTach non potrà passare Claude Code a questo account.";
 "claude_account.summary.verdict.terminal_only" = "Configurazione incompleta — questo profilo smetterà di segnalare. È collegato solo l'accesso al terminale. RevvyTach non può rinnovarlo da solo, quindi quando scade l'accesso di Claude Code questo profilo smette di segnalare. Aggiungi l'accesso dal browser per completare la configurazione.";
 "claude_account.summary.verdict.none" = "Configurazione incompleta — Aggiungi l'accesso dal browser (claude.ai) per iniziare il monitoraggio.";
+"claude_account.summary.verdict.browser_needs_attention" = "L'accesso dal browser ha smesso di funzionare — claude.ai non lo accetta più, quindi i dati di utilizzo sono congelati. Accedi di nuovo per risolvere.";
 "claude_account.summary.browser.title" = "Accesso dal browser (claude.ai)";
 "claude_account.summary.terminal.title" = "Accesso al terminale (Claude Code)";
 "claude_account.summary.status.working" = "Funzionante";

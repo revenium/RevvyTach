@@ -214,12 +214,7 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
         let badgeTextWidth = leadingColumnWidth - badgeInsets
         for locale in Self.locales {
             let title = try string("section.claude_account_title", locale)
-            let badge = try string(
-                "claude_account.incomplete_badge",
-                locale
-            )
             let titleWidth = width(title, size: 11, weight: .medium)
-            let badgeWidth = width(badge, size: 8, weight: .semibold)
             XCTAssertLessThanOrEqual(
                 titleWidth,
                 leadingColumnWidth,
@@ -227,13 +222,23 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
                     + "\(Int(titleWidth))pt in "
                     + "\(Int(leadingColumnWidth))pt"
             )
-            XCTAssertLessThanOrEqual(
-                badgeWidth,
-                badgeTextWidth,
-                "\(locale) truncates Incomplete badge — "
-                    + "\(Int(badgeWidth))pt in "
-                    + "\(Int(badgeTextWidth))pt"
-            )
+            // Both badges this row can carry. "Needs attention" arrived
+            // after the geometry above was measured, and is the longer of
+            // the two, so it is asserted rather than assumed to fit.
+            for key in [
+                "claude_account.incomplete_badge",
+                "claude_account.summary.status.needs_attention"
+            ] {
+                let badge = try string(key, locale)
+                let badgeWidth = width(badge, size: 8, weight: .semibold)
+                XCTAssertLessThanOrEqual(
+                    badgeWidth,
+                    badgeTextWidth,
+                    "\(locale) truncates the \(badge) badge — "
+                        + "\(Int(badgeWidth))pt in "
+                        + "\(Int(badgeTextWidth))pt"
+                )
+            }
         }
     }
 
