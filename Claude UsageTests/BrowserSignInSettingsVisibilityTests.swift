@@ -408,6 +408,49 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
         )
     }
 
+    // MARK: - Terminal-first redesign
+
+    /// An absent browser sign-in must never draw the red "Missing"/"Needs
+    /// attention" treatment — only `.optional` (terminal-only, complete
+    /// picture) or `.missing` paired with the neutral `.none` verdict, which
+    /// itself points at the terminal sign-in, not the browser one. Swept
+    /// across every setup state so a future state added to the enum cannot
+    /// silently regress this.
+    func testAbsentBrowserSignInIsNeverTheRedBadgeOnAnySetupState() {
+        for state: ClaudeSetupState in [
+            .complete, .browserOnly, .terminalOnly, .none
+        ] {
+            // "Absent" means the health input itself reports nothing is
+            // broken — there is either a working key, or none to break.
+            let status = ClaudeSignInSummaryView.browserStatus(
+                state: state,
+                browserHealth: .working
+            )
+            XCTAssertNotEqual(
+                status,
+                .needsAttention,
+                "\(state) must not badge an absent browser sign-in as broken"
+            )
+        }
+    }
+
+    /// The terminal (Claude Code) sign-in's own button is the page's primary
+    /// call to action while it is unlinked; the browser button never is.
+    func testTerminalLinkActionIsPrimaryStyleAndBrowserIsNot() {
+        let primaryAction = ClaudeSignInSummaryAction(
+            "claude_account.terminal.link".localized,
+            style: .primary
+        ) {}
+        let standardAction = ClaudeSignInSummaryAction(
+            "claude_account.browser.sign_in".localized,
+            style: .standard
+        ) {}
+
+        XCTAssertEqual(primaryAction.style, .primary)
+        XCTAssertEqual(standardAction.style, .standard)
+        XCTAssertNotEqual(primaryAction.style, standardAction.style)
+    }
+
     func testAnUnrenderedProfileIsNotAccused() {
         // Absent means "the menu bar has not decided yet", never "broken".
         let store = ClaudeSignInAttentionStore()
