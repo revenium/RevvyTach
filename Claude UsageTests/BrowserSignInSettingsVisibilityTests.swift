@@ -472,16 +472,17 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
             hasCliAccount: true,
             cliAccountName: "some-account"
         )
-        let workingWithoutDirectory = Profile(
-            name: "Migrated, no directory yet",
-            cliCredentialsJSON: #"{"claudeAiOauth":{"accessToken":"ok"}}"#
+        let credentialsWithoutDirectory = Profile(
+            name: "Detected login, not yet linked",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"accessToken":"ok"}}"#,
+            hasCliAccount: true
         )
 
         let unlinkedActions = ClaudeTerminalAccountActions.forProfile(unlinked)
         let linkedActions =
             ClaudeTerminalAccountActions.forProfile(linkedByDirectory)
-        let workingActions =
-            ClaudeTerminalAccountActions.forProfile(workingWithoutDirectory)
+        let detectedActions =
+            ClaudeTerminalAccountActions.forProfile(credentialsWithoutDirectory)
 
         XCTAssertEqual(unlinkedActions.primary, .link)
         XCTAssertEqual(unlinkedActions.buttonStyle, .primary)
@@ -489,12 +490,13 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(linkedActions.primary, .resync)
         XCTAssertEqual(linkedActions.buttonStyle, .standard)
 
-        // The Greptile-flagged case: valid credentials with no linked
-        // directory name yet must still resolve to "resync" / standard —
-        // never a primary "Link Claude Code" contradicting a working
-        // sign-in.
-        XCTAssertEqual(workingActions.primary, .resync)
-        XCTAssertEqual(workingActions.buttonStyle, .standard)
+        // A detected credential with no linked directory name yet still
+        // offers "Link" as the primary action — linking is what assigns
+        // the directory this page manages, and having credentials on disk
+        // isn't the same as this profile having gone through that flow
+        // (see testValidCredentialWithoutLinkedDirectoryOffersLinkNotResync).
+        XCTAssertEqual(detectedActions.primary, .link)
+        XCTAssertEqual(detectedActions.buttonStyle, .primary)
 
         XCTAssertNotEqual(unlinkedActions.buttonStyle, linkedActions.buttonStyle)
     }

@@ -78,18 +78,16 @@ struct ClaudeTerminalAccountActions: Equatable {
 
     static func forProfile(_ profile: Profile) -> Self {
         let hasLinkedDirectory = profile.cliAccountName != nil
-        // A profile can carry valid, working Claude Code credentials
-        // (migrated or synced in) before it ever gets a linked directory
-        // name. `terminalSummaryHealth` already calls that state
-        // "Working" from `cliCredentialsJSON` alone — the primary-action
-        // choice has to agree, or a working sign-in gets told to "Link
-        // Claude Code" as the page's headline action.
-        let hasWorkingCredentials = hasLinkedDirectory
-            || (profile.cliCredentialsJSON.map {
-                ClaudeCodeSyncService.carriesLogin($0)
-            } ?? false)
+        // Deliberately keyed on the linked directory name alone, not on
+        // credential validity: a profile can carry valid Claude Code
+        // credentials before it has ever been linked to a directory (see
+        // testValidCredentialWithoutLinkedDirectoryOffersLinkNotResync,
+        // PRODUCT-2973 / PR #90). That state still offers "Link", because
+        // linking is what assigns the directory this page manages — a
+        // credential existing on disk isn't the same as this profile
+        // having gone through that flow.
         return Self(
-            primary: hasWorkingCredentials ? .resync : .link,
+            primary: hasLinkedDirectory ? .resync : .link,
             canUnlink: hasLinkedDirectory
         )
     }
