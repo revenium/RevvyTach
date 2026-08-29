@@ -188,6 +188,13 @@ enum LegacyPopoverBanner: Equatable {
         sessionOnlyCredentialCount: Int = 0,
         hasCredentialError: Bool,
         setupState: ClaudeSetupState? = nil,
+        /// Whether the profile holds Console API credentials. A Console API
+        /// profile has credentials and shows figures — billing rather than
+        /// usage — and neither Claude sign-in applies to it, so it reads as
+        /// `.none` without being unconfigured. It never raised this banner
+        /// while the trigger was `.terminalOnly`, and narrowing the trigger
+        /// to `.none` must not start accusing it.
+        hasAPIConsoleCredentials: Bool = false,
         /// The profile's own Claude Code verdict, straight off the last
         /// reading. Defaulted so the call sites that are only exercising the
         /// claude.ai-side precedence don't have to restate "no CLI problem";
@@ -210,14 +217,21 @@ enum LegacyPopoverBanner: Equatable {
         // it above a real credential error, so the one surface a person looks
         // at complained about setup while an actually broken sign-in went
         // unnamed underneath it.
-        if setupState == .none {
+        if setupState == .none, !hasAPIConsoleCredentials {
             return .setupIncomplete
+        }
+        // The Claude Code sign-in comes first, because it takes every number
+        // on screen with it. This used to sit below `credentialError`, so
+        // when both credentials were broken the popover named the claude.ai
+        // one — which was the bigger loss then and is the smaller one now.
+        // The menu-bar marker applies the same order; the two surfaces
+        // disagreeing about which failure matters more would be worse than
+        // either ordering.
+        if let problem = CLISignInProblem(cliSignInIssue) {
+            return .cliSignInBroken(problem)
         }
         if hasCredentialError {
             return .credentialError
-        }
-        if let problem = CLISignInProblem(cliSignInIssue) {
-            return .cliSignInBroken(problem)
         }
         if browserSignInIssue == .expired {
             return .browserSignInBroken
@@ -503,6 +517,8 @@ struct PopoverContentView: View {
                         .claudeSetupState
                         ?? profileManager.claudeSetupState(for: $0)
                 },
+                hasAPIConsoleCredentials:
+                    displayedProfile?.hasAPIConsole ?? false,
                 cliSignInIssue: presentation.legacyClaudeUsage?
                     .personalExtraUsageIssue,
                 browserSignInIssue: presentation.legacyClaudeUsage?

@@ -123,6 +123,20 @@ class ClaudeAPIService: APIServiceProtocol {
         func capturesOAuthToken(_ candidate: String) -> Bool {
             oauthAccessToken == candidate
         }
+
+        /// Whether the profile's extra-usage preference was captured as
+        /// `candidate`. The preference itself is not a credential, but it
+        /// rides on this deliberately opaque value, so it is exposed by
+        /// question rather than by property.
+        func capturesOverageCheck(_ candidate: Bool) -> Bool {
+            checkOverage == candidate
+        }
+
+        /// Whether a browser sign-in was captured alongside the source.
+        /// Never the key itself.
+        var carriesBrowserSignIn: Bool {
+            sessionKey != nil && organizationID != nil
+        }
     }
 
     /// Request-scoped Console API credentials. This value is intentionally

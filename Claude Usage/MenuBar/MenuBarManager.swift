@@ -2981,7 +2981,8 @@ class MenuBarManager: NSObject, ObservableObject {
                 return failure.sameKindConsecutiveCount
             }(),
             healthStatus: snapshot?.report?.health.status,
-            setupState: setupState
+            setupState: setupState,
+            hasAPIConsoleCredentials: profile.hasAPIConsole
         )
         return credential
     }

@@ -71,8 +71,15 @@ enum ClaudeAccountAttention {
         _ profile: Profile,
         snapshot: ClaudeSetupState? = nil
     ) -> Bool {
-        profile.providerID == .claude
-            && (snapshot ?? ClaudeSetupState.of(profile)) == .none
+        guard profile.providerID == .claude else { return false }
+        // A Console API profile has credentials and shows figures; it simply
+        // shows billing rather than usage, and neither sign-in applies to it.
+        // `ClaudeSetupState.of` reports it as `.none` because it holds
+        // neither, so without this guard narrowing the predicate to `.none`
+        // would have started accusing it. It never raised the warning before
+        // and must not start now.
+        guard !profile.hasAPIConsole else { return false }
+        return (snapshot ?? ClaudeSetupState.of(profile)) == .none
     }
 
     /// Numbers work, but from the browser sign-in only: no automatic

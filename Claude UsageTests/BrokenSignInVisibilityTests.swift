@@ -40,12 +40,14 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     private func banner(
         for issue: ClaudeUsage.PersonalExtraUsageIssue?,
         hasCredentialError: Bool = false,
-        sessionOnlyCredentialCount: Int = 0
+        sessionOnlyCredentialCount: Int = 0,
+        browserSignInIssue: ClaudeUsage.BrowserSignInIssue? = nil
     ) -> LegacyPopoverBanner? {
         LegacyPopoverBanner.resolve(
             sessionOnlyCredentialCount: sessionOnlyCredentialCount,
             hasCredentialError: hasCredentialError,
             cliSignInIssue: issue,
+            browserSignInIssue: browserSignInIssue,
             consecutiveRefreshFailures: 0,
             lastSuccessfulRefreshTime: now,
             now: now
@@ -100,7 +102,12 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         }
     }
 
-    func testSetupIncompleteBannerUsesRequiredPrecedence() {
+    /// Inverted. `.terminalOnly` used to raise this banner and rank it above
+    /// a real credential error, so on a working profile the one surface a
+    /// person looks at complained about setup while an actually broken
+    /// sign-in went unnamed underneath it. Only `.none` — neither sign-in,
+    /// no numbers possible — raises it now.
+    func testSetupIncompleteBannerFiresOnlyWhenNeitherSignInExists() {
         let now = Date()
         XCTAssertEqual(
             LegacyPopoverBanner.resolve(
@@ -112,7 +119,9 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                     now.addingTimeInterval(-600),
                 now: now
             ),
-            .setupIncomplete
+            .cliSignInBroken(.expired),
+            "a terminal-only profile with a broken Claude Code sign-in must "
+                + "name that sign-in, not its setup"
         )
         XCTAssertEqual(
             LegacyPopoverBanner.resolve(
@@ -122,9 +131,9 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 lastSuccessfulRefreshTime: now,
                 now: now
             ),
-            .setupIncomplete
+            .credentialError
         )
-        for state: ClaudeSetupState in [.browserOnly, .complete] {
+        for state: ClaudeSetupState in [.browserOnly, .complete, .terminalOnly] {
             XCTAssertNil(
                 LegacyPopoverBanner.resolve(
                     hasCredentialError: false,
@@ -135,6 +144,16 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 )
             )
         }
+        XCTAssertEqual(
+            LegacyPopoverBanner.resolve(
+                hasCredentialError: false,
+                setupState: ClaudeSetupState.none,
+                consecutiveRefreshFailures: 0,
+                lastSuccessfulRefreshTime: now,
+                now: now
+            ),
+            .setupIncomplete
+        )
         XCTAssertEqual(
             LegacyPopoverBanner.setupIncomplete.action,
             .claudeAccount
@@ -204,26 +223,31 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
-    func testSetupIncompleteMenuAttentionClearsWithBrowserSignIn() {
-        XCTAssertEqual(
-            MenuBarAttentionSignal.attention(
-                cliSignInIssue: nil,
-                credentialFailureStreak: 0,
-                healthStatus: .healthy,
-                setupState: .terminalOnly
-            ),
-            .setupIncomplete
-        )
-        for state: ClaudeSetupState in [.browserOnly, .complete] {
+    /// It never appears in the first place now. A terminal-only profile
+    /// produces every number from its Claude Code sign-in and renews that
+    /// sign-in unaided, so the marker it used to carry was accusing a working
+    /// profile.
+    func testSetupIncompleteMenuAttentionFiresOnlyWithNeitherSignIn() {
+        for state: ClaudeSetupState in [.terminalOnly, .browserOnly, .complete] {
             XCTAssertNil(
                 MenuBarAttentionSignal.attention(
                     cliSignInIssue: nil,
                     credentialFailureStreak: 0,
                     healthStatus: .healthy,
                     setupState: state
-                )
+                ),
+                "\(state) is a working profile and must carry no marker"
             )
         }
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                credentialFailureStreak: 0,
+                healthStatus: .healthy,
+                setupState: ClaudeSetupState.none
+            ),
+            .setupIncomplete
+        )
         XCTAssertEqual(
             StatusBarUIManager.attentionStateText(.setupIncomplete),
             "menubar.accessibility.state.setup_incomplete".localized
@@ -244,9 +268,9 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 healthStatus: .unauthenticated,
                 setupState: .terminalOnly
             ),
-            .setupIncomplete,
-            "terminal-only must stay classified as incomplete even when the "
-                + "generic health surface also reports unauthenticated"
+            .claudeCode,
+            "a terminal-only profile with a broken Claude Code sign-in must "
+                + "name that sign-in rather than its setup"
         )
     }
 
@@ -273,13 +297,27 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// The claude.ai credential produces every number on screen; the Claude
     /// Code one produces a single row. When both are broken, name the bigger
     /// loss.
-    func testClaudeAICredentialErrorOutranksABrokenSignIn() {
+    /// Inverted with the source of the numbers. `credentialError` is raised
+    /// when the refresh failed `.unauthenticated`, which is a claude.ai
+    /// verdict; a broken Claude Code sign-in now costs every percentage on
+    /// screen, so it is the one named when both are broken. The menu-bar
+    /// marker applies the same order.
+    func testBrokenCLISignInOutranksTheClaudeAICredentialError() throws {
         for issue in Self.raising {
             XCTAssertEqual(
                 banner(for: issue, hasCredentialError: true),
-                .credentialError
+                .cliSignInBroken(
+                    try XCTUnwrap(
+                        LegacyPopoverBanner.CLISignInProblem(issue)
+                    )
+                )
             )
         }
+        // With no CLI problem, the claude.ai error still surfaces.
+        XCTAssertEqual(
+            banner(for: nil, hasCredentialError: true),
+            .credentialError
+        )
     }
 
     /// Still the top of the pile: the others describe something already
@@ -317,6 +355,12 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
         let state = ClaudeSetupState.of(profile)
 
+        // A Console API profile holds credentials and shows figures, so it
+        // is not unconfigured — but it holds neither Claude sign-in, so it
+        // reads as `.none`. That did not matter while the trigger was
+        // `.terminalOnly`; now that the trigger IS `.none` the exemption has
+        // to be explicit, and all three surfaces have to apply it or they
+        // contradict each other.
         XCTAssertEqual(state, .none)
         XCTAssertFalse(
             ClaudeAccountAttention.isSetupIncomplete(
@@ -328,6 +372,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             LegacyPopoverBanner.resolve(
                 hasCredentialError: false,
                 setupState: state,
+                hasAPIConsoleCredentials: true,
                 consecutiveRefreshFailures: 0,
                 lastSuccessfulRefreshTime: now,
                 now: now
@@ -338,7 +383,15 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                 cliSignInIssue: nil,
                 credentialFailureStreak: 0,
                 healthStatus: .healthy,
-                setupState: state
+                setupState: state,
+                hasAPIConsoleCredentials: true
+            )
+        )
+        // And a profile that really does hold nothing still warns, so the
+        // exemption above cannot be read as "`.none` never warns".
+        XCTAssertTrue(
+            ClaudeAccountAttention.isSetupIncomplete(
+                Profile(name: "Nothing at all")
             )
         )
     }
@@ -749,11 +802,13 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
         )
     }
 
-    /// The same precedence the banner already applies, for the same reason:
-    /// the claude.ai credential produces every number on screen, the Claude
-    /// Code one produces a single row. Two surfaces disagreeing about which
-    /// failure matters more would be worse than either ordering.
-    func testClaudeAIOutranksClaudeCodeWhenBothAreBroken() {
+    /// Inverted with the source of the numbers. The Claude Code credential
+    /// now produces every percentage and every per-model row; the claude.ai
+    /// one produces the organization-wide extra-usage row. The rule is
+    /// unchanged — name the bigger loss first — and the banner applies the
+    /// same order, because two surfaces disagreeing about which failure
+    /// matters more would be worse than either ordering.
+    func testClaudeCodeOutranksClaudeAIWhenBothAreBroken() {
         for issue in Self.raising {
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
@@ -761,7 +816,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                     credentialFailureStreak: 2,
                     healthStatus: .degraded
                 ),
-                .claudeAI,
+                .claudeCode,
                 "\(issue) with a rejected session key must name the bigger "
                     + "loss, as the popover banner does"
             )
@@ -771,20 +826,85 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                     credentialFailureStreak: 0,
                     healthStatus: .unauthenticated
                 ),
-                .claudeAI
+                .claudeCode
+            )
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: issue,
+                    browserSignInIssue: .expired,
+                    credentialFailureStreak: 0,
+                    healthStatus: .healthy
+                ),
+                .claudeCode
             )
         }
+    }
+
+    /// A refused browser sign-in has to reach the icon on its own. It no
+    /// longer fails the refresh, so neither the streak nor the health status
+    /// carries it — this input is the only thing that does.
+    func testExpiredBrowserSignInRaisesTheClaudeAIMarkerWithoutAFailure() {
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                browserSignInIssue: .expired,
+                credentialFailureStreak: 0,
+                healthStatus: .healthy
+            ),
+            .claudeAI
+        )
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                browserSignInIssue: .temporarilyUnavailable,
+                credentialFailureStreak: 0,
+                healthStatus: .healthy
+            ),
+            "a transient miss says nothing about the credential and must "
+                + "raise nothing"
+        )
+        XCTAssertEqual(
+            LegacyPopoverBanner.resolve(
+                hasCredentialError: false,
+                browserSignInIssue: .expired,
+                consecutiveRefreshFailures: 0,
+                lastSuccessfulRefreshTime: now,
+                now: now
+            ),
+            .browserSignInBroken
+        )
+        XCTAssertNil(
+            LegacyPopoverBanner.resolve(
+                hasCredentialError: false,
+                browserSignInIssue: .temporarilyUnavailable,
+                consecutiveRefreshFailures: 0,
+                lastSuccessfulRefreshTime: now,
+                now: now
+            )
+        )
+        XCTAssertEqual(
+            LegacyPopoverBanner.browserSignInBroken.action,
+            .claudeAccount
+        )
+        XCTAssertNotEqual(
+            LegacyPopoverBanner.browserSignInBroken.message,
+            "popover.banner.browser_sign_in_expired"
+        )
     }
 
     /// The mark drawn, the wording spoken and the banner all agree about
     /// which credential comes first, not just about whether something is
     /// wrong — they read the one verdict this asserts. Checked against the
     /// banner itself so the two orderings cannot drift.
-    func testMarkAndWordingAndBannerNameTheSameCredentialFirst() {
+    func testMarkAndWordingAndBannerNameTheSameCredentialFirst() throws {
         for issue in Self.raising {
             XCTAssertEqual(
                 banner(for: issue, hasCredentialError: true),
-                .credentialError
+                .cliSignInBroken(
+                    try XCTUnwrap(
+                        LegacyPopoverBanner.CLISignInProblem(issue)
+                    )
+                )
             )
             XCTAssertEqual(
                 MenuBarAttentionSignal.attention(
@@ -792,7 +912,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
                     credentialFailureStreak: 2,
                     healthStatus: .degraded
                 ),
-                .claudeAI
+                .claudeCode
             )
         }
     }
@@ -801,17 +921,27 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// broken, which is why both ask `CLISignInProblem`. If a future case is
     /// added to one path only, this fails.
     func testMarkerAndBannerAgreeOnEveryState() {
+        let browserStates: [ClaudeUsage.BrowserSignInIssue?] = [
+            nil, .expired, .temporarilyUnavailable
+        ]
         for issue in Self.raising.map(Optional.some) + Self.quiet {
-            XCTAssertEqual(
-                MenuBarAttentionSignal.attention(
-                    cliSignInIssue: issue,
-                    credentialFailureStreak: 0,
-                    healthStatus: .degraded
-                ) != nil,
-                banner(for: issue) != nil,
-                "\(String(describing: issue)) is treated differently by the "
-                    + "menu bar and the popover"
-            )
+            for browserIssue in browserStates {
+                XCTAssertEqual(
+                    MenuBarAttentionSignal.attention(
+                        cliSignInIssue: issue,
+                        browserSignInIssue: browserIssue,
+                        credentialFailureStreak: 0,
+                        healthStatus: .degraded
+                    ) != nil,
+                    banner(
+                        for: issue,
+                        browserSignInIssue: browserIssue
+                    ) != nil,
+                    "\(String(describing: issue)) with "
+                        + "\(String(describing: browserIssue)) is treated "
+                        + "differently by the menu bar and the popover"
+                )
+            }
         }
     }
 
@@ -913,22 +1043,25 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// ring whose hole closed up would still be a different image from the
     /// disc and would still pass every test above it — while looking, at
     /// menu-bar size, exactly like the disc.
-    func testClaudeCodeMarkerIsHollowAndClaudeAIMarkerIsFilled() throws {
+    /// The mapping is swapped deliberately, with the loss it describes. The
+    /// solid mark belongs to the credential that takes every number on screen
+    /// with it, and under CLI-first that is the Claude Code sign-in.
+    func testClaudeAIMarkerIsHollowAndClaudeCodeMarkerIsFilled() throws {
         let manager = retain(StatusBarUIManager())
         defer { manager.cleanup() }
 
         let disc = try marker(
-            of: render(attention: .claudeAI, manager: manager)
+            of: render(attention: .claudeCode, manager: manager)
         )
         let ring = try marker(
-            of: render(attention: .claudeCode, manager: manager)
+            of: render(attention: .claudeAI, manager: manager)
         )
 
         XCTAssertGreaterThan(
             disc.centreAlpha,
             0.9,
-            "the claude.ai marker is a filled disc; an empty middle would "
-                + "make it the same shape as the Claude Code ring\n"
+            "the Claude Code marker is a filled disc; an empty middle would "
+                + "make it the same shape as the claude.ai ring\n"
                 + disc.map
         )
         // Compared against the disc's own centre, not a constant: a fixed

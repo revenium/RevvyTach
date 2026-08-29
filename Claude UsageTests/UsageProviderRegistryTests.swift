@@ -717,6 +717,51 @@ final class UsageProviderRegistryTests: HostedAppTestCase {
         XCTAssertEqual(job.notificationSettings, capturedSettings)
     }
 
+    /// The product decision, at the one place it is made. A profile holding
+    /// both sign-ins takes its usage numbers from the Claude Code one, and
+    /// carries the browser one along so the organization-wide extra-usage row
+    /// is still reachable. This used to resolve as `.claudeAI`, which is why
+    /// a browser-backed profile never exercised the CLI renewal machinery.
+    func testCaptureTakesTheCLICredentialAheadOfTheBrowserOne() throws {
+        let store = retain(makeIsolatedProfileStore())
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: retain(ProfileManager(profileStore: store)),
+            store: store
+        ))
+        let both = Profile(
+            name: "Both sign-ins",
+            claudeSessionKey: "SESSION",
+            organizationId: "ORG",
+            cliCredentialsJSON:
+                #"{"claudeAiOauth":{"accessToken":"OAUTH"}}"#
+        )
+
+        let request = try service.captureUsageRequest(for: both)
+
+        XCTAssertEqual(request.source, .profileCLI)
+        XCTAssertTrue(request.capturesOAuthToken("OAUTH"))
+        XCTAssertTrue(
+            request.carriesBrowserSignIn,
+            "a CLI-sourced request must still carry the browser sign-in, or "
+                + "the organization-wide extra usage becomes unreachable"
+        )
+
+        // An expired CLI credential is no credential: the browser sign-in
+        // takes over as the source rather than the profile losing its
+        // numbers.
+        let expired = Profile(
+            name: "Expired CLI",
+            claudeSessionKey: "SESSION",
+            organizationId: "ORG",
+            cliCredentialsJSON:
+                #"{"claudeAiOauth":{"accessToken":"OAUTH","expiresAt":1}}"#
+        )
+        XCTAssertEqual(
+            try service.captureUsageRequest(for: expired).source,
+            .claudeAI
+        )
+    }
+
     func testClaudeServiceCapturesTwoProfilesWithoutCredentialDrift()
         throws
     {
@@ -846,7 +891,8 @@ final class UsageProviderRegistryTests: HostedAppTestCase {
         let request = try service.captureUsageRequest(for: profile)
         profile.checkOverageLimitEnabled = true
 
-        XCTAssertEqual(request.source, .claudeAI(checkOverage: false))
+        XCTAssertEqual(request.source, .claudeAI)
+        XCTAssertTrue(request.capturesOverageCheck(false))
     }
 
     func testClaudeCaptureFailureIsTypedAndDoesNotExposeUnderlyingError() {

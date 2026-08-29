@@ -96,7 +96,12 @@ enum MenuBarAttentionSignal {
         browserSignInIssue: ClaudeUsage.BrowserSignInIssue? = nil,
         credentialFailureStreak: Int,
         healthStatus: ProviderHealthStatus?,
-        setupState: ClaudeSetupState? = nil
+        setupState: ClaudeSetupState? = nil,
+        /// Whether the profile holds Console API credentials. See the
+        /// identical parameter on `LegacyPopoverBanner.resolve`: a Console
+        /// API profile reads as `.none` without being unconfigured, and the
+        /// two surfaces have to agree about it or they contradict each other.
+        hasAPIConsoleCredentials: Bool = false
     ) -> Credential? {
         /// The number of consecutive rejections before the icon says
         /// anything. See `credentialFailureStreak`.
@@ -105,7 +110,7 @@ enum MenuBarAttentionSignal {
         // that outranks whichever generic refresh error happens to be visible
         // at the same time. It used to fire on `.terminalOnly` too, which put
         // a setup complaint on a profile that was working.
-        if setupState == .none {
+        if setupState == .none, !hasAPIConsoleCredentials {
             return .setupIncomplete
         }
 

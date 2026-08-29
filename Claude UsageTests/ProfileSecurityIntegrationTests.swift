@@ -368,11 +368,17 @@ final class ProfileSecurityIntegrationTests: HostedAppTestCase {
 
         manager.loadProfiles()
 
+        // Read from the stored set rather than through
+        // `wasTerminalOnlyAtClaudeAccountUpgrade`, which is retired and
+        // always answers false now. What is under test here is the
+        // classification boundary, which still records what it records.
         XCTAssertTrue(
-            sharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(originalID)
+            sharedDataStore.terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .contains(originalID)
         )
         XCTAssertFalse(
-            sharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(later.id)
+            sharedDataStore.terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .contains(later.id)
         )
     }
 
@@ -453,15 +459,17 @@ final class ProfileSecurityIntegrationTests: HostedAppTestCase {
 
         secondManager.loadProfiles()
 
+        // See the sibling test: the retired reader always answers false, so
+        // the boundary is asserted against the stored set itself.
         XCTAssertTrue(
-            secondSharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(
-                originalID
-            )
+            secondSharedDataStore
+                .terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .contains(originalID)
         )
         XCTAssertFalse(
-            secondSharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(
-                later.id
-            )
+            secondSharedDataStore
+                .terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .contains(later.id)
         )
     }
 
