@@ -1372,6 +1372,6 @@
 "claude_account.why_both.renewal" = "RevvyTach はターミナルのサインインを単独で更新し、Claude Code に書き戻します。";
 "popover.banner.setup_incomplete" = "設定が不完全です — 使用状況の追跡を開始するには Claude Code でサインインしてください。設定 → Claude アカウントで完了できます。";
 "popover.banner.browser_sign_in_expired" = "claude.ai のサインインの有効期限が切れました。使用状況は引き続き更新されますが、組織の追加使用量は更新されません。";
-"menubar.accessibility.state.setup_incomplete" = "設定未完了: ブラウザーサインインを追加";
+"menubar.accessibility.state.setup_incomplete" = "設定未完了: Claude Code またはブラウザーでサインインしてください";
 "personal.connected_not_saved" = "接続済み — 未保存";
 "personal.retry_save" = "保存を再試行";

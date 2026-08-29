@@ -1372,6 +1372,6 @@
 "claude_account.why_both.renewal" = "RevvyTach erneuert die Terminal-Anmeldung selbstständig und schreibt sie zurück an Claude Code.";
 "popover.banner.setup_incomplete" = "Einrichtung unvollständig — melden Sie sich mit Claude Code an. Weiter in Einstellungen → Claude-Konto.";
 "popover.banner.browser_sign_in_expired" = "Ihre claude.ai-Anmeldung ist abgelaufen. Die Nutzung wird weiterhin aktualisiert, die Zusatznutzung Ihrer Organisation jedoch nicht.";
-"menubar.accessibility.state.setup_incomplete" = "Einrichtung unvollständig: Browser-Anmeldung hinzufügen";
+"menubar.accessibility.state.setup_incomplete" = "Einrichtung unvollständig: mit Claude Code oder im Browser anmelden";
 "personal.connected_not_saved" = "Verbunden — nicht gespeichert";
 "personal.retry_save" = "Erneut speichern";

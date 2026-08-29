@@ -1372,6 +1372,6 @@
 "claude_account.why_both.renewal" = "RevvyTach rinnova da solo l'accesso da terminale e lo riscrive in Claude Code.";
 "popover.banner.setup_incomplete" = "Configurazione incompleta — accedi con Claude Code per iniziare a monitorare l'utilizzo. Completala in Impostazioni → Account Claude.";
 "popover.banner.browser_sign_in_expired" = "Il tuo accesso a claude.ai è scaduto. L'utilizzo continua ad aggiornarsi; l'utilizzo extra della tua organizzazione no.";
-"menubar.accessibility.state.setup_incomplete" = "Configurazione incompleta: aggiungi l'accesso browser";
+"menubar.accessibility.state.setup_incomplete" = "Configurazione incompleta: accedi con Claude Code o il browser";
 "personal.connected_not_saved" = "Connesso — non salvato";
 "personal.retry_save" = "Riprova a salvare";

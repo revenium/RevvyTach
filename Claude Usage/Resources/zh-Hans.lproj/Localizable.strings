@@ -1369,6 +1369,6 @@
 "claude_account.why_both.renewal" = "RevvyTach 会自行续期终端登录，并写回 Claude Code。";
 "popover.banner.setup_incomplete" = "设置未完成 — 请使用 Claude Code 登录以开始跟踪用量。可在“设置 → Claude 账户”中完成。";
 "popover.banner.browser_sign_in_expired" = "你的 claude.ai 登录已过期。用量仍会更新，但组织的额外用量不会。";
-"menubar.accessibility.state.setup_incomplete" = "设置未完成：添加浏览器登录";
+"menubar.accessibility.state.setup_incomplete" = "设置未完成：请使用 Claude Code 或浏览器登录";
 "personal.connected_not_saved" = "已连接 — 未保存";
 "personal.retry_save" = "重试保存";

@@ -26,6 +26,21 @@ enum ClaudeSetupState: Equatable, Sendable {
             return .none
         }
     }
+
+    /// True only for the exact `.none` case of an *optional*
+    /// `ClaudeSetupState?` — never for a nil one.
+    ///
+    /// `setupState == .none` on an optional is a Swift ambiguity trap: the
+    /// bare `.none` resolves to `Optional<ClaudeSetupState>.none` (a literal
+    /// nil check), silently shadowing the enum's own `.none` case, so an
+    /// unset `setupState` always matched regardless of the real state (bugs
+    /// on PR #98 in both `MenuBarAttentionSignal.attention` and
+    /// `LegacyPopoverBanner.resolve`, independently). One predicate here is
+    /// what keeps a future call site from rediscovering the same trap.
+    static func isExactlyNone(_ state: ClaudeSetupState?) -> Bool {
+        guard let state else { return false }
+        return state == ClaudeSetupState.none
+    }
 }
 
 enum ClaudeAccountAttention {

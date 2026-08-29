@@ -217,12 +217,11 @@ enum LegacyPopoverBanner: Equatable {
         // it above a real credential error, so the one surface a person looks
         // at complained about setup while an actually broken sign-in went
         // unnamed underneath it.
-        // See the identical fix (and its rationale) in
-        // `MenuBarAttentionSignal.attention`: `setupState == .none` is
-        // ambiguous and the compiler silently reads it as "setupState is
-        // nil", which fired on every call site that leaves `setupState`
-        // unset rather than only on the real `.none` case.
-        if let setupState, setupState == ClaudeSetupState.none,
+        // `ClaudeSetupState.isExactlyNone` — the same shared predicate
+        // `MenuBarAttentionSignal.attention` uses, and for the same reason:
+        // see its doc for why the bare `setupState == .none` is an
+        // ambiguity trap on an optional.
+        if ClaudeSetupState.isExactlyNone(setupState),
            !hasAPIConsoleCredentials {
             return .setupIncomplete
         }

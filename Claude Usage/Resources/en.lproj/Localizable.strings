@@ -1387,6 +1387,6 @@
 "claude_account.why_both.renewal" = "RevvyTach renews the terminal sign-in on its own and writes it back to Claude Code.";
 "popover.banner.setup_incomplete" = "Setup incomplete — sign in with Claude Code to start tracking usage. Finish it in Settings → Claude Account.";
 "popover.banner.browser_sign_in_expired" = "Your claude.ai sign-in has expired. Usage still updates; extra usage for your organization won't.";
-"menubar.accessibility.state.setup_incomplete" = "Setup incomplete: add the browser sign-in";
+"menubar.accessibility.state.setup_incomplete" = "Setup incomplete: sign in with Claude Code or the browser";
 "personal.connected_not_saved" = "Connected — not saved";
 "personal.retry_save" = "Retry Save";

@@ -1348,6 +1348,6 @@
 "claude_account.why_both.renewal" = "RevvyTach는 터미널 로그인을 스스로 갱신하고 Claude Code에 다시 기록합니다.";
 "popover.banner.setup_incomplete" = "설정 미완료 — 사용량 추적을 시작하려면 Claude Code로 로그인하세요. 설정 → Claude 계정에서 마칠 수 있습니다.";
 "popover.banner.browser_sign_in_expired" = "claude.ai 로그인이 만료되었습니다. 사용량은 계속 갱신되지만 조직의 추가 사용량은 갱신되지 않습니다.";
-"menubar.accessibility.state.setup_incomplete" = "설정 미완료: 브라우저 로그인 추가";
+"menubar.accessibility.state.setup_incomplete" = "설정 미완료: Claude Code 또는 브라우저로 로그인하세요";
 "personal.connected_not_saved" = "연결됨 — 저장되지 않음";
 "personal.retry_save" = "저장 다시 시도";

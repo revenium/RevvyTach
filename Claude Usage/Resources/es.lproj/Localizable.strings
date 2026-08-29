@@ -1355,6 +1355,6 @@
 "claude_account.why_both.renewal" = "RevvyTach renueva por su cuenta el inicio de sesión del terminal y lo devuelve a Claude Code.";
 "popover.banner.setup_incomplete" = "Configuración incompleta — inicia sesión con Claude Code para empezar a seguir el uso. Termínalo en Ajustes → Cuenta de Claude.";
 "popover.banner.browser_sign_in_expired" = "Tu inicio de sesión de claude.ai ha caducado. El uso sigue actualizándose; el uso adicional de tu organización, no.";
-"menubar.accessibility.state.setup_incomplete" = "Configuración incompleta: añade el inicio del navegador";
+"menubar.accessibility.state.setup_incomplete" = "Configuración incompleta: inicia sesión con Claude Code o el navegador";
 "personal.connected_not_saved" = "Conectado: no guardado";
 "personal.retry_save" = "Reintentar guardado";

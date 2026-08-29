@@ -1352,6 +1352,6 @@
 "claude_account.why_both.renewal" = "RevvyTach renouvelle seul la connexion au terminal et la réécrit dans Claude Code.";
 "popover.banner.setup_incomplete" = "Configuration incomplète — connectez-vous avec Claude Code pour commencer le suivi de l'utilisation. Terminez dans Réglages → Compte Claude.";
 "popover.banner.browser_sign_in_expired" = "Votre connexion claude.ai a expiré. L'utilisation continue de se mettre à jour, mais pas l'utilisation supplémentaire de votre organisation.";
-"menubar.accessibility.state.setup_incomplete" = "Configuration incomplète : ajoutez la connexion navigateur";
+"menubar.accessibility.state.setup_incomplete" = "Configuration incomplète : connectez-vous avec Claude Code ou le navigateur";
 "personal.connected_not_saved" = "Connecté — non enregistré";
 "personal.retry_save" = "Réessayer l’enregistrement";
