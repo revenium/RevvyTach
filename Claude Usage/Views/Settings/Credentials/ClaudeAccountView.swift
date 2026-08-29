@@ -175,6 +175,13 @@ struct ClaudeAccountView: View {
                             terminalActions.primary == .resync
                                 ? "claude_account.terminal.resync".localized
                                 : "claude_account.terminal.link".localized,
+                            // Primary CTA only while nothing is linked yet —
+                            // this is the sign-in the whole page steers
+                            // people toward first. Once it's linked, "Re-sync"
+                            // is routine maintenance, not the headline action.
+                            style: terminalActions.primary == .resync
+                                ? .standard
+                                : .primary,
                             action: {
                                 if terminalActions.primary == .resync {
                                     syncFromCLI(profileID: profile.id)
