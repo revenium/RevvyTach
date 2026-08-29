@@ -43,7 +43,6 @@ enum ClaudeBrowserSummaryHealth: Equatable {
 
 enum ClaudeTerminalSummaryHealth: Equatable {
     case working
-    case workingNotRenewable
     case needsAttention
 }
 
@@ -208,10 +207,20 @@ struct ClaudeSignInSummaryView: View {
     ) -> Status {
         switch state {
         case .complete, .browserOnly:
+            // A stored key that claude.ai has started rejecting is still a
+            // stored key, so only the health input can see this. It still
+            // matters under CLI-first: the numbers keep updating from the
+            // Claude Code sign-in, but the organization-wide extra-usage row
+            // does not come back until this is repaired.
             return browserHealth == .needsAttention
                 ? .needsAttention
                 : .working
-        case .terminalOnly, .none:
+        case .terminalOnly:
+            // Not missing, and not red. The Claude Code sign-in on this
+            // profile produces every number; the browser sign-in adds the
+            // organization-wide extra-usage row and nothing else.
+            return .optional
+        case .none:
             return .missing
         }
     }
@@ -242,12 +251,16 @@ struct ClaudeSignInSummaryView: View {
             switch terminalHealth {
             case .working:
                 return .working
-            case .workingNotRenewable:
-                return .workingNotRenewable
             case .needsAttention:
                 return .needsAttention
             }
-        case .browserOnly, .none:
+        case .browserOnly:
+            // Linking it is worth doing — it is what produces every usage
+            // number, the member's own extra-usage row, and the ability to
+            // switch Claude Code between accounts — but nothing is broken
+            // without it.
+            return .recommended
+        case .none:
             return .notLinked
         }
     }
@@ -287,11 +300,16 @@ struct ClaudeSignInSummaryView: View {
                 backgroundOpacity: 0.07
             )
         case .terminalOnly:
+            // Green. This state used to draw a red warning triangle, from
+            // when the claude.ai sign-in produced every figure. It does not:
+            // a terminal-only profile has full percentages, every per-model
+            // row, its own extra-usage row, and a sign-in the app renews
+            // unaided.
             return Verdict(
                 localizationKey: "claude_account.summary.verdict.terminal_only",
-                icon: "exclamationmark.triangle.fill",
-                color: SettingsColors.error,
-                backgroundOpacity: 0.09
+                icon: "checkmark.circle.fill",
+                color: SettingsColors.success,
+                backgroundOpacity: 0.10
             )
         case .none:
             return Verdict(
@@ -316,21 +334,28 @@ struct ClaudeSignInSummaryView: View {
 
     enum Status: Equatable {
         case working
-        case workingNotRenewable
         case needsAttention
         case notLinked
+        /// Present and deliberately absent: the browser sign-in on a profile
+        /// that has a working Claude Code sign-in.
+        case optional
+        /// Absent and worth adding, but nothing is broken: the Claude Code
+        /// sign-in on a browser-only profile.
+        case recommended
         case missing
 
         var localizationKey: String {
             switch self {
             case .working:
                 return "claude_account.summary.status.working"
-            case .workingNotRenewable:
-                return "claude_account.summary.status.working_not_renewable"
             case .needsAttention:
                 return "claude_account.summary.status.needs_attention"
             case .notLinked:
                 return "claude_account.summary.status.not_linked"
+            case .optional:
+                return "claude_account.summary.status.optional"
+            case .recommended:
+                return "claude_account.summary.status.recommended"
             case .missing:
                 return "claude_account.summary.status.missing"
             }
@@ -340,9 +365,9 @@ struct ClaudeSignInSummaryView: View {
             switch self {
             case .working:
                 return SettingsColors.success
-            case .workingNotRenewable, .needsAttention:
+            case .needsAttention:
                 return SettingsColors.error
-            case .notLinked:
+            case .notLinked, .optional, .recommended:
                 return SettingsColors.secondary
             case .missing:
                 return SettingsColors.error

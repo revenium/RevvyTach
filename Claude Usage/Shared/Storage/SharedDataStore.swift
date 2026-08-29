@@ -28,6 +28,8 @@ class SharedDataStore {
             "claudeAccountUpgradeBoundaryProfileIDsV41"
         static let terminalOnlyClaudeAccountUpgradeProfileIDs =
             "terminalOnlyClaudeAccountUpgradeProfileIDsV41"
+        static let didRetireClaudeAccountUpgrade =
+            "didRetireClaudeAccountUpgradeV42"
 
         // GitHub Star Tracking
         static let firstLaunchDate = "firstLaunchDate"
@@ -181,8 +183,48 @@ class SharedDataStore {
         )
     }
 
+    @available(
+        *,
+        deprecated,
+        message: "The 4.1 upgrade cohort no longer exists; this always returns false."
+    )
     func wasTerminalOnlyAtClaudeAccountUpgrade(_ profileID: UUID) -> Bool {
-        terminalOnlyClaudeAccountUpgradeProfileIDs().contains(profileID)
+        // Always false. The banner this answered said a browser sign-in had
+        // become required in 4.1; it is not required, and a profile in that
+        // set is a terminal-only profile — exactly the population that is now
+        // fully supported. The reader is kept rather than deleted so no call
+        // site can break silently, and so this line is where anyone looking
+        // for the old behaviour lands.
+        _ = profileID
+        return false
+    }
+
+    /// Removes the 4.1 upgrade cohort permanently.
+    ///
+    /// Deleting the stored keys *is* the migration. Making the reader above
+    /// return false is not enough on its own: leaving the sets behind leaves
+    /// a live cohort of profiles one code change away from seeing a banner
+    /// about a requirement that no longer exists.
+    ///
+    /// One-way, and one-shot. The wizard and first-run flags are deliberately
+    /// untouched — this is not a re-onboarding.
+    func retireClaudeAccountUpgradeClassificationV42() {
+        guard !defaults.bool(
+            forKey: Keys.didRetireClaudeAccountUpgrade
+        ) else { return }
+        defaults.removeObject(
+            forKey: Keys.didClassifyClaudeAccountUpgrade
+        )
+        defaults.removeObject(
+            forKey: Keys.claudeAccountUpgradeBoundaryProfileIDs
+        )
+        defaults.removeObject(
+            forKey: Keys.terminalOnlyClaudeAccountUpgradeProfileIDs
+        )
+        defaults.set(
+            true,
+            forKey: Keys.didRetireClaudeAccountUpgrade
+        )
     }
 
     // MARK: - GitHub Star Prompt Tracking

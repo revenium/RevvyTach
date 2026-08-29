@@ -900,6 +900,7 @@ struct ProviderPopoverHeader: View {
         guard providerID == .claude else { return nil }
         return MenuBarAttentionSignal.attention(
             cliSignInIssue: claudeUsage?.personalExtraUsageIssue,
+            browserSignInIssue: claudeUsage?.browserSignInIssue,
             credentialFailureStreak: credentialFailureStreak,
             healthStatus: healthStatus
         )

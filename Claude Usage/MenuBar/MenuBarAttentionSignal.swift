@@ -20,15 +20,17 @@ import UsageCore
 /// actually looks at. The verdict is a `Credential?` so every surface can
 /// name which one.
 ///
-/// The kind selects BOTH the mark and the wording. claude.ai is a filled red
-/// disc, Claude Code a hollow amber ring, and the difference is deliberately
+/// The kind selects BOTH the mark and the wording. Claude Code is a filled red
+/// disc, claude.ai a hollow amber ring, and the difference is deliberately
 /// carried in the SHAPE and not only the colour: red against amber is one of
 /// the first pairs to fail for a colourblind viewer, while solid against
 /// hollow survives that and survives being read at 4pt. Which mark goes to
 /// which credential follows the loss — the solid one, the mark that reads as
 /// heavier, belongs to the credential that takes every number on screen with
-/// it. The wording carries the same fact for anyone reaching the icon through
-/// a tooltip or VoiceOver, where no shape reaches at all.
+/// it. Under CLI-first that is the Claude Code sign-in, so the assignment is
+/// the reverse of what it was; the rule is unchanged. The wording carries the
+/// same fact for anyone reaching the icon through a tooltip or VoiceOver,
+/// where no shape reaches at all.
 ///
 /// This is the one decision behind the marker, kept apart from the drawing so
 /// it can be tested without AppKit — and so it cannot drift from the popover
@@ -43,15 +45,16 @@ enum MenuBarAttentionSignal {
     /// when they fail. Collapsing them into "sign-in" leaves the person
     /// holding a complaint they cannot act on.
     enum Credential: Equatable {
-        /// The claude.ai session key. Every number in the popover and every
-        /// percentage in the menu bar comes from it, so when it is rejected
-        /// there is nothing left on screen to trust.
+        /// The claude.ai session key. It produces the organization-wide
+        /// extra-usage row and the organization name that labels it.
+        /// Everything else on screen keeps updating without it.
         case claudeAI
-        /// The Claude Code CLI sign-in. It produces exactly one thing: the
-        /// member's own extra-usage figure. Everything else keeps working.
+        /// The Claude Code CLI sign-in. Every percentage in the menu bar and
+        /// every row in the popover comes from it, so when it is rejected
+        /// there is nothing left on screen to trust.
         case claudeCode
-        /// A legacy terminal-only profile will go silent when that sign-in
-        /// lapses because no browser sign-in exists to renew it.
+        /// The profile holds neither sign-in, so no number can be produced
+        /// at all.
         case setupIncomplete
     }
 
@@ -77,12 +80,20 @@ enum MenuBarAttentionSignal {
     ///     account whose credential works. Two in a row is the smallest
     ///     threshold that distinguishes a credential that stopped working
     ///     from one request that did.
+    ///   - browserSignInIssue: the profile's own claude.ai verdict from its
+    ///     last reading. Required because a refused browser sign-in no longer
+    ///     fails the refresh: `credentialFailureStreak` and `healthStatus`
+    ///     are both derived from the whole refresh failing, which under
+    ///     CLI-first does not happen while the Claude Code sign-in is
+    ///     working. Without this input a dead browser cookie would produce no
+    ///     marker at all. Only `.expired` raises one.
     ///   - healthStatus: the provider's own verdict on the account, so an
     ///     unauthenticated account is marked even on a tick where no refresh
     ///     failure is currently being projected.
     /// - Returns: the credential to name on the icon, or `nil` for no marker.
     static func attention(
         cliSignInIssue: ClaudeUsage.PersonalExtraUsageIssue?,
+        browserSignInIssue: ClaudeUsage.BrowserSignInIssue? = nil,
         credentialFailureStreak: Int,
         healthStatus: ProviderHealthStatus?,
         setupState: ClaudeSetupState? = nil
@@ -90,12 +101,19 @@ enum MenuBarAttentionSignal {
         /// The number of consecutive rejections before the icon says
         /// anything. See `credentialFailureStreak`.
         let credentialFailureThreshold = 2
-        // A terminal-only profile is incomplete regardless of which generic
-        // refresh error happens to be visible at the same time. Match the
-        // popover banner so the icon and its repair destination keep naming
-        // the missing browser sign-in until that setup step is completed.
-        if setupState == .terminalOnly {
+        // A profile with neither sign-in can produce no number at all, and
+        // that outranks whichever generic refresh error happens to be visible
+        // at the same time. It used to fire on `.terminalOnly` too, which put
+        // a setup complaint on a profile that was working.
+        if setupState == .none {
             return .setupIncomplete
+        }
+
+        // A CLI problem outranks a browser problem throughout, because the
+        // CLI credential takes every number with it. Checked before the
+        // claude.ai streak for that reason.
+        if LegacyPopoverBanner.CLISignInProblem(cliSignInIssue) != nil {
+            return .claudeCode
         }
 
         if credentialFailureStreak >= credentialFailureThreshold {
@@ -131,9 +149,13 @@ enum MenuBarAttentionSignal {
             break
         }
 
-        guard LegacyPopoverBanner.CLISignInProblem(cliSignInIssue) != nil else {
-            return nil
+        // Actionable only. `.temporarilyUnavailable` is retried unaided and
+        // says nothing about the credential, so it deliberately raises
+        // nothing — the same discipline the CLI side has always followed.
+        if browserSignInIssue == .expired {
+            return .claudeAI
         }
-        return .claudeCode
+
+        return nil
     }
 }
