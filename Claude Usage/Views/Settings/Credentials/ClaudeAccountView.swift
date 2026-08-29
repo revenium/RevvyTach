@@ -68,10 +68,28 @@ struct ClaudeTerminalAccountActions: Equatable {
     let primary: Primary
     let canUnlink: Bool
 
+    /// The terminal (Claude Code) sign-in's own button is the page's
+    /// primary call to action only while nothing is linked or working yet.
+    /// Once `primary == .resync`, "Re-sync" is routine maintenance, not the
+    /// headline action, so it drops to standard styling.
+    var buttonStyle: ClaudeSignInSummaryAction.Style {
+        primary == .resync ? .standard : .primary
+    }
+
     static func forProfile(_ profile: Profile) -> Self {
         let hasLinkedDirectory = profile.cliAccountName != nil
+        // A profile can carry valid, working Claude Code credentials
+        // (migrated or synced in) before it ever gets a linked directory
+        // name. `terminalSummaryHealth` already calls that state
+        // "Working" from `cliCredentialsJSON` alone — the primary-action
+        // choice has to agree, or a working sign-in gets told to "Link
+        // Claude Code" as the page's headline action.
+        let hasWorkingCredentials = hasLinkedDirectory
+            || (profile.cliCredentialsJSON.map {
+                ClaudeCodeSyncService.carriesLogin($0)
+            } ?? false)
         return Self(
-            primary: hasLinkedDirectory ? .resync : .link,
+            primary: hasWorkingCredentials ? .resync : .link,
             canUnlink: hasLinkedDirectory
         )
     }
@@ -175,13 +193,10 @@ struct ClaudeAccountView: View {
                             terminalActions.primary == .resync
                                 ? "claude_account.terminal.resync".localized
                                 : "claude_account.terminal.link".localized,
-                            // Primary CTA only while nothing is linked yet —
-                            // this is the sign-in the whole page steers
-                            // people toward first. Once it's linked, "Re-sync"
-                            // is routine maintenance, not the headline action.
-                            style: terminalActions.primary == .resync
-                                ? .standard
-                                : .primary,
+                            // Primary CTA only while nothing is linked or
+                            // working yet — this is the sign-in the whole
+                            // page steers people toward first.
+                            style: terminalActions.buttonStyle,
                             action: {
                                 if terminalActions.primary == .resync {
                                     syncFromCLI(profileID: profile.id)

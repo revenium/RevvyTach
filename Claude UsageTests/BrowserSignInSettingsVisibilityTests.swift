@@ -463,18 +463,40 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
     /// The terminal (Claude Code) sign-in's own button is the page's primary
     /// call to action while it is unlinked; the browser button never is.
     func testTerminalLinkActionIsPrimaryStyleAndBrowserIsNot() {
-        let primaryAction = ClaudeSignInSummaryAction(
-            "claude_account.terminal.link".localized,
-            style: .primary
-        ) {}
-        let standardAction = ClaudeSignInSummaryAction(
-            "claude_account.browser.sign_in".localized,
-            style: .standard
-        ) {}
+        // Drives the actual decision in ClaudeTerminalAccountActions rather
+        // than handing a hardcoded style to the view model — a regression
+        // in `buttonStyle`'s `primary == .resync` ternary must fail this.
+        let unlinked = Profile(name: "Nothing linked")
+        let linkedByDirectory = Profile(
+            name: "Linked",
+            hasCliAccount: true,
+            cliAccountName: "some-account"
+        )
+        let workingWithoutDirectory = Profile(
+            name: "Migrated, no directory yet",
+            cliCredentialsJSON: #"{"claudeAiOauth":{"accessToken":"ok"}}"#
+        )
 
-        XCTAssertEqual(primaryAction.style, .primary)
-        XCTAssertEqual(standardAction.style, .standard)
-        XCTAssertNotEqual(primaryAction.style, standardAction.style)
+        let unlinkedActions = ClaudeTerminalAccountActions.forProfile(unlinked)
+        let linkedActions =
+            ClaudeTerminalAccountActions.forProfile(linkedByDirectory)
+        let workingActions =
+            ClaudeTerminalAccountActions.forProfile(workingWithoutDirectory)
+
+        XCTAssertEqual(unlinkedActions.primary, .link)
+        XCTAssertEqual(unlinkedActions.buttonStyle, .primary)
+
+        XCTAssertEqual(linkedActions.primary, .resync)
+        XCTAssertEqual(linkedActions.buttonStyle, .standard)
+
+        // The Greptile-flagged case: valid credentials with no linked
+        // directory name yet must still resolve to "resync" / standard —
+        // never a primary "Link Claude Code" contradicting a working
+        // sign-in.
+        XCTAssertEqual(workingActions.primary, .resync)
+        XCTAssertEqual(workingActions.buttonStyle, .standard)
+
+        XCTAssertNotEqual(unlinkedActions.buttonStyle, linkedActions.buttonStyle)
     }
 
     func testAnUnrenderedProfileIsNotAccused() {
