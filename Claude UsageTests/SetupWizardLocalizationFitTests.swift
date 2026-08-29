@@ -237,7 +237,9 @@ final class SetupWizardLocalizationFitTests: XCTestCase {
             "claude_account.summary.status.working_not_renewable",
             "claude_account.summary.status.needs_attention",
             "claude_account.summary.status.not_linked",
-            "claude_account.summary.status.missing"
+            "claude_account.summary.status.missing",
+            "claude_account.summary.status.optional",
+            "claude_account.summary.status.recommended"
         ]
 
         for locale in Self.locales {

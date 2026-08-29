@@ -1321,6 +1321,7 @@
 
 // Claude 設定ウィザード：ターミナルのサインインをリンクして確認
 "wizard.browser_sign_in.title" = "claude.ai にサインイン";
+"wizard.browser_sign_in.why" = "組織の追加利用残高を確認する場合にのみ必要です。";
 "wizard.organization.title" = "組織";
 "wizard.link_terminal.title" = "Claude Code をリンク";
 "wizard.link_terminal.subtitle" = "任意ですが推奨します。自分の追加使用量を表示し、Claude Code のアカウントを切り替えられるようになります。";

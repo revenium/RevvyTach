@@ -1321,6 +1321,7 @@
 
 // Claude-Einrichtungsassistent: Terminal-Anmeldung verknüpfen und prüfen
 "wizard.browser_sign_in.title" = "Bei claude.ai anmelden";
+"wizard.browser_sign_in.why" = "Nur nötig, um das Zusatznutzungsguthaben Ihrer Organisation zu sehen.";
 "wizard.organization.title" = "Organisation";
 "wizard.link_terminal.title" = "Claude Code verknüpfen";
 "wizard.link_terminal.subtitle" = "Optional, empfohlen. So kann RevvyTach Ihre eigene Zusatznutzung anzeigen und Claude Code zwischen Konten wechseln.";

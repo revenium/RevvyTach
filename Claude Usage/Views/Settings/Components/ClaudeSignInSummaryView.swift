@@ -7,7 +7,11 @@ import SwiftUI
 
 /// An optional action shown alongside one of the sign-in rows.
 struct ClaudeSignInSummaryAction {
-    enum Style {
+    enum Style: Equatable {
+        /// The main call to action on the row that produces every usage
+        /// number: filled, accent-colored. Reserved for the terminal
+        /// (Claude Code) sign-in's button.
+        case primary
         case standard
         case destructive
     }
@@ -81,22 +85,28 @@ struct ClaudeSignInSummaryView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             verdictBanner
 
+            // Terminal (Claude Code) sign-in first: it is the one every
+            // number on screen comes from, and the far simpler of the two —
+            // no copying a session key out of a browser tab. The browser
+            // sign-in follows as the optional add-on that brings in the
+            // organization's extra-usage balance, so it never leads and
+            // never carries a red "Missing" badge on its own.
             VStack(spacing: 0) {
                 signInRow(
-                    title: localized("claude_account.summary.browser.title"),
-                    detail: browserDetail,
-                    status: browserStatus,
-                    action: browserAction
+                    title: localized("claude_account.summary.terminal.title"),
+                    detail: terminalDetail,
+                    status: terminalStatus,
+                    action: terminalAction
                 )
 
                 Divider()
                     .padding(.leading, Spacing.lg)
 
                 signInRow(
-                    title: localized("claude_account.summary.terminal.title"),
-                    detail: terminalDetail,
-                    status: terminalStatus,
-                    action: terminalAction
+                    title: localized("claude_account.summary.browser.title"),
+                    detail: browserDetail,
+                    status: browserStatus,
+                    action: browserAction
                 )
             }
             .background(SettingsColors.cardBackground)
@@ -215,13 +225,13 @@ struct ClaudeSignInSummaryView: View {
             return browserHealth == .needsAttention
                 ? .needsAttention
                 : .working
-        case .terminalOnly:
-            // Not missing, and not red. The Claude Code sign-in on this
-            // profile produces every number; the browser sign-in adds the
-            // organization-wide extra-usage row and nothing else.
+        case .terminalOnly, .none:
+            // Never red for a browser sign-in that was simply never added,
+            // in any state — including `.none`, where the repair this page
+            // steers to is the terminal row, not this one. The Claude Code
+            // sign-in is what produces every number; the browser sign-in
+            // only ever adds the organization-wide extra-usage row.
             return .optional
-        case .none:
-            return .missing
         }
     }
 
@@ -371,16 +381,24 @@ struct ClaudeSignInSummaryView: View {
         let backgroundOpacity: Double
     }
 
-    enum Status: Equatable {
+    enum Status: Equatable, Hashable {
         case working
         case needsAttention
+        /// The terminal (Claude Code) row on a profile with neither sign-in.
+        /// Red, deliberately: it names the one repair that produces every
+        /// number on screen, and nothing outranks it in `.none`.
         case notLinked
         /// Present and deliberately absent: the browser sign-in on a profile
-        /// that has a working Claude Code sign-in.
+        /// that has a working Claude Code sign-in, or on one with neither —
+        /// never red on its own, because it never blocks the app from
+        /// working.
         case optional
         /// Absent and worth adding, but nothing is broken: the Claude Code
         /// sign-in on a browser-only profile.
         case recommended
+        /// Unreachable via `browserStatus`/`terminalStatus` today — kept for
+        /// its localization key, `claude_account.summary.status.missing`,
+        /// which remains shipped copy.
         case missing
 
         var localizationKey: String {
@@ -406,9 +424,9 @@ struct ClaudeSignInSummaryView: View {
                 return SettingsColors.success
             case .needsAttention:
                 return SettingsColors.error
-            case .notLinked, .optional, .recommended:
+            case .optional, .recommended:
                 return SettingsColors.secondary
-            case .missing:
+            case .notLinked, .missing:
                 return SettingsColors.error
             }
         }
@@ -418,6 +436,8 @@ struct ClaudeSignInSummaryView: View {
 private extension ClaudeSignInSummaryAction.Style {
     var foregroundColor: Color {
         switch self {
+        case .primary:
+            return .white
         case .standard:
             return .primary
         case .destructive:
@@ -427,6 +447,8 @@ private extension ClaudeSignInSummaryAction.Style {
 
     var backgroundColor: Color {
         switch self {
+        case .primary:
+            return SettingsColors.primary
         case .standard:
             return SettingsColors.cardBackground
         case .destructive:
@@ -436,6 +458,8 @@ private extension ClaudeSignInSummaryAction.Style {
 
     var borderColor: Color {
         switch self {
+        case .primary:
+            return .clear
         case .standard:
             return SettingsColors.border
         case .destructive:

@@ -1301,6 +1301,7 @@
 
 // Assistant Claude : lier la connexion au terminal et vérifier
 "wizard.browser_sign_in.title" = "Se connecter à claude.ai";
+"wizard.browser_sign_in.why" = "Utile uniquement pour voir le solde d'utilisation supplémentaire de votre organisation.";
 "wizard.organization.title" = "Organisation";
 "wizard.link_terminal.title" = "Lier Claude Code";
 "wizard.link_terminal.subtitle" = "Facultatif, recommandé. Cela permet à RevvyTach d'afficher votre utilisation supplémentaire et de basculer Claude Code entre les comptes.";

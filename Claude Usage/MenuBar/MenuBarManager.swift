@@ -2530,11 +2530,28 @@ class MenuBarManager: NSObject, ObservableObject {
 
     static func makeContextMenu(
         target: AnyObject,
+        activateAction: Selector? = nil,
         refreshAction: Selector,
         settingsAction: Selector,
         quitAction: Selector
     ) -> NSMenu {
         let menu = NSMenu()
+
+        // Present only for a profile that is not already active — the same
+        // condition `ProviderMenuPresentationBuilder` uses for every other
+        // provider's own "Make Active" item. Claude profiles were the one
+        // provider stuck on this legacy menu (Refresh / Settings / Quit)
+        // with no way to switch the active profile without opening the
+        // popover first.
+        if let activateAction {
+            let activateItem = NSMenuItem(
+                title: "menu.provider.make_active".localized,
+                action: activateAction,
+                keyEquivalent: ""
+            )
+            activateItem.target = target
+            menu.addItem(activateItem)
+        }
 
         let refreshItem = NSMenuItem(
             title: "common.refresh".localized,
@@ -2669,8 +2686,14 @@ class MenuBarManager: NSObject, ObservableObject {
             )
         let menu: NSMenu
         if Self.usesLegacyContextMenu(for: profile.providerID) {
+            let canActivate = presentation.actions.contains {
+                $0.kind == .activate
+            }
             menu = Self.makeContextMenu(
                 target: self,
+                activateAction: canActivate
+                    ? #selector(contextMenuActivate)
+                    : nil,
                 refreshAction: #selector(contextMenuRefresh),
                 settingsAction: #selector(contextMenuLegacySettings),
                 quitAction: #selector(contextMenuQuit)

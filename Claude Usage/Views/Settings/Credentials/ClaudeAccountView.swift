@@ -68,8 +68,24 @@ struct ClaudeTerminalAccountActions: Equatable {
     let primary: Primary
     let canUnlink: Bool
 
+    /// The terminal (Claude Code) sign-in's own button is the page's
+    /// primary call to action only while nothing is linked or working yet.
+    /// Once `primary == .resync`, "Re-sync" is routine maintenance, not the
+    /// headline action, so it drops to standard styling.
+    var buttonStyle: ClaudeSignInSummaryAction.Style {
+        primary == .resync ? .standard : .primary
+    }
+
     static func forProfile(_ profile: Profile) -> Self {
         let hasLinkedDirectory = profile.cliAccountName != nil
+        // Deliberately keyed on the linked directory name alone, not on
+        // credential validity: a profile can carry valid Claude Code
+        // credentials before it has ever been linked to a directory (see
+        // testValidCredentialWithoutLinkedDirectoryOffersLinkNotResync,
+        // PRODUCT-2973 / PR #90). That state still offers "Link", because
+        // linking is what assigns the directory this page manages — a
+        // credential existing on disk isn't the same as this profile
+        // having gone through that flow.
         return Self(
             primary: hasLinkedDirectory ? .resync : .link,
             canUnlink: hasLinkedDirectory
@@ -175,6 +191,10 @@ struct ClaudeAccountView: View {
                             terminalActions.primary == .resync
                                 ? "claude_account.terminal.resync".localized
                                 : "claude_account.terminal.link".localized,
+                            // Primary CTA only while nothing is linked or
+                            // working yet — this is the sign-in the whole
+                            // page steers people toward first.
+                            style: terminalActions.buttonStyle,
                             action: {
                                 if terminalActions.primary == .resync {
                                     syncFromCLI(profileID: profile.id)

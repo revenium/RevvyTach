@@ -1318,6 +1318,7 @@
 
 // Claude 设置向导：关联终端登录并检查
 "wizard.browser_sign_in.title" = "登录 claude.ai";
+"wizard.browser_sign_in.why" = "仅在需要查看您所在组织的额外用量余额时才需要。";
 "wizard.organization.title" = "组织";
 "wizard.link_terminal.title" = "关联 Claude Code";
 "wizard.link_terminal.subtitle" = "可选但建议。这样 RevvyTach 可以显示您自己的额外用量，并在 Claude Code 账号之间切换。";

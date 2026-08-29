@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Right-click a Claude menu bar item to make it active.** Every other
+  provider's menu bar item already had "Make Active" in its right-click menu;
+  Claude items were missing it, so switching the active Claude profile meant
+  opening the popover first.
+
 ### Changed
 
 - **Your usage numbers now come from your Claude Code sign-in, and the
@@ -46,6 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Setup starts with Claude Code.** The wizard asks for the terminal sign-in
   first, then offers the browser sign-in with a "Skip — I only use Claude Code"
   button. Previously the browser sign-in was step one with no way past it.
+
+- **The Claude Account page now leads with Claude Code too.** The terminal
+  sign-in row moved above the browser row and carries the page's one primary
+  button, since it is both simpler to set up and the sign-in every number on
+  screen comes from. The browser row still shows "Needs attention" only when
+  it is truly broken; a browser sign-in that was simply never added now reads
+  as a neutral "Optional," not a red warning, and its own copy says plainly
+  what it is for: your organization's extra-usage balance. The setup wizard's
+  browser step says the same thing.
+
+- **A profile with neither sign-in no longer shows a red badge on the wrong
+  row.** The browser row used to turn red there even though its own text
+  called itself optional; it now reads the same neutral "Optional" it does
+  everywhere else. The red badge belongs to the terminal row instead, since
+  signing in with Claude Code is the actual fix.
 
 ### Fixed
 
