@@ -2552,11 +2552,19 @@ class ClaudeAPIService: APIServiceProtocol {
             // A preflight step already knows the Claude Code credential
             // failed — that is the only reason this request is `.claudeAI`
             // in the first place, on a profile whose stored setup includes
-            // a terminal sign-in. Applied unconditionally, unlike
-            // `applyPersonalExtraUsage` above: a credential the app already
-            // knows is broken must not go unreported just because
-            // `checkOverage` is off (Greptile finding on PR #98).
-            if let knownIssue = request.knownPersonalExtraUsageIssue {
+            // a terminal sign-in. Applied only when the fresh fetch above
+            // left no verdict of its own, unlike `checkOverage` gating
+            // `applyPersonalExtraUsage`: a credential the app already knows
+            // is broken must not go unreported just because `checkOverage`
+            // is off (Greptile finding on PR #98) — but the preflight
+            // snapshot must never overwrite a fresher one. The credential
+            // can have become usable again between the preflight check and
+            // this fetch actually running, in which case
+            // `applyPersonalExtraUsage` already wrote either a real reading
+            // (leaving the field nil) or its own, more current verdict; both
+            // must survive (Tessie finding on PR #98).
+            if usage.personalExtraUsageIssue == nil,
+               let knownIssue = request.knownPersonalExtraUsageIssue {
                 usage.personalExtraUsageIssue = knownIssue
             }
             return usage
