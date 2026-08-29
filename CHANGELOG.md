@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first, then offers the browser sign-in with a "Skip — I only use Claude Code"
   button. Previously the browser sign-in was step one with no way past it.
 
+- **The Claude Account page now leads with Claude Code too.** The terminal
+  sign-in row moved above the browser row and carries the page's one primary
+  button, since it is both simpler to set up and the sign-in every number on
+  screen comes from. The browser row still shows a "Missing" badge only when
+  it is truly broken; a browser sign-in that was simply never added now reads
+  as a neutral "Optional," not a red warning, and its own copy says plainly
+  what it is for: your organization's extra-usage balance. The setup wizard's
+  browser step says the same thing.
+
 ### Fixed
 
 - **A model you have no allowance for no longer reads as 0% used.** When the
