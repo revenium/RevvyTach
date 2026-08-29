@@ -2680,8 +2680,9 @@ class ClaudeAPIService: APIServiceProtocol {
             return data
 
         case 401:
-            // Include response body in error for debugging
-            let responsePreview = String(data: data, encoding: .utf8)?.prefix(200) ?? "Unable to read response"
+            // Include response body in error for debugging. Same preview as
+            // the 403 branch below, through the one shared helper.
+            let responsePreview = ClaudeAISessionRefusal.bodyPreview(data)
             throw AppError(
                 code: .apiUnauthorized,
                 message: "Unauthorized. Your session key may have expired.",
