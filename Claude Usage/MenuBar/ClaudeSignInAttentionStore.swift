@@ -25,8 +25,16 @@ import Foundation
 /// Absent means "the menu bar has not decided for this profile yet" and is
 /// treated by readers exactly like "nothing wrong". Settings must not invent
 /// an alarm for a profile the menu bar has never rendered.
-@MainActor
-final class ClaudeSignInAttentionStore: ObservableObject {
+/// `nonisolated` is load-bearing, not stylistic. This target defaults every
+/// declaration to `@MainActor`, and under that default the synthesized deinit
+/// of an isolated class aborts in malloc ("pointer being freed was not
+/// allocated", inside `swift_task_deinitOnExecutorMainActorBackDeploy`)
+/// whenever an instance is deallocated off the main actor — the same
+/// toolchain trap `MenuBarManagerTransitionTracker`,
+/// `LegacyBundleRelocationService`, and `ProfileUsageFileStore` opt out of.
+/// It crashed the whole test host here. The type holds no actor-isolated
+/// state; every writer and reader is already main-thread code.
+nonisolated final class ClaudeSignInAttentionStore: ObservableObject {
     static let shared = ClaudeSignInAttentionStore()
 
     @Published private(set) var attention:
@@ -43,6 +51,17 @@ final class ClaudeSignInAttentionStore: ObservableObject {
     ) {
         guard attention[profileID] != credential else { return }
         attention[profileID] = credential
+    }
+
+    /// Replace every verdict at once, which is how the refresh path
+    /// publishes: it decides for every Claude profile the app knows about,
+    /// so a profile that is not drawn in the menu bar still gets a verdict
+    /// and a profile that has gone away stops carrying a stale one.
+    func replace(
+        with verdicts: [UUID: MenuBarAttentionSignal.Credential]
+    ) {
+        guard attention != verdicts else { return }
+        attention = verdicts
     }
 
     func credential(

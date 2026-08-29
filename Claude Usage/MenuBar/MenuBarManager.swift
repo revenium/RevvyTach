@@ -799,6 +799,10 @@ class MenuBarManager: NSObject, ObservableObject {
             .sink { [weak self] snapshots in
                 guard let self else { return }
                 self.profileUsagePresentations = snapshots
+                // Before any early return below: Settings must learn the new
+                // verdict even for a profile that is not displayed, and even
+                // when there is no snapshot to project into the popover.
+                self.publishClaudeSignInAttention()
                 ProviderMenuCatalogStore.shared.publish(
                     profiles: self.profileManager.profiles,
                     snapshots: snapshots
@@ -2876,6 +2880,9 @@ class MenuBarManager: NSObject, ObservableObject {
     /// Updates all enabled status bar icons
     private func updateAllStatusBarIcons() {
         let now = Date()
+        // Profile list, display mode, and setup-state changes all land here
+        // without a new snapshot, and each can change a verdict.
+        publishClaudeSignInAttention()
         if profileManager.displayMode == .multi {
             let visible = profileManager.profiles.filter(
                 \.isSelectedForDisplay
@@ -2975,13 +2982,30 @@ class MenuBarManager: NSObject, ObservableObject {
             healthStatus: snapshot?.report?.health.status,
             setupState: setupState
         )
-        // Publish the decision so Settings renders the same verdict. The
-        // streak and health status it is derived from live only in this
-        // snapshot, so without this relay the Claude Account page can only
-        // see that a session key is stored — which is how it came to badge a
-        // rejected claude.ai sign-in "Working" while the icon marked it.
-        ClaudeSignInAttentionStore.shared.record(credential, for: profile.id)
         return credential
+    }
+
+    /// Publish the attention verdict for every Claude profile the app knows
+    /// about, not only the ones drawn in the menu bar.
+    ///
+    /// The verdict's two real inputs — the claude.ai credential failure
+    /// streak and provider health — live only in this object's snapshot for a
+    /// profile, so Settings cannot compute them and must be told. Writing
+    /// from the icon-rendering path was not enough: a profile that is not
+    /// selected for display never entered that path, so Settings kept badging
+    /// a rejected sign-in "Working", and a repaired one kept its stale
+    /// warning. This runs wherever a refresh outcome is known, which is the
+    /// only place the answer actually changes.
+    ///
+    /// The map is replaced whole rather than patched, so a profile that has
+    /// been deleted cannot leave an accusation behind.
+    private func publishClaudeSignInAttention() {
+        var verdicts: [UUID: MenuBarAttentionSignal.Credential] = [:]
+        for profile in profileManager.profiles
+        where profile.providerID == .claude {
+            verdicts[profile.id] = attention(for: profile)
+        }
+        ClaudeSignInAttentionStore.shared.replace(with: verdicts)
     }
 
     private func scheduleFreshnessDeadline(

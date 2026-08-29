@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import UsageCore
 import XCTest
 @testable import Claude_Usage
@@ -287,6 +288,61 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(
             ClaudeAccountView.browserSummaryHealth(
                 attention: store.credential(for: profileID)
+            ),
+            .working
+        )
+    }
+
+    /// The defect this PR was reopened for: with the app running and the
+    /// Claude Account page already on screen, the icon marked jc@ and the
+    /// page still said "Working". A stored value that never announces itself
+    /// leaves an open page frozen on the answer it read when it appeared.
+    func testARecordedVerdictAnnouncesItselfToAnAlreadyOpenPage() {
+        let store = ClaudeSignInAttentionStore()
+        let profileID = UUID()
+        let announced = expectation(
+            description: "the store tells its readers to re-render"
+        )
+        var cancellables: Set<AnyCancellable> = []
+        store.objectWillChange
+            .sink { _ in announced.fulfill() }
+            .store(in: &cancellables)
+
+        store.record(.claudeAI, for: profileID)
+
+        wait(for: [announced], timeout: 1)
+        XCTAssertEqual(
+            ClaudeAccountView.browserSummaryHealth(
+                attention: store.credential(for: profileID)
+            ),
+            .needsAttention
+        )
+    }
+
+    /// A profile that is not selected for the menu bar is still listed in
+    /// Settings, so it still needs a verdict. Publishing the whole map is
+    /// what covers it; publishing only what the icon drew is what left it
+    /// badged "Working" while its session key was being rejected.
+    func testAHiddenProfileGetsAVerdictAndADeletedOneLosesIts() {
+        let store = ClaudeSignInAttentionStore()
+        let displayed = UUID()
+        let hidden = UUID()
+
+        store.replace(with: [displayed: .claudeCode, hidden: .claudeAI])
+        XCTAssertEqual(store.credential(for: hidden), .claudeAI)
+        XCTAssertEqual(
+            ClaudeAccountView.browserSummaryHealth(
+                attention: store.credential(for: hidden)
+            ),
+            .needsAttention
+        )
+
+        // The hidden profile is removed; its accusation must go with it.
+        store.replace(with: [displayed: .claudeCode])
+        XCTAssertNil(store.credential(for: hidden))
+        XCTAssertEqual(
+            ClaudeAccountView.browserSummaryHealth(
+                attention: store.credential(for: hidden)
             ),
             .working
         )
