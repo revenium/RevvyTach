@@ -119,6 +119,35 @@ class ClaudeAPIService: APIServiceProtocol {
         /// profile in progress instead of guessing one from `organizationID`
         /// alone, which two profiles can share.
         fileprivate let profileID: UUID
+        /// Set only when a preflight step already knows the Claude Code
+        /// credential could not be used — e.g. a rejected renewal that
+        /// forced this request down to a browser-sourced fallback.
+        /// `fetchUsageData(using:)` applies it to the resulting
+        /// `ClaudeUsage` unconditionally, bypassing `checkOverage`: a
+        /// credential the app already knows is broken must not go
+        /// unreported just because extra-usage checks are switched off
+        /// (Greptile finding on PR #98).
+        fileprivate let knownPersonalExtraUsageIssue:
+            ClaudeUsage.PersonalExtraUsageIssue?
+
+        init(
+            source: CapturedUsageFetchSource,
+            sessionKey: String?,
+            organizationID: String?,
+            oauthAccessToken: String?,
+            checkOverage: Bool,
+            profileID: UUID,
+            knownPersonalExtraUsageIssue:
+                ClaudeUsage.PersonalExtraUsageIssue? = nil
+        ) {
+            self.source = source
+            self.sessionKey = sessionKey
+            self.organizationID = organizationID
+            self.oauthAccessToken = oauthAccessToken
+            self.checkOverage = checkOverage
+            self.profileID = profileID
+            self.knownPersonalExtraUsageIssue = knownPersonalExtraUsageIssue
+        }
 
         func capturesOAuthToken(_ candidate: String) -> Bool {
             oauthAccessToken == candidate
@@ -2433,13 +2462,21 @@ class ClaudeAPIService: APIServiceProtocol {
             // token to `fetchUsageData(oauthAccessToken:)` instead of the
             // browser fallback promised above (Tessie finding on PR #98).
             if let sessionKey, let organizationID {
+                // Keyed on what was actually presented to the renewal path —
+                // see the identical pattern in `personalUsageResolution` —
+                // and recorded regardless of `checkOverage` so the fallback
+                // never silently hides a credential the app already knows
+                // is broken (Greptile finding on PR #98).
+                let expired = expiredCLILogins.contains(presented.hashValue)
                 return CapturedUsageRequest(
                     source: .claudeAI,
                     sessionKey: sessionKey,
                     organizationID: organizationID,
                     oauthAccessToken: nil,
                     checkOverage: checkOverage,
-                    profileID: profile.id
+                    profileID: profile.id,
+                    knownPersonalExtraUsageIssue:
+                        expired ? .signInExpired : .signInUnusable
                 )
             }
             throw AppError(
@@ -2506,12 +2543,23 @@ class ClaudeAPIService: APIServiceProtocol {
                     isRecoverable: false
                 )
             }
-            return try await fetchUsageData(
+            var usage = try await fetchUsageData(
                 sessionKey: sessionKey,
                 organizationId: organizationID,
                 profile: profile,
                 checkOverageLimitEnabled: request.checkOverage
             )
+            // A preflight step already knows the Claude Code credential
+            // failed — that is the only reason this request is `.claudeAI`
+            // in the first place, on a profile whose stored setup includes
+            // a terminal sign-in. Applied unconditionally, unlike
+            // `applyPersonalExtraUsage` above: a credential the app already
+            // knows is broken must not go unreported just because
+            // `checkOverage` is off (Greptile finding on PR #98).
+            if let knownIssue = request.knownPersonalExtraUsageIssue {
+                usage.personalExtraUsageIssue = knownIssue
+            }
+            return usage
 
         case .profileCLI, .systemCLI:
             guard let accessToken = request.oauthAccessToken else {
@@ -2531,6 +2579,15 @@ class ClaudeAPIService: APIServiceProtocol {
                 // browser sign-in. A supplement to numbers that already exist,
                 // never the trunk of the fetch — which is the whole of "when
                 // one sign-in is refused the other still produces numbers".
+                // The member figure itself already came from the same
+                // CLI-authenticated response `applyMemberExtraUsage` read
+                // above, with no profile needed — that call's own doc
+                // comment is explicit that no organization-match guard
+                // applies here, unlike the claude.ai-sourced path's
+                // `applyPersonalExtraUsage`, which needs a resolved profile
+                // to attribute a *different* credential's figure. A vanished
+                // profile therefore does not unset `personalExtraUsageIssue`
+                // on this path.
                 if request.checkOverage,
                    let sessionKey = request.sessionKey,
                    let organizationID = request.organizationID {
@@ -2539,27 +2596,6 @@ class ClaudeAPIService: APIServiceProtocol {
                         organizationId: organizationID,
                         sessionKey: sessionKey
                     )
-                    // The member figure itself already came from the same
-                    // CLI-authenticated response `applyMemberExtraUsage`
-                    // read above, with no profile needed. But when the
-                    // profile this request was captured for has since
-                    // vanished — removed, or no longer resolvable — and the
-                    // organization-wide row above is about to be shown
-                    // anyway, leaving `personalExtraUsageIssue` nil would be
-                    // the same silent fifth outcome the browser-primary
-                    // fetch above closes off. Only overrides a genuinely
-                    // unset issue: a real verdict `applyMemberExtraUsage`
-                    // already wrote must survive.
-                    if profile == nil, usage.costUsed != nil,
-                       usage.personalExtraUsageIssue == nil {
-                        LoggingService.shared.logWarning(
-                            "No profile could be resolved for organization "
-                            + "\(organizationID) on this refresh; the "
-                            + "member's own extra usage will be reported as "
-                            + "unresolved rather than left unexplained."
-                        )
-                        usage.personalExtraUsageIssue = .claudeAccountUnresolved
-                    }
                 }
                 return usage
             } catch let error as AppError where error.code == .apiUnauthorized {

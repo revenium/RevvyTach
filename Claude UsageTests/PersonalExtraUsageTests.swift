@@ -894,9 +894,16 @@ final class PersonalExtraUsageTests: XCTestCase {
     }
 
     /// The other previously silent route: the profile a request was captured
-    /// for is gone by the time the fetch actually runs (removed mid-refresh).
-    /// The organization figure must still explain why no member figure sits
-    /// beside it, rather than rendering as if nothing were missing.
+    /// for is gone by the time the fetch actually runs (removed mid-refresh)
+    /// — but this profile is CLI-sourced, so under CLI-first that no longer
+    /// means anything is missing. `applyMemberExtraUsage` reads the member's
+    /// own figure straight out of the same `/api/oauth/usage` response the
+    /// windows came from, authenticated by the one CLI token this request
+    /// already carries; no profile lookup sits between the token and that
+    /// figure, so a vanished profile leaves it untouched. Unlike the
+    /// claude.ai-sourced path above, where the member figure is a *second*
+    /// credential's reading and genuinely needs a resolved profile to
+    /// attribute it correctly.
     func testANoLongerResolvableProfileStillExplainsItself() async throws {
         let profileID = UUID()
         let store = makeIsolatedProfileStore()
@@ -933,14 +940,15 @@ final class PersonalExtraUsageTests: XCTestCase {
 
         let usage = try await service.fetchUsageData(using: request)
 
-        XCTAssertEqual(usage.personalExtraUsageIssue, .claudeAccountUnresolved)
-        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(usage.personalCostUsed, 0)
         XCTAssertEqual(usage.costUsed, 26_118)
-        XCTAssertFalse(
+        XCTAssertTrue(
             StubClaudeEndpointsURLProtocol.requestedURLs.contains {
                 $0.hasSuffix("/api/oauth/usage")
             },
-            "no member figure may be requested with no profile to attach it to"
+            "the CLI-sourced fetch needs no profile to attach the member "
+                + "figure to, so a vanished profile must not skip it"
         )
     }
 
