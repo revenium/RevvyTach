@@ -164,11 +164,9 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
             )
         }
 
-        // The two states say different things about that absence now. A
-        // terminal-only profile is complete — its Claude Code sign-in
+        // A terminal-only profile is complete — its Claude Code sign-in
         // produces every number — so its browser row reads "Optional" and
-        // its verdict is the green one. Only a profile with neither sign-in
-        // is missing anything.
+        // its verdict is the green one.
         XCTAssertEqual(
             ClaudeSignInSummaryView.browserStatus(
                 state: .terminalOnly,
@@ -183,12 +181,22 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
             ).localizationKey,
             "claude_account.summary.verdict.terminal_only"
         )
+
+        // A profile with neither sign-in reads "Optional" on the browser
+        // row too, never red — the red badge in `.none` belongs on the
+        // terminal row, which is the actual repair. Jason's screenshot of
+        // the bba174c build showed this reversed: a red "Missing" browser
+        // badge next to copy that itself said "optional".
         XCTAssertEqual(
             ClaudeSignInSummaryView.browserStatus(
                 state: ClaudeSetupState.none,
                 browserHealth: .needsAttention
             ),
-            .missing
+            .optional
+        )
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.Status.optional.color,
+            SettingsColors.secondary
         )
     }
 
@@ -417,19 +425,37 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
     /// across every setup state so a future state added to the enum cannot
     /// silently regress this.
     func testAbsentBrowserSignInIsNeverTheRedBadgeOnAnySetupState() {
-        for state: ClaudeSetupState in [
-            .complete, .browserOnly, .terminalOnly, .none
-        ] {
-            // "Absent" means the health input itself reports nothing is
-            // broken — there is either a working key, or none to break.
+        // Every state, with the health input reporting nothing broken —
+        // a working key where one is present, or none to break where one
+        // isn't. Every expected status here is grey or green, never red.
+        let expected: [ClaudeSetupState: ClaudeSignInSummaryView.Status] = [
+            .complete: .working,
+            .browserOnly: .working,
+            .terminalOnly: .optional,
+            .none: .optional
+        ]
+
+        for (state, expectedStatus) in expected {
             let status = ClaudeSignInSummaryView.browserStatus(
                 state: state,
                 browserHealth: .working
+            )
+            XCTAssertEqual(
+                status,
+                expectedStatus,
+                "\(state)'s browser row should read \(expectedStatus), "
+                    + "got \(status)"
             )
             XCTAssertNotEqual(
                 status,
                 .needsAttention,
                 "\(state) must not badge an absent browser sign-in as broken"
+            )
+            XCTAssertNotEqual(
+                ClaudeSignInSummaryView.Status.missing,
+                status,
+                "\(state) must never show the red 'Missing' browser badge "
+                    + "for a sign-in that was simply never added"
             )
         }
     }

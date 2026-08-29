@@ -5,7 +5,7 @@ import UsageCore
 //  Claude Usage
 //
 
-enum ClaudeSetupState: Equatable, Sendable {
+enum ClaudeSetupState: Equatable, Hashable, Sendable {
     case complete
     case browserOnly
     case terminalOnly

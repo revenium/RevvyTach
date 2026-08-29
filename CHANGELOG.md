@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what it is for: your organization's extra-usage balance. The setup wizard's
   browser step says the same thing.
 
+- **A profile with neither sign-in no longer shows a red badge on the wrong
+  row.** The browser row used to turn red there even though its own text
+  called itself optional; it now reads the same neutral "Optional" it does
+  everywhere else. The red badge belongs to the terminal row instead, since
+  signing in with Claude Code is the actual fix.
+
 ### Fixed
 
 - **A model you have no allowance for no longer reads as 0% used.** When the

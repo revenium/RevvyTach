@@ -225,13 +225,13 @@ struct ClaudeSignInSummaryView: View {
             return browserHealth == .needsAttention
                 ? .needsAttention
                 : .working
-        case .terminalOnly:
-            // Not missing, and not red. The Claude Code sign-in on this
-            // profile produces every number; the browser sign-in adds the
-            // organization-wide extra-usage row and nothing else.
+        case .terminalOnly, .none:
+            // Never red for a browser sign-in that was simply never added,
+            // in any state — including `.none`, where the repair this page
+            // steers to is the terminal row, not this one. The Claude Code
+            // sign-in is what produces every number; the browser sign-in
+            // only ever adds the organization-wide extra-usage row.
             return .optional
-        case .none:
-            return .missing
         }
     }
 
@@ -381,16 +381,24 @@ struct ClaudeSignInSummaryView: View {
         let backgroundOpacity: Double
     }
 
-    enum Status: Equatable {
+    enum Status: Equatable, Hashable {
         case working
         case needsAttention
+        /// The terminal (Claude Code) row on a profile with neither sign-in.
+        /// Red, deliberately: it names the one repair that produces every
+        /// number on screen, and nothing outranks it in `.none`.
         case notLinked
         /// Present and deliberately absent: the browser sign-in on a profile
-        /// that has a working Claude Code sign-in.
+        /// that has a working Claude Code sign-in, or on one with neither —
+        /// never red on its own, because it never blocks the app from
+        /// working.
         case optional
         /// Absent and worth adding, but nothing is broken: the Claude Code
         /// sign-in on a browser-only profile.
         case recommended
+        /// Unreachable via `browserStatus`/`terminalStatus` today — kept for
+        /// its localization key, `claude_account.summary.status.missing`,
+        /// which remains shipped copy.
         case missing
 
         var localizationKey: String {
@@ -416,9 +424,9 @@ struct ClaudeSignInSummaryView: View {
                 return SettingsColors.success
             case .needsAttention:
                 return SettingsColors.error
-            case .notLinked, .optional, .recommended:
+            case .optional, .recommended:
                 return SettingsColors.secondary
-            case .missing:
+            case .notLinked, .missing:
                 return SettingsColors.error
             }
         }
