@@ -210,13 +210,29 @@ final class ClaudeAISessionRefusalTests: XCTestCase {
     /// The wording behind that marker, on the surface a person reads.
     @MainActor
     func testThePopoverNamesTheClaudeAISignIn() {
-        XCTAssertEqual(
+        let verdict = ProviderPopoverHeader.accountHealthText(
+            status: .degraded,
+            issue: .authenticationRequired,
+            credential: .claudeAI
+        )
+        XCTAssertTrue(
+            verdict.contains("Claude.ai"),
+            "\(verdict) does not name the browser sign-in, so it cannot "
+                + "send anyone to the screen that repairs it"
+        )
+        XCTAssertNotEqual(
+            verdict,
             ProviderPopoverHeader.accountHealthText(
                 status: .degraded,
                 issue: .authenticationRequired,
-                credential: .claudeAI
+                credential: .claudeCode
             ),
-            "Claude.ai sign-in needs attention"
+            "both credentials got the same verdict, which is the defect "
+                + "this names its way out of"
+        )
+        XCTAssertFalse(
+            verdict.hasPrefix("popover.normalized."),
+            "\(verdict) fell through to its localization key"
         )
     }
 
