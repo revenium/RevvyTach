@@ -134,32 +134,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // Complete or retry the verified legacy credential/profile migration
         // before any normal profile hydration or first-launch decisions.
-        let profileMigrationSucceeded =
-            ProfileMigrationService.shared.migrateIfNeeded()
+        _ = ProfileMigrationService.shared.migrateIfNeeded()
 
         // Copy any profile credential still sitting in the legacy file
         // Keychain into the data-protection Keychain now that this build can
         // use it. Additive only; see the service's own documentation.
-        let keychainDomainMigrationSucceeded =
-            ProfileKeychainDomainMigrationService.shared.migrateIfNeeded()
+        _ = ProfileKeychainDomainMigrationService.shared.migrateIfNeeded()
 
-        providerUICompositionRoot.profileManager
-            .configureClaudeAccountUpgradeClassification(
-                startupMigrationsSucceeded: profileMigrationSucceeded
-                    && keychainDomainMigrationSucceeded,
-                classifier: {
-                    profiles,
-                    isProfileIdentitySetAuthoritative,
-                    isAuthoritative in
-                    _ = SharedDataStore.shared
-                        .classifyClaudeAccountsForUpgradeOnce(
-                            profiles,
-                            isProfileIdentitySetAuthoritative:
-                                isProfileIdentitySetAuthoritative,
-                            isAuthoritative: isAuthoritative
-                        )
-                }
-            )
+        // The 4.1 upgrade cohort is retired, not merely ignored. It existed
+        // to explain, once, that a browser sign-in had become necessary for a
+        // terminal-only profile. That is no longer true — a terminal-only
+        // profile is fully supported and renews itself — so the banner must
+        // never appear again, including for profiles already recorded in the
+        // stored set. Leaving the set behind is how it comes back the moment
+        // anyone re-adds a reader. Nothing classifies profiles into it any
+        // more, so `configureClaudeAccountUpgradeClassification` is no longer
+        // wired up here.
+        //
+        // One-way: back up `com.revenium.RevvyTach.plist` before first launch
+        // of a build carrying this if the old classification matters to you.
+        // Both migrations above still run for their own sake; only the
+        // upgrade classification consumed their success flags.
+        SharedDataStore.shared.retireClaudeAccountUpgradeClassificationV42()
 
         // Self-heal a CODEX_HOME pointer left behind by a since-deleted
         // directory (e.g. an external drive that's now unmounted) before any

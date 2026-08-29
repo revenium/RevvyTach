@@ -39,7 +39,7 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
         XCTAssertEqual(ClaudeSetupState.of(profile), .none)
     }
 
-    func testOnlyTerminalOnlyClaudeProfilesNeedPersistentAttention() {
+    func testOnlyProfilesWithNeitherSignInNeedAttention() {
         let terminalOnly = Profile(
             name: "Terminal",
             cliCredentialsJSON: "{}",
@@ -65,8 +65,14 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
             cliCredentialsJSON: "{}",
             hasCliAccount: true
         )
+        let neither = Profile(name: "Neither")
 
-        XCTAssertTrue(
+        // The inversion. A terminal-only profile produces every usage
+        // number from its Claude Code sign-in and renews that sign-in
+        // unaided, so warning about it told people to fix a working
+        // profile. Only a profile with neither sign-in can produce
+        // nothing.
+        XCTAssertFalse(
             ClaudeAccountAttention.isSetupIncomplete(terminalOnly)
         )
         XCTAssertFalse(
@@ -75,8 +81,26 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
         XCTAssertFalse(
             ClaudeAccountAttention.isSetupIncomplete(complete)
         )
+        XCTAssertTrue(
+            ClaudeAccountAttention.isSetupIncomplete(neither)
+        )
         XCTAssertFalse(
             ClaudeAccountAttention.isSetupIncomplete(codex)
+        )
+
+        // The soft case is a recommendation, never a warning, and the two
+        // predicates must never both be true for one profile.
+        XCTAssertTrue(
+            ClaudeAccountAttention.isMissingTerminalSignIn(browserOnly)
+        )
+        XCTAssertFalse(
+            ClaudeAccountAttention.isMissingTerminalSignIn(terminalOnly)
+        )
+        XCTAssertFalse(
+            ClaudeAccountAttention.isMissingTerminalSignIn(complete)
+        )
+        XCTAssertFalse(
+            ClaudeAccountAttention.isMissingTerminalSignIn(neither)
         )
     }
 
@@ -125,9 +149,13 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
             ClaudeAccountView.terminalSummaryHealth(complete),
             .working
         )
+        // Was `.workingNotRenewable`. That state only existed because the
+        // app refused to renew a Claude Code login without a browser
+        // sign-in; it renews it, so a terminal-only profile is simply
+        // working.
         XCTAssertEqual(
             ClaudeAccountView.terminalSummaryHealth(terminalOnly),
-            .workingNotRenewable
+            .working
         )
     }
 
@@ -200,45 +228,46 @@ final class ClaudeSetupStateTests: HostedAppTestCase {
         )
     }
 
-    func testTerminalOnlyDetailDistinguishesKnownAndUnknownExpiry() {
+    func testTerminalOnlyDetailReportsRenewalRatherThanACountdown() {
         let now = Date()
         let futureMilliseconds = now.addingTimeInterval(7_200)
             .timeIntervalSince1970 * 1_000
-        let known = Profile(
-            name: "Known",
+        let profile = Profile(
+            name: "Terminal only",
             cliCredentialsJSON:
                 #"{"claudeAiOauth":{"accessToken":"working","expiresAt":\#(futureMilliseconds)}}"#,
             hasCliAccount: true,
-            cliAccountName: "work"
-        )
-        let unknown = Profile(
-            name: "Unknown",
-            cliCredentialsJSON:
-                #"{"claudeAiOauth":{"accessToken":"working"}}"#,
-            hasCliAccount: true,
+            cliAccountSyncedAt: now.addingTimeInterval(-60),
             cliAccountName: "work"
         )
 
-        let knownDetail = ClaudeAccountView.terminalDetail(
-            known,
+        let detail = ClaudeAccountView.terminalDetail(
+            profile,
             setupState: .terminalOnly,
             now: now
         )
-        let unknownDetail = ClaudeAccountView.terminalDetail(
-            unknown,
-            setupState: .terminalOnly,
-            now: now
-        )
-        XCTAssertTrue(knownDetail.contains("expires in"), knownDetail)
+
+        // The countdown is gone with the state that justified it. A
+        // terminal-only profile now takes the ordinary "last renewed"
+        // detail, the same one a fully set-up profile takes.
+        XCTAssertFalse(detail.contains("expires in"), detail)
+        XCTAssertTrue(detail.contains("work"), detail)
         XCTAssertEqual(
-            unknownDetail,
-            String(
-                format: "claude_account.terminal.expiry_unknown_detail"
-                    .localized,
-                "work"
+            detail,
+            ClaudeAccountView.terminalDetail(
+                Profile(
+                    name: "Complete",
+                    claudeSessionKey: "browser",
+                    organizationId: "org",
+                    cliCredentialsJSON: profile.cliCredentialsJSON,
+                    hasCliAccount: true,
+                    cliAccountSyncedAt: profile.cliAccountSyncedAt,
+                    cliAccountName: "work"
+                ),
+                setupState: .complete,
+                now: now
             )
         )
-        XCTAssertFalse(unknownDetail.contains("written back"), unknownDetail)
     }
 
     @MainActor

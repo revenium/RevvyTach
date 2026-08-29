@@ -2967,9 +2967,10 @@ class MenuBarManager: NSObject, ObservableObject {
         let snapshot = profileUsagePresentations[profile.id]
         let setupState = snapshot?.claudeSetupState
             ?? profileManager.claudeSetupState(for: profile)
+        let usage = snapshot?.claudeUsage ?? profile.claudeUsage
         let credential = MenuBarAttentionSignal.attention(
-            cliSignInIssue: (snapshot?.claudeUsage ?? profile.claudeUsage)?
-                .personalExtraUsageIssue,
+            cliSignInIssue: usage?.personalExtraUsageIssue,
+            browserSignInIssue: usage?.browserSignInIssue,
             credentialFailureStreak: {
                 guard let failure = snapshot?.currentFailure,
                       failure.isCredentialFailure else { return 0 }
@@ -2980,7 +2981,8 @@ class MenuBarManager: NSObject, ObservableObject {
                 return failure.sameKindConsecutiveCount
             }(),
             healthStatus: snapshot?.report?.health.status,
-            setupState: setupState
+            setupState: setupState,
+            hasAPIConsoleCredentials: profile.hasAPIConsole
         )
         return credential
     }

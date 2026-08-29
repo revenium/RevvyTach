@@ -88,10 +88,27 @@ enum LegacyPopoverBanner: Equatable {
     case credentialError
     case setupIncomplete
     /// The profile's Claude Code account is signed out or its sign-in no
-    /// longer works. Ranked below `credentialError` on purpose: the claude.ai
-    /// credential produces every number on screen, this one produces a single
-    /// row, so when both are broken the popover names the bigger loss first.
+    /// longer works. Ranked ABOVE `browserSignInBroken` on purpose: the
+    /// Claude Code credential produces every number on screen, the browser
+    /// one produces a single row, so when both are broken the popover names
+    /// the bigger loss first.
+    ///
+    /// That ranking is the reverse of what it was, and so is the reasoning
+    /// this comment used to carry. Under CLI-first the claude.ai credential
+    /// is the one that costs a single row. Leaving the old comment in place
+    /// would have documented the opposite of the code it sits on, in a file
+    /// whose entire design rationale lives in comments.
     case cliSignInBroken(CLISignInProblem)
+    /// claude.ai refused the browser sign-in. The percentages on screen come
+    /// from the Claude Code sign-in and keep updating; what is lost is the
+    /// organization-wide extra-usage row.
+    ///
+    /// This needs a banner of its own precisely because it no longer fails
+    /// the refresh. `credentialError` is raised from a refresh that failed
+    /// `.unauthenticated`, which a browser-only profile still reaches — but a
+    /// profile with a working Claude Code sign-in never does, so without this
+    /// case a dead cookie would go unmentioned everywhere.
+    case browserSignInBroken
     case refreshFailed(count: Int)
     case stale(minutesAgo: Int)
 
@@ -113,6 +130,8 @@ enum LegacyPopoverBanner: Equatable {
             // The mirror image of the case above, and the same trap: Settings
             // at large would let someone update their claude.ai session key
             // and watch a Claude Code complaint survive it untouched.
+            return .claudeAccount
+        case .browserSignInBroken:
             return .claudeAccount
         case .refreshFailed, .stale:
             return .refresh
@@ -150,6 +169,8 @@ enum LegacyPopoverBanner: Equatable {
             case .unusable:
                 return "popover.banner.cli_sign_in_unusable".localized
             }
+        case .browserSignInBroken:
+            return "popover.banner.browser_sign_in_expired".localized
         case .refreshFailed(let count):
             return String(
                 format: "popover.banner.refresh_failed".localized,
@@ -167,11 +188,22 @@ enum LegacyPopoverBanner: Equatable {
         sessionOnlyCredentialCount: Int = 0,
         hasCredentialError: Bool,
         setupState: ClaudeSetupState? = nil,
+        /// Whether the profile holds Console API credentials. A Console API
+        /// profile has credentials and shows figures — billing rather than
+        /// usage — and neither Claude sign-in applies to it, so it reads as
+        /// `.none` without being unconfigured. It never raised this banner
+        /// while the trigger was `.terminalOnly`, and narrowing the trigger
+        /// to `.none` must not start accusing it.
+        hasAPIConsoleCredentials: Bool = false,
         /// The profile's own Claude Code verdict, straight off the last
         /// reading. Defaulted so the call sites that are only exercising the
         /// claude.ai-side precedence don't have to restate "no CLI problem";
         /// `CLISignInProblem.init?` decides which values mean anything.
         cliSignInIssue: ClaudeUsage.PersonalExtraUsageIssue? = nil,
+        /// The profile's own claude.ai verdict from its last reading. Only
+        /// `.expired` raises a banner; `.temporarilyUnavailable` is retried
+        /// unaided and says nothing about the credential.
+        browserSignInIssue: ClaudeUsage.BrowserSignInIssue? = nil,
         consecutiveRefreshFailures: Int,
         lastSuccessfulRefreshTime: Date?,
         now: Date
@@ -181,14 +213,33 @@ enum LegacyPopoverBanner: Equatable {
                 count: sessionOnlyCredentialCount
             )
         }
-        if setupState == .terminalOnly {
+        // `.none` only. A terminal-only profile used to raise this and rank
+        // it above a real credential error, so the one surface a person looks
+        // at complained about setup while an actually broken sign-in went
+        // unnamed underneath it.
+        // `ClaudeSetupState.isExactlyNone` — the same shared predicate
+        // `MenuBarAttentionSignal.attention` uses, and for the same reason:
+        // see its doc for why the bare `setupState == .none` is an
+        // ambiguity trap on an optional.
+        if ClaudeSetupState.isExactlyNone(setupState),
+           !hasAPIConsoleCredentials {
             return .setupIncomplete
+        }
+        // The Claude Code sign-in comes first, because it takes every number
+        // on screen with it. This used to sit below `credentialError`, so
+        // when both credentials were broken the popover named the claude.ai
+        // one — which was the bigger loss then and is the smaller one now.
+        // The menu-bar marker applies the same order; the two surfaces
+        // disagreeing about which failure matters more would be worse than
+        // either ordering.
+        if let problem = CLISignInProblem(cliSignInIssue) {
+            return .cliSignInBroken(problem)
         }
         if hasCredentialError {
             return .credentialError
         }
-        if let problem = CLISignInProblem(cliSignInIssue) {
-            return .cliSignInBroken(problem)
+        if browserSignInIssue == .expired {
+            return .browserSignInBroken
         }
         if consecutiveRefreshFailures >= 3 {
             return .refreshFailed(
@@ -471,8 +522,12 @@ struct PopoverContentView: View {
                         .claudeSetupState
                         ?? profileManager.claudeSetupState(for: $0)
                 },
+                hasAPIConsoleCredentials:
+                    displayedProfile?.hasAPIConsole ?? false,
                 cliSignInIssue: presentation.legacyClaudeUsage?
                     .personalExtraUsageIssue,
+                browserSignInIssue: presentation.legacyClaudeUsage?
+                    .browserSignInIssue,
                 consecutiveRefreshFailures:
                     manager.consecutiveRefreshFailures,
                 lastSuccessfulRefreshTime:
@@ -593,6 +648,20 @@ struct PopoverContentView: View {
                     // claude.ai banner above was fixed for: the user arrives
                     // at a screen with nothing on it that can clear what they
                     // just read.
+                    onTap: {
+                        navigationActions.claudeAccount(displayedProfile?.id)
+                    }
+                )
+            case .browserSignInBroken:
+                StatusBannerView(
+                    icon: "person.crop.circle.badge.exclamationmark",
+                    message: banner.message,
+                    color: .orange,
+                    lineLimit: 4,
+                    // Settings → Claude Account, matching `banner.action`,
+                    // for the same reason the two banners above route there:
+                    // Settings at large has nothing on it that can clear what
+                    // the reader just read.
                     onTap: {
                         navigationActions.claudeAccount(displayedProfile?.id)
                     }
@@ -1500,6 +1569,12 @@ extension NormalizedUsagePresentation {
         case .credentialError:
             kindToStrip = .unauthenticated
         case .setupIncomplete:
+            return self
+        case .browserSignInBroken:
+            // Nothing to strip, for the same reason as `cliSignInBroken`
+            // below: the notice this coexists with is raised by any degraded
+            // cause, and the extra-usage footnote explains a different
+            // figure than the banner does.
             return self
         case .cliSignInBroken:
             // Nothing to strip. The `.degraded` notice this coexists with is

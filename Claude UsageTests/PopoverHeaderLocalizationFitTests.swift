@@ -144,28 +144,124 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
         }
     }
 
-    func testSetupIncompleteBannerFitsItsFourLineSurface() throws {
+    /// The two banners rendered with `lineLimit(4)`. Measured together so a
+    /// new one is held to the same budget as the one it sits beside.
+    private static let fourLineBannerKeys = [
+        "popover.banner.setup_incomplete",
+        "popover.banner.browser_sign_in_expired"
+    ]
+
+    func testFourLineBannersFitTheirSurfaceInEveryLocale() throws {
         let font = NSFont.systemFont(ofSize: 11, weight: .medium)
         let fourLineHeight = ceil(font.ascender - font.descender
             + font.leading) * 4
         for locale in Self.locales {
-            let message = try string(
-                "popover.banner.setup_incomplete",
-                locale
-            )
-            let measured = wrappedHeight(
-                message,
-                width: Self.bannerTextWidth,
-                size: 11,
-                weight: .medium
-            )
-            XCTAssertLessThanOrEqual(
-                measured,
-                fourLineHeight,
-                "\(locale) truncates setup-incomplete banner — "
-                    + "\(Int(measured))pt high against a four-line "
-                    + "\(Int(fourLineHeight))pt limit"
-            )
+            for key in Self.fourLineBannerKeys {
+                let message = try string(key, locale)
+                let measured = wrappedHeight(
+                    message,
+                    width: Self.bannerTextWidth,
+                    size: 11,
+                    weight: .medium
+                )
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    fourLineHeight,
+                    "\(locale) truncates \(key) — "
+                        + "\(Int(measured))pt high against a four-line "
+                        + "\(Int(fourLineHeight))pt limit"
+                )
+            }
+        }
+    }
+
+    /// The Claude Account page's verdict card. Its four verdicts changed with
+    /// CLI-first and six of the nine catalogues grew, so they are measured
+    /// rather than counted — the recorded finding on this repo is that
+    /// character counts predicted two truncations where measurement found
+    /// six.
+    ///
+    /// Width is the real one: a 720pt settings window, less the 190pt
+    /// sidebar, less the page's 20pt horizontal padding on each side, less
+    /// the card's 16pt (`Spacing.lg`) padding on each side, less the 15pt
+    /// leading symbol and the 8pt (`Spacing.md`) gap after it.
+    private static let verdictTextWidth: CGFloat = {
+        let windowWidth: CGFloat = 720
+        let sidebarWidth: CGFloat = 190
+        let pageHorizontalPadding: CGFloat = 20
+        let cardHorizontalPadding: CGFloat = 16
+        let leadingSymbolWidth: CGFloat = 15
+        let leadingSymbolGap: CGFloat = 8
+        return windowWidth
+            - sidebarWidth
+            - 2 * pageHorizontalPadding
+            - 2 * cardHorizontalPadding
+            - leadingSymbolWidth
+            - leadingSymbolGap
+    }()
+
+    /// Every verdict the summary card can show, plus the two status pills
+    /// added with them.
+    private static let accountVerdictKeys = [
+        "claude_account.summary.verdict.complete",
+        "claude_account.summary.verdict.browser_only",
+        "claude_account.summary.verdict.terminal_only",
+        "claude_account.summary.verdict.none",
+        "claude_account.subtitle",
+        "claude_account.browser.missing_detail",
+        "claude_account.summary.status.optional",
+        "claude_account.summary.status.recommended",
+        "claude_account.summary.verdict.browser_needs_attention"
+    ]
+
+    func testClaudeAccountVerdictsFitTheirCardInEveryLocale() throws {
+        let font = NSFont.systemFont(ofSize: 13)
+        let fourLineHeight = ceil(font.ascender - font.descender
+            + font.leading) * 4
+        for locale in Self.locales {
+            for key in Self.accountVerdictKeys {
+                let verdict = try string(key, locale)
+                let measured = wrappedHeight(
+                    verdict,
+                    width: Self.verdictTextWidth,
+                    size: 13
+                )
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    fourLineHeight,
+                    "\(locale) overflows \(key) — \(Int(measured))pt high "
+                        + "against a four-line \(Int(fourLineHeight))pt "
+                        + "budget in \(Int(Self.verdictTextWidth))pt"
+                )
+            }
+        }
+    }
+
+    /// The two status pills sit inline beside a row title, so they are held
+    /// to a width rather than a height.
+    func testStatusPillsFitBesideTheirRowTitleInEveryLocale() throws {
+        // Row title, an 8pt gap, the pill's 7pt horizontal padding on each
+        // side, and the action button's own share of the row.
+        let pillBudget: CGFloat = 140
+        for locale in Self.locales {
+            for key in [
+                "claude_account.summary.status.optional",
+                "claude_account.summary.status.recommended",
+                "claude_account.summary.status.working",
+                "claude_account.summary.status.needs_attention",
+                "claude_account.summary.status.not_linked",
+                "claude_account.summary.status.missing"
+            ] {
+                let pill = try string(key, locale)
+                let measured = width(pill, size: 10, weight: .semibold)
+                    + 2 * 7
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    pillBudget,
+                    "\(locale) overflows the \(key) pill — "
+                        + "\(Int(measured))pt in \(Int(pillBudget))pt"
+                )
+            }
         }
     }
 

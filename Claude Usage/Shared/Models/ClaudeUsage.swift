@@ -57,11 +57,24 @@ struct ClaudeUsage: Codable, Equatable {
     // Weekly data (Opus only)
     var opusWeeklyTokensUsed: Int
     var opusWeeklyPercentage: Double
+    /// Whether the usage API reported an Opus weekly limit for this account.
+    ///
+    /// The same discipline as `fableWeeklyLimitAvailable`, and for the same
+    /// reason: the row used to be shown whenever `opusWeeklyTokensUsed > 0`,
+    /// which silently conflated "no Opus entitlement on this plan" with "Opus
+    /// measured at exactly 0%" — and, once a null legacy key could shadow a
+    /// good `limits` entry, drew a confident 0% for a figure the account
+    /// never received. An absent figure hides its row; a measured zero shows
+    /// one.
+    var opusWeeklyLimitAvailable: Bool
 
     // Weekly data (Sonnet only)
     var sonnetWeeklyTokensUsed: Int
     var sonnetWeeklyPercentage: Double
     var sonnetWeeklyResetTime: Date?
+    /// Whether the usage API reported a Sonnet weekly limit for this account.
+    /// See `opusWeeklyLimitAvailable`.
+    var sonnetWeeklyLimitAvailable: Bool
 
     // Weekly data (Fable only)
     var fableWeeklyTokensUsed: Int
@@ -218,6 +231,33 @@ struct ClaudeUsage: Codable, Equatable {
     /// asked for (the per-profile extra-usage preference is off).
     var organizationExtraUsageIssue: OrganizationExtraUsageIssue?
 
+    /// Why the claude.ai browser sign-in did not answer, when it did not.
+    ///
+    /// This exists because a refused browser sign-in no longer fails the
+    /// refresh. Under CLI-first the Claude Code sign-in produces every
+    /// percentage on screen, so claude.ai being refused costs exactly one
+    /// row — the organization-wide extra usage — and the numbers stay live.
+    /// That is the desired behaviour, and it has a cost: the refresh failure
+    /// that used to drive the menu-bar marker and the popover banner never
+    /// happens, so without a verdict recorded here a dead browser cookie
+    /// would produce no signal anywhere at all.
+    ///
+    /// Follows the same discipline as `PersonalExtraUsageIssue`: settled and
+    /// transient outcomes stay silent, and only `expired` raises a marker.
+    enum BrowserSignInIssue: String, Codable, Equatable {
+        /// The session key was rejected: HTTP 401, or claude.ai's HTTP 403
+        /// carrying `account_session_invalid`. Actionable — sign in again.
+        case expired
+        /// Offline, timed out, rate limited, 5xx, an ordinary 403, or a body
+        /// that would not decode. Retried unaided, and says nothing about the
+        /// credential.
+        case temporarilyUnavailable
+    }
+
+    /// Nil when the browser sign-in answered, or when there is no browser
+    /// sign-in on this profile to ask.
+    var browserSignInIssue: BrowserSignInIssue?
+
     // Overage credit grant balance
     var overageBalance: Double?
     var overageBalanceCurrency: String?
@@ -243,9 +283,11 @@ struct ClaudeUsage: Codable, Equatable {
         weeklyPercentageAvailable: Bool = true,
         opusWeeklyTokensUsed: Int,
         opusWeeklyPercentage: Double,
+        opusWeeklyLimitAvailable: Bool = false,
         sonnetWeeklyTokensUsed: Int,
         sonnetWeeklyPercentage: Double,
         sonnetWeeklyResetTime: Date?,
+        sonnetWeeklyLimitAvailable: Bool = false,
         fableWeeklyTokensUsed: Int,
         fableWeeklyPercentage: Double,
         fableWeeklyResetTime: Date?,
@@ -259,6 +301,7 @@ struct ClaudeUsage: Codable, Equatable {
         personalCostCurrency: String? = nil,
         personalExtraUsageIssue: PersonalExtraUsageIssue? = nil,
         organizationExtraUsageIssue: OrganizationExtraUsageIssue? = nil,
+        browserSignInIssue: BrowserSignInIssue? = nil,
         overageBalance: Double? = nil,
         overageBalanceCurrency: String? = nil,
         lastUpdated: Date,
@@ -276,9 +319,11 @@ struct ClaudeUsage: Codable, Equatable {
         self.weeklyPercentageAvailable = weeklyPercentageAvailable
         self.opusWeeklyTokensUsed = opusWeeklyTokensUsed
         self.opusWeeklyPercentage = opusWeeklyPercentage
+        self.opusWeeklyLimitAvailable = opusWeeklyLimitAvailable
         self.sonnetWeeklyTokensUsed = sonnetWeeklyTokensUsed
         self.sonnetWeeklyPercentage = sonnetWeeklyPercentage
         self.sonnetWeeklyResetTime = sonnetWeeklyResetTime
+        self.sonnetWeeklyLimitAvailable = sonnetWeeklyLimitAvailable
         self.fableWeeklyTokensUsed = fableWeeklyTokensUsed
         self.fableWeeklyPercentage = fableWeeklyPercentage
         self.fableWeeklyResetTime = fableWeeklyResetTime
@@ -292,6 +337,7 @@ struct ClaudeUsage: Codable, Equatable {
         self.personalCostCurrency = personalCostCurrency
         self.personalExtraUsageIssue = personalExtraUsageIssue
         self.organizationExtraUsageIssue = organizationExtraUsageIssue
+        self.browserSignInIssue = browserSignInIssue
         self.overageBalance = overageBalance
         self.overageBalanceCurrency = overageBalanceCurrency
         self.lastUpdated = lastUpdated
@@ -329,6 +375,18 @@ struct ClaudeUsage: Codable, Equatable {
         sonnetWeeklyTokensUsed = try container.decode(Int.self, forKey: .sonnetWeeklyTokensUsed)
         sonnetWeeklyPercentage = try container.decode(Double.self, forKey: .sonnetWeeklyPercentage)
         sonnetWeeklyResetTime = try container.decodeIfPresent(Date.self, forKey: .sonnetWeeklyResetTime)
+        // Records written before these flags existed carry no value. The
+        // fallback reproduces the old display rule exactly — the row was
+        // shown when tokens were above zero — so a cached record keeps
+        // rendering what it rendered before the upgrade.
+        opusWeeklyLimitAvailable = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .opusWeeklyLimitAvailable
+        ) ?? (opusWeeklyTokensUsed > 0)
+        sonnetWeeklyLimitAvailable = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .sonnetWeeklyLimitAvailable
+        ) ?? (sonnetWeeklyTokensUsed > 0)
         fableWeeklyTokensUsed = try container.decodeIfPresent(Int.self, forKey: .fableWeeklyTokensUsed) ?? 0
         fableWeeklyPercentage = try container.decodeIfPresent(Double.self, forKey: .fableWeeklyPercentage) ?? 0
         fableWeeklyResetTime = try container.decodeIfPresent(Date.self, forKey: .fableWeeklyResetTime)
@@ -351,6 +409,10 @@ struct ClaudeUsage: Codable, Equatable {
         organizationExtraUsageIssue = try container.decodeIfPresent(
             OrganizationExtraUsageIssue.self,
             forKey: .organizationExtraUsageIssue
+        )
+        browserSignInIssue = try container.decodeIfPresent(
+            BrowserSignInIssue.self,
+            forKey: .browserSignInIssue
         )
         overageBalance = try container.decodeIfPresent(Double.self, forKey: .overageBalance)
         overageBalanceCurrency = try container.decodeIfPresent(String.self, forKey: .overageBalanceCurrency)

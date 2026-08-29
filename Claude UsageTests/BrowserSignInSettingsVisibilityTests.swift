@@ -144,16 +144,16 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
         )
     }
 
-    func testAMissingBrowserSignInKeepsTheSetupWording() {
-        // There is no browser sign-in to have stopped working, and those two
-        // verdicts already name the step that fixes them.
+    func testAnAbsentBrowserSignInIsNeverReportedAsBroken() {
+        // There is no browser sign-in to have stopped working, so the health
+        // input must not reach either surface.
         for state: ClaudeSetupState in [.terminalOnly, .none] {
-            XCTAssertEqual(
+            XCTAssertNotEqual(
                 ClaudeSignInSummaryView.browserStatus(
                     state: state,
                     browserHealth: .needsAttention
                 ),
-                .missing
+                .needsAttention
             )
             XCTAssertNotEqual(
                 ClaudeSignInSummaryView.verdict(
@@ -163,6 +163,54 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
                 "claude_account.summary.verdict.browser_needs_attention"
             )
         }
+
+        // The two states say different things about that absence now. A
+        // terminal-only profile is complete — its Claude Code sign-in
+        // produces every number — so its browser row reads "Optional" and
+        // its verdict is the green one. Only a profile with neither sign-in
+        // is missing anything.
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.browserStatus(
+                state: .terminalOnly,
+                browserHealth: .needsAttention
+            ),
+            .optional
+        )
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.verdict(
+                state: .terminalOnly,
+                browserHealth: .working
+            ).localizationKey,
+            "claude_account.summary.verdict.terminal_only"
+        )
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.browserStatus(
+                state: ClaudeSetupState.none,
+                browserHealth: .needsAttention
+            ),
+            .missing
+        )
+    }
+
+    /// The Claude Code row's own two states, which moved with the same
+    /// change: it is what produces every number now, so a browser-only
+    /// profile is nudged to add it rather than told nothing.
+    func testTheTerminalRowIsRecommendedOnABrowserOnlyProfile() {
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.verdict(
+                state: .browserOnly,
+                browserHealth: .working
+            ).localizationKey,
+            "claude_account.summary.verdict.browser_only"
+        )
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.Status.recommended.localizationKey,
+            "claude_account.summary.status.recommended"
+        )
+        XCTAssertEqual(
+            ClaudeSignInSummaryView.Status.optional.localizationKey,
+            "claude_account.summary.status.optional"
+        )
     }
 
     func testTheBrokenBrowserVerdictNamesTheRepairInEveryLocale() throws {
@@ -247,13 +295,14 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
     }
 
     func testMissingOutranksBrokenInTheSidebarBadge() {
-        // A terminal-only profile has no browser sign-in to be broken, and
-        // "Incomplete" names the step that repairs it.
-        let terminalOnly = Profile(name: "Terminal only", hasCliAccount: true)
+        // "Incomplete" now means neither sign-in, and it still outranks
+        // broken: a profile with nothing linked has no browser sign-in to be
+        // broken, and its badge names the step that repairs it.
+        let neither = Profile(name: "Neither")
 
         XCTAssertEqual(
             ClaudeAccountAttention.badge(
-                terminalOnly,
+                neither,
                 browserSignInNeedsAttention: true
             ),
             .setupIncomplete
@@ -261,6 +310,17 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
         XCTAssertEqual(
             ClaudeAccountAttention.Badge.setupIncomplete.localizationKey,
             "claude_account.incomplete_badge"
+        )
+
+        // A terminal-only profile is no longer badged at all. It is
+        // complete, and it holds no browser sign-in that could be the thing
+        // the relay is complaining about — so neither badge applies.
+        let terminalOnly = Profile(name: "Terminal only", hasCliAccount: true)
+        XCTAssertNil(
+            ClaudeAccountAttention.badge(
+                terminalOnly,
+                browserSignInNeedsAttention: true
+            )
         )
     }
 

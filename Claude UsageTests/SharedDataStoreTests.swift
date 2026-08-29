@@ -81,6 +81,13 @@ final class SharedDataStoreTests: XCTestCase {
             [terminalOnlyID]
         )
         XCTAssertTrue(
+            sharedDataStore.terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .contains(terminalOnlyID)
+        )
+        // The reader is retired and answers false for everyone, including a
+        // profile that IS in the stored set. That is the point: the 4.1
+        // banner said a browser sign-in had become required, and it has not.
+        XCTAssertFalse(
             sharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(
                 terminalOnlyID
             )
@@ -194,6 +201,83 @@ final class SharedDataStoreTests: XCTestCase {
         XCTAssertFalse(
             defaults!.bool(forKey: "didClassifyClaudeAccountUpgradeV41")
         )
+    }
+
+    /// Retirement removes the cohort rather than ignoring it. Making the
+    /// reader answer false is not enough on its own: a stored set left behind
+    /// is a live population of profiles one code change away from seeing a
+    /// banner about a requirement that no longer exists.
+    func testRetiringTheUpgradeCohortRemovesAllThreeStoredKeys() {
+        let terminalOnly = Profile(
+            name: "Legacy terminal",
+            cliCredentialsJSON:
+                #"{"claudeAiOauth":{"accessToken":"token"}}"#,
+            hasCliAccount: true
+        )
+        XCTAssertEqual(
+            sharedDataStore.classifyClaudeAccountsForUpgradeOnce(
+                [terminalOnly]
+            ),
+            [terminalOnly.id]
+        )
+        XCTAssertTrue(
+            defaults!.bool(forKey: "didClassifyClaudeAccountUpgradeV41")
+        )
+
+        sharedDataStore.retireClaudeAccountUpgradeClassificationV42()
+
+        XCTAssertNil(
+            defaults!.object(forKey: "didClassifyClaudeAccountUpgradeV41")
+        )
+        XCTAssertNil(
+            defaults!.object(
+                forKey: "claudeAccountUpgradeBoundaryProfileIDsV41"
+            )
+        )
+        XCTAssertNil(
+            defaults!.object(
+                forKey: "terminalOnlyClaudeAccountUpgradeProfileIDsV41"
+            )
+        )
+        XCTAssertTrue(
+            sharedDataStore.terminalOnlyClaudeAccountUpgradeProfileIDs()
+                .isEmpty
+        )
+        XCTAssertFalse(
+            sharedDataStore.wasTerminalOnlyAtClaudeAccountUpgrade(
+                terminalOnly.id
+            )
+        )
+        XCTAssertTrue(
+            defaults!.bool(forKey: "didRetireClaudeAccountUpgradeV42")
+        )
+    }
+
+    /// One-shot. A second run must not undo a later classification, and must
+    /// not thrash the defaults on every launch.
+    func testRetirementRunsOnlyOnce() {
+        sharedDataStore.retireClaudeAccountUpgradeClassificationV42()
+        defaults!.set(true, forKey: "didClassifyClaudeAccountUpgradeV41")
+
+        sharedDataStore.retireClaudeAccountUpgradeClassificationV42()
+
+        XCTAssertTrue(
+            defaults!.bool(forKey: "didClassifyClaudeAccountUpgradeV41"),
+            "the second call must be a no-op"
+        )
+    }
+
+    /// The wizard and first-run flags are untouched. This is a retirement,
+    /// not a re-onboarding: wiping them would put every existing user back
+    /// through setup.
+    func testRetirementLeavesTheFirstRunFlagsAlone() {
+        sharedDataStore.saveHasCompletedSetup(true)
+        sharedDataStore.markWizardShown()
+
+        sharedDataStore.retireClaudeAccountUpgradeClassificationV42()
+
+        XCTAssertTrue(sharedDataStore.hasCompletedSetup())
+        XCTAssertTrue(sharedDataStore.hasShownWizardOnce())
     }
 
     // MARK: - GitHub Star Prompt Tests

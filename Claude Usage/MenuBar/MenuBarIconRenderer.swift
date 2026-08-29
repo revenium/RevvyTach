@@ -2224,12 +2224,18 @@ struct MenuBarIconRenderer {
     /// between them never moves anything.
     ///
     /// The two credentials are told apart by SHAPE as well as colour — a
-    /// filled red disc for claude.ai, a hollow amber ring for Claude Code.
+    /// filled red disc for Claude Code, a hollow amber ring for claude.ai.
     /// Colour alone would carry no information for a red/green-colourblind
     /// viewer, and red-against-amber is one of the pairs that goes first;
-    /// solid-against-hollow survives both that and the 4pt size. Which is
-    /// which follows the loss: the solid mark, the one that reads as heavier,
-    /// belongs to the credential that takes every number on screen with it.
+    /// solid-against-hollow survives both that and the 4pt size.
+    ///
+    /// Which is which follows the loss: the solid mark, the one that reads as
+    /// heavier, belongs to the credential that takes every number on screen
+    /// with it. That assignment is the reverse of what it was, because the
+    /// loss is: under CLI-first the Claude Code sign-in produces every
+    /// percentage and every per-model row, and a refused claude.ai sign-in
+    /// costs one row while the numbers keep updating. The rule did not
+    /// change; the credential it points at did.
     func applyAttentionMarker(
         to image: NSImage,
         credential: MenuBarAttentionSignal.Credential,
@@ -2267,10 +2273,10 @@ struct MenuBarIconRenderer {
         halo.fill()
 
         switch credential {
-        case .claudeAI, .setupIncomplete:
+        case .claudeCode, .setupIncomplete:
             NSColor.systemRed.setFill()
             NSBezierPath(ovalIn: markerRect).fill()
-        case .claudeCode:
+        case .claudeAI:
             // The hole is punched rather than left unpainted. Whatever the
             // marker lands on — a digit, a bar, the halo just drawn — would
             // otherwise show through the middle and the ring would read as a

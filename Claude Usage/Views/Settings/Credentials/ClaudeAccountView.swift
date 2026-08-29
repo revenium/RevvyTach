@@ -151,12 +151,6 @@ struct ClaudeAccountView: View {
                     ) ?? .none
                     let terminalActions =
                         ClaudeTerminalAccountActions.forProfile(profile)
-                    if setupState == .terminalOnly,
-                       SharedDataStore.shared
-                        .wasTerminalOnlyAtClaudeAccountUpgrade(profile.id) {
-                        upgradeBanner
-                    }
-
                     ClaudeSignInSummaryView(
                         state: setupState,
                         browserDetail: Self.browserDetail(profile),
@@ -168,9 +162,11 @@ struct ClaudeAccountView: View {
                             profile.hasClaudeAI
                                 ? "claude_account.browser.sign_in_again".localized
                                 : "claude_account.browser.sign_in".localized,
-                            style: setupState == .terminalOnly
-                                ? .destructive
-                                : .standard,
+                            // Never destructive-styled. A terminal-only
+                            // profile is complete; a red button on the
+                            // browser row would be telling someone to fix
+                            // something that works.
+                            style: .standard,
                             action: {
                                 browserSheetTarget = .init(id: profile.id)
                             }
@@ -187,10 +183,7 @@ struct ClaudeAccountView: View {
                                 }
                             }
                         ),
-                        terminalHealth: Self.terminalSummaryHealth(
-                            profile,
-                            setupState: setupState
-                        ),
+                        terminalHealth: Self.terminalSummaryHealth(profile),
                         browserHealth: Self.browserSummaryHealth(
                             attention: attentionStore.credential(
                                 for: profile.id
@@ -381,33 +374,6 @@ struct ClaudeAccountView: View {
         }
     }
 
-    private var upgradeBanner: some View {
-        SettingsContentCard {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
-                HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text("claude_account.upgrade_banner.message".localized)
-                        .font(DesignTokens.Typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack {
-                    Button("claude_account.browser.sign_in".localized) {
-                        if let id = profileManager.activeClaudeProfile?.id {
-                            browserSheetTarget = .init(id: id)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    Button("claude_account.why_both.button".localized) {
-                        showWhyBoth = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-    }
-
     private var whyBothSheet: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
             SettingsPageHeader(
@@ -495,25 +461,11 @@ struct ClaudeAccountView: View {
         if terminalSignInIsExpired(profile) {
             return "cli.login_expired_explain".localized
         }
-        if (setupState ?? ClaudeSetupState.of(profile)) == .terminalOnly {
-            if let json = profile.cliCredentialsJSON,
-               let expiry = ClaudeCodeSyncService.shared.extractTokenExpiry(
-                   from: json
-               ) {
-                return String(
-                    format: "claude_account.terminal.nonrenewable_detail".localized,
-                    name,
-                    Self.durationFormatter.string(
-                        from: max(0, expiry.timeIntervalSinceNow)
-                    ) ?? "—"
-                )
-            }
-            return String(
-                format: "claude_account.terminal.expiry_unknown_detail"
-                    .localized,
-                name
-            )
-        }
+        // No terminal-only special case any more. That branch showed a
+        // countdown to expiry because the app refused to renew a Claude Code
+        // login without a browser sign-in — a restriction that never had a
+        // technical basis; `ClaudeCLITokenRefresher` never needed one. A
+        // terminal-only profile takes the ordinary "last renewed" path below.
         let renewed = profile.cliAccountSyncedAt.map {
             Self.relativeFormatter.localizedString(
                 for: $0,
@@ -533,9 +485,12 @@ struct ClaudeAccountView: View {
         } ?? false
     }
 
+    /// No longer takes the setup state. It used to return
+    /// `.workingNotRenewable` for a terminal-only profile, a state that only
+    /// existed because the app refused to renew a Claude Code login without a
+    /// browser sign-in. It renews it, so the state is gone.
     static func terminalSummaryHealth(
-        _ profile: Profile,
-        setupState: ClaudeSetupState? = nil
+        _ profile: Profile
     ) -> ClaudeTerminalSummaryHealth {
         if LegacyPopoverBanner.CLISignInProblem(
             profile.claudeUsage?.personalExtraUsageIssue
@@ -548,9 +503,7 @@ struct ClaudeAccountView: View {
         else {
             return .needsAttention
         }
-        return (setupState ?? ClaudeSetupState.of(profile)) == .terminalOnly
-            ? .workingNotRenewable
-            : .working
+        return .working
     }
 
     /// Whether the browser (claude.ai) sign-in row should say it needs
@@ -617,14 +570,6 @@ struct ClaudeAccountView: View {
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
-        return formatter
-    }()
-
-    private static let durationFormatter: DateComponentsFormatter = {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .abbreviated
-        formatter.maximumUnitCount = 2
         return formatter
     }()
 

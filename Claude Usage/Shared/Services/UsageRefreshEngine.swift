@@ -1226,34 +1226,26 @@ final class UsageRefreshRuntime {
                     apiFetch = nil
                 }
 
-                if profile.claudeSessionKey == nil {
-                    let preparedCoreRequest = OwnedAsyncPreparation {
-                        try await apiService
-                            .captureUsageRequestPreparingTerminalSignIn(
-                                for: profile
-                            )
-                    }
-                    return CapturedClaudeProviderRequest(
-                        coreFetch: {
-                            let coreRequest = try await preparedCoreRequest.value()
-                            return try await apiService.fetchUsageData(
-                                using: coreRequest
-                            )
-                        },
-                        apiFetch: apiFetch
-                    )
-                }
-
-                let coreRequest = Result {
-                    try apiService.captureUsageRequest(for: profile)
-                }
-                if apiRequest == nil {
-                    _ = try coreRequest.get()
+                // Every Claude profile goes through the preparing capture
+                // now, browser-backed ones included. The renewal machinery
+                // behind it — `forgetRenewalFailures`, `usableCLICredential`,
+                // `shieldedCLIRefresh`, `adoptLiveCLILogin` — used to run only
+                // for profiles with no browser sign-in, which was defensible
+                // while claude.ai produced the numbers. Under CLI-first the
+                // Claude Code sign-in produces them, so a browser-backed
+                // profile whose stored CLI token had gone stale would
+                // otherwise never attempt the renewal that fixes it.
+                let preparedCoreRequest = OwnedAsyncPreparation {
+                    try await apiService
+                        .captureUsageRequestPreparingTerminalSignIn(
+                            for: profile
+                        )
                 }
                 return CapturedClaudeProviderRequest(
                     coreFetch: {
-                        try await apiService.fetchUsageData(
-                            using: coreRequest.get()
+                        let coreRequest = try await preparedCoreRequest.value()
+                        return try await apiService.fetchUsageData(
+                            using: coreRequest
                         )
                     },
                     apiFetch: apiFetch

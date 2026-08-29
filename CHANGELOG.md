@@ -7,7 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Your usage numbers now come from your Claude Code sign-in, and the
+  claude.ai browser sign-in is optional.** The terminal sign-in produces the
+  session percentage, the weekly percentage, every per-model row and your own
+  extra usage, and RevvyTach renews it for you without needing the browser
+  sign-in at all. Adding the browser sign-in gets you one extra thing: your
+  organization's overall extra usage, and its name.
+
+  Two consequences worth knowing about. If you have both sign-ins, your
+  percentages may move: claude.ai reports the whole organization's figures
+  while Claude Code reports yours, and on a shared team those are genuinely
+  different numbers. And if one sign-in stops working, the other keeps
+  producing figures — a dead browser cookie now costs you the
+  organization-wide extra-usage row and nothing else, and the app names which
+  sign-in broke rather than going blank.
+
+- **A profile with only a Claude Code sign-in is complete.** It used to be
+  reported as "Setup incomplete" everywhere — a red badge in Settings, a
+  banner across the top of the popover, a warning on the Claude Account page,
+  and a one-time notice saying a browser sign-in had become required in 4.1.
+  None of that was true any more, and it outranked real problems: a profile
+  with an actually broken sign-in was told to finish its setup instead. Only a
+  profile with neither sign-in is now reported as incomplete, and the 4.1
+  notice is gone for good.
+
+- **"Working, not renewable" is gone from the Claude Account page.** That state
+  existed only because the app refused to renew a Claude Code sign-in unless a
+  browser sign-in was also linked. It renews it either way, so those sign-ins
+  now simply read as Working.
+
+- **The "browser sign-in has stopped working" message no longer says your
+  numbers are frozen.** They are not, once the Claude Code sign-in is doing the
+  reporting. It now says usage keeps updating and names what is actually lost:
+  your organization's extra usage.
+
+- **Setup starts with Claude Code.** The wizard asks for the terminal sign-in
+  first, then offers the browser sign-in with a "Skip — I only use Claude Code"
+  button. Previously the browser sign-in was step one with no way past it.
+
 ### Fixed
+
+- **A model you have no allowance for no longer reads as 0% used.** When the
+  usage response reported a model's weekly figure as empty, the app recorded a
+  confident, measured-looking zero — and, worse, that zero hid a perfectly good
+  figure for the same model elsewhere in the same response. Opus and Sonnet
+  rows now show a real figure when there is one, and hide themselves when there
+  is none, which is what the Fable row has always done.
 
 - **A signed-out browser account now says so instead of showing yesterday's
   numbers.** When a claude.ai sign-in stops working, claude.ai refuses every

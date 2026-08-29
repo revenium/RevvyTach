@@ -128,8 +128,9 @@ final class SetupWizardLocalizationFitTests: XCTestCase {
 
     func testDetectedFooterButtonsFitTogetherInEveryLocale() throws {
         for locale in Self.locales {
+            // No Back: the terminal sign-in is step 1 now, so there is
+            // nothing before it to go back to.
             let keys = [
-                "common.back",
                 "wizard.link_terminal.continue_without",
                 "wizard.link_terminal.link_continue"
             ]
@@ -146,6 +147,45 @@ final class SetupWizardLocalizationFitTests: XCTestCase {
                     + "\(Int(measured))pt in \(Int(Self.footerWidth))pt"
             )
         }
+    }
+
+    /// The browser step's footer, which gained the skip button when that step
+    /// became optional. Four buttons on one row is the tightest footer in the
+    /// wizard, and the skip label is the longest of the four in every locale.
+    func testBrowserStepFooterFitsWithTheSkipButtonInEveryLocale() throws {
+        for locale in Self.locales {
+            let keys = [
+                "common.back",
+                "common.cancel",
+                "wizard.link_terminal.skip_browser"
+            ]
+            let labels = try keys.map { try string($0, locale) }
+            let measured = labels.reduce(CGFloat.zero) {
+                $0 + width($1, size: 13) + Self.buttonChrome
+            } + Self.standardSpacing * CGFloat(labels.count - 1)
+
+            XCTAssertLessThanOrEqual(
+                measured,
+                Self.footerWidth,
+                "\(locale) truncates the browser-step footer "
+                    + "\"\(labels.joined(separator: " · "))\" — "
+                    + "\(Int(measured))pt in \(Int(Self.footerWidth))pt"
+            )
+        }
+    }
+
+    /// The step order itself, which is a product decision and had no
+    /// coverage at all. Claude Code is step 1 because it is the sign-in that
+    /// produces every usage number; the browser sign-in follows it and is
+    /// skippable. `Comparable` and the four step circles both read the raw
+    /// values, so getting these wrong reorders the whole wizard silently.
+    func testClaudeCodeIsTheFirstWizardStep() {
+        XCTAssertEqual(SetupWizardStep.linkClaudeCode.rawValue, 1)
+        XCTAssertEqual(SetupWizardStep.enterKey.rawValue, 2)
+        XCTAssertEqual(SetupWizardStep.selectOrg.rawValue, 3)
+        XCTAssertEqual(SetupWizardStep.confirm.rawValue, 4)
+        XCTAssertTrue(SetupWizardStep.linkClaudeCode < SetupWizardStep.enterKey)
+        XCTAssertTrue(SetupWizardStep.selectOrg < SetupWizardStep.confirm)
     }
 
     func testCardAndReviewButtonsFitInEveryLocale() throws {

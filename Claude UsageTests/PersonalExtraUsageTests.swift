@@ -894,9 +894,16 @@ final class PersonalExtraUsageTests: XCTestCase {
     }
 
     /// The other previously silent route: the profile a request was captured
-    /// for is gone by the time the fetch actually runs (removed mid-refresh).
-    /// The organization figure must still explain why no member figure sits
-    /// beside it, rather than rendering as if nothing were missing.
+    /// for is gone by the time the fetch actually runs (removed mid-refresh)
+    /// — but this profile is CLI-sourced, so under CLI-first that no longer
+    /// means anything is missing. `applyMemberExtraUsage` reads the member's
+    /// own figure straight out of the same `/api/oauth/usage` response the
+    /// windows came from, authenticated by the one CLI token this request
+    /// already carries; no profile lookup sits between the token and that
+    /// figure, so a vanished profile leaves it untouched. Unlike the
+    /// claude.ai-sourced path above, where the member figure is a *second*
+    /// credential's reading and genuinely needs a resolved profile to
+    /// attribute it correctly.
     func testANoLongerResolvableProfileStillExplainsItself() async throws {
         let profileID = UUID()
         let store = makeIsolatedProfileStore()
@@ -933,14 +940,15 @@ final class PersonalExtraUsageTests: XCTestCase {
 
         let usage = try await service.fetchUsageData(using: request)
 
-        XCTAssertEqual(usage.personalExtraUsageIssue, .claudeAccountUnresolved)
-        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(usage.personalCostUsed, 0)
         XCTAssertEqual(usage.costUsed, 26_118)
-        XCTAssertFalse(
+        XCTAssertTrue(
             StubClaudeEndpointsURLProtocol.requestedURLs.contains {
                 $0.hasSuffix("/api/oauth/usage")
             },
-            "no member figure may be requested with no profile to attach it to"
+            "the CLI-sourced fetch needs no profile to attach the member "
+                + "figure to, so a vanished profile must not skip it"
         )
     }
 
@@ -3001,7 +3009,13 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
-    func testBrowserBackedRefreshDoesNotEnterTerminalRenewalPath()
+    /// Inverted deliberately. Under CLI-first the Claude Code sign-in
+    /// produces every number, so a browser-backed profile whose stored CLI
+    /// token has expired must attempt the renewal that fixes it. It used to
+    /// be handed straight to the synchronous capture, which meant the renewal
+    /// machinery never ran for it and the profile fell back to claude.ai
+    /// forever.
+    func testBrowserBackedRefreshEntersTerminalRenewalPath()
         async throws
     {
         let profile = Profile(
@@ -3028,11 +3042,672 @@ final class PersonalExtraUsageTests: XCTestCase {
         let request = try await service
             .captureUsageRequestPreparingTerminalSignIn(for: profile)
 
-        XCTAssertEqual(request.source, .claudeAI(checkOverage: true))
-        XCTAssertFalse(
+        XCTAssertTrue(request.capturesOverageCheck(true))
+        XCTAssertTrue(
             StubClaudeEndpointsURLProtocol.requestedURLs.contains(
                 ClaudeCLITokenRefresher.tokenEndpoint
+            ),
+            "a browser-backed profile with an expired CLI token must now "
+            + "attempt renewal"
+        )
+        // Whatever the renewal produced, the browser sign-in rides along on
+        // the request so the organization-wide extra usage is still
+        // reachable.
+        XCTAssertTrue(request.carriesBrowserSignIn)
+    }
+
+    // MARK: - The CLI as the usage source
+
+    /// The `r3` profile's `/api/oauth/usage` body, saved verbatim from the
+    /// live probe on 2026-08-29. Reproduced whole rather than reduced,
+    /// because its exact key set is the evidence: `seven_day_opus` and
+    /// `seven_day_sonnet` are JSON `null`, `limits` carries one
+    /// `weekly_scoped` Fable row at 20% and no Opus or Sonnet entry, and ten
+    /// codename windows sit alongside them. Every per-model assertion below
+    /// is about one of those three facts, and a hand-written fixture would
+    /// let them drift from what the endpoint actually sends.
+    ///
+    /// The 20% matches what the claude.ai path had already stored as
+    /// `fableWeeklyPercentage` for the same profile — which is what says the
+    /// two sources agree and the Fable row does not regress.
+    private static let savedTeamOAuthUsageBody = """
+        {
+          "amber_ladder": null,
+          "cinder_cove": null,
+          "extra_usage": {
+            "credits_ever_enabled": false,
+            "currency": null,
+            "daily": null,
+            "decimal_places": null,
+            "disabled_reason": null,
+            "is_enabled": false,
+            "monthly_limit": null,
+            "spend_limit_reached": false,
+            "used_credits": null,
+            "user_disabled": false,
+            "utilization": null,
+            "weekly": null
+          },
+          "five_hour": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": null,
+            "used_dollars": null,
+            "utilization": 0.0
+          },
+          "iguana_necktie": null,
+          "juniper_tide": null,
+          "limits": [
+            {
+              "group": "session",
+              "is_active": false,
+              "kind": "session",
+              "percent": 0,
+              "resets_at": null,
+              "scope": null,
+              "severity": "normal"
+            },
+            {
+              "group": "weekly",
+              "is_active": true,
+              "kind": "weekly_all",
+              "percent": 100,
+              "resets_at": "2026-08-30T05:59:59.867369+00:00",
+              "scope": null,
+              "severity": "critical"
+            },
+            {
+              "group": "weekly",
+              "is_active": false,
+              "kind": "weekly_scoped",
+              "percent": 20,
+              "resets_at": "2026-08-30T05:59:59.867631+00:00",
+              "scope": {
+                "model": {
+                  "display_name": "Fable",
+                  "id": null
+                },
+                "surface": null
+              },
+              "severity": "normal"
+            }
+          ],
+          "member_dashboard_available": false,
+          "nimbus_quill": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": null,
+            "used_dollars": null,
+            "utilization": 0.0
+          },
+          "omelette_promotional": null,
+          "seven_day": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": "2026-08-30T05:59:59.867369+00:00",
+            "used_dollars": null,
+            "utilization": 100.0
+          },
+          "seven_day_cowork": null,
+          "seven_day_oauth_apps": null,
+          "seven_day_omelette": null,
+          "seven_day_opus": null,
+          "seven_day_sonnet": null,
+          "spend": {
+            "auto_reload": null,
+            "balance": null,
+            "can_purchase_credits": false,
+            "can_toggle": false,
+            "cap": null,
+            "disabled_reason": null,
+            "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+            "enabled": false,
+            "limit": null,
+            "percent": 0,
+            "severity": "normal",
+            "used": {
+              "amount_minor": 0,
+              "currency": "USD",
+              "exponent": 2
+            }
+          },
+          "tangelo": null
+        }
+        """
+
+    /// Every window the OAuth body carries, in the shape a live probe
+    /// returned. `seven_day_opus` and `seven_day_sonnet` come back as JSON
+    /// `null` on a Team account, which is exactly the case the `limits`
+    /// array exists to answer.
+    private static func oauthUsageBody(
+        fiveHour: String = #"{"utilization":12.5,"resets_at":null}"#,
+        sevenDay: String = #"{"utilization":100.0,"resets_at":null}"#,
+        sevenDayOpus: String = "null",
+        limits: String = """
+        [{"kind":"session","group":"session","percent":12,"scope":null},
+         {"kind":"weekly_all","group":"weekly","percent":100,"scope":null},
+         {"kind":"weekly_scoped","group":"weekly","percent":20,
+          "scope":{"model":{"id":null,"display_name":"Fable"}}}]
+        """,
+        extraUsage: String = """
+        {"is_enabled":true,"monthly_limit":5000,"used_credits":4200.0,
+         "currency":"USD"}
+        """
+    ) -> String {
+        """
+        {"five_hour":\(fiveHour),
+         "seven_day":\(sevenDay),
+         "seven_day_opus":\(sevenDayOpus),
+         "seven_day_sonnet":null,
+         "nimbus_quill":null,
+         "cinder_cove":{"utilization":0.0,"resets_at":null},
+         "limits":\(limits),
+         "extra_usage":\(extraUsage)}
+        """
+    }
+
+    /// A profile with a Claude Code sign-in and no browser sign-in — the
+    /// population that used to be told its setup was incomplete.
+    private func seedTerminalOnlyProfile(
+        id: UUID,
+        in store: ProfileStore
+    ) throws {
+        let profile = Profile(
+            id: id,
+            name: "Terminal only",
+            cliCredentialsJSON: Self.credentialsJSON(
+                expiresAt: Date()
+                    .addingTimeInterval(8 * 3600)
+                    .timeIntervalSince1970 * 1000
+            ),
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(
+            XCTUnwrap(profile.cliCredentialsJSON),
+            for: id
+        )
+        seededProfiles.append(profile)
+    }
+
+    func testCLISourcedFetchReadsEveryWindowFromTheOAuthBody() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody()
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
             )
+        )
+
+        XCTAssertEqual(usage.sessionPercentage, 12.5)
+        XCTAssertTrue(usage.sessionPercentageAvailable)
+        XCTAssertEqual(usage.weeklyPercentage, 100.0)
+        XCTAssertTrue(usage.weeklyPercentageAvailable)
+    }
+
+    /// Pins the finding that made CLI-first buildable: `/api/oauth/usage`
+    /// ships claude.ai's `limits` array, so the Fable row — which has no
+    /// legacy top-level key and exists on screen only because of that
+    /// array — resolves from the OAuth body with no new parser.
+    func testPerModelRowsResolveFromTheOAuthBodysLimitsArray() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody()
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.fableWeeklyPercentage, 20)
+        XCTAssertTrue(usage.fableWeeklyLimitAvailable)
+        XCTAssertEqual(usage.weeklyPercentage, 100)
+        XCTAssertTrue(usage.weeklyPercentageAvailable)
+    }
+
+    /// The other half of the saved body, and the reason the two availability
+    /// flags exist. `seven_day_opus` and `seven_day_sonnet` are JSON `null`
+    /// and `limits` carries no entry for either, so neither model resolves
+    /// from anywhere — and `parseUsageResponse` turns that nil into `0.0`.
+    ///
+    /// Asserted through the flags rather than through `tokensUsed == 0`,
+    /// because `tokensUsed > 0` is exactly the inference being replaced: it
+    /// happened to hide this particular zero, and it hides a real one just as
+    /// thoroughly. claude.ai's own body for this profile returns the same two
+    /// nulls, so moving source loses nothing visible — the flags are what
+    /// stop the zero becoming visible later.
+    func testAbsentOpusAndSonnetWindowsReportThemselvesUnavailable()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.savedTeamOAuthUsageBody
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertFalse(usage.opusWeeklyLimitAvailable)
+        XCTAssertFalse(usage.sonnetWeeklyLimitAvailable)
+
+        // And the rows are genuinely absent from what the popover renders,
+        // which is the fact the flags exist to produce.
+        let ids = try Self.limitGroupIDs(for: usage)
+        XCTAssertFalse(ids.contains("opus"))
+        XCTAssertFalse(ids.contains("sonnet"))
+        XCTAssertTrue(ids.contains("fable"))
+    }
+
+    /// The case `tokensUsed > 0` gets wrong today, and the reason the flag is
+    /// an improvement rather than a formality: an account that DOES have an
+    /// Opus allowance, measured at 0% because the week just reset, must show
+    /// its row. Fable has had this since v4.0.8; Opus and Sonnet never did.
+    func testAMeasuredZeroPercentOpusWeekStillShowsItsRow() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody(
+                sevenDayOpus: #"{"utilization":0,"resets_at":null}"#
+            )
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.opusWeeklyPercentage, 0)
+        XCTAssertEqual(usage.opusWeeklyTokensUsed, 0)
+        XCTAssertTrue(
+            usage.opusWeeklyLimitAvailable,
+            "a measured zero is a figure, not a missing window"
+        )
+        XCTAssertTrue(
+            try Self.limitGroupIDs(for: usage).contains("opus"),
+            "the row this zero belongs to was hidden by `tokensUsed > 0`"
+        )
+    }
+
+    /// The rows the popover would draw for a record, by id.
+    private static func limitGroupIDs(
+        for usage: ClaudeUsage
+    ) throws -> [String] {
+        try ClaudeUsageProviderAdapter.makeReport(
+            from: usage,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(
+                    status: .healthy,
+                    checkedAt: Date()
+                ),
+                fetchedAt: Date()
+            )
+        ).limitGroups.map(\.id.rawValue)
+    }
+
+    /// The §1.5 hardening, end to end. A null legacy key used to satisfy the
+    /// legacy branch and return a measured-looking 0%, which also stopped the
+    /// fall-through to `limits` — so a good Opus entry was shadowed by a
+    /// figure the account never sent.
+    func testANullLegacyOpusKeyDoesNotShadowTheLimitsEntry() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody(
+                sevenDayOpus: #"{"utilization":null,"resets_at":null}"#,
+                limits: """
+                [{"kind":"weekly_scoped","group":"weekly","percent":37,
+                  "scope":{"model":{"display_name":"Opus"}}}]
+                """
+            )
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.opusWeeklyPercentage, 37)
+        XCTAssertTrue(usage.opusWeeklyLimitAvailable)
+    }
+
+    /// The same defect as a pure function, with no URL stub in the way.
+    func testNullLegacyUtilizationFallsThroughToTheLimitsArray() throws {
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data("""
+                {"seven_day_opus":{"utilization":null},
+                 "limits":[{"kind":"weekly_scoped","group":"weekly",
+                            "percent":37,
+                            "scope":{"model":{"display_name":"Opus"}}}]}
+                """.utf8)
+            ) as? [String: Any]
+        )
+
+        let opus = UsageLimitParsing.parseWeeklyModelUsage(
+            from: json,
+            legacyKey: "seven_day_opus",
+            modelDisplayName: "Opus"
+        )
+
+        XCTAssertEqual(opus?.percentage, 37)
+
+        // And with nothing in either place the answer is "no figure", never
+        // a zero: that is what hides the row rather than drawing 0%.
+        let sonnet = UsageLimitParsing.parseWeeklyModelUsage(
+            from: json,
+            legacyKey: "seven_day_sonnet",
+            modelDisplayName: "Sonnet"
+        )
+        XCTAssertNil(sonnet)
+
+        // A genuine measured zero still parses as available.
+        let measuredZero = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(
+                    #"{"seven_day_opus":{"utilization":0}}"#.utf8
+                )
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            UsageLimitParsing.parseWeeklyModelUsage(
+                from: measuredZero,
+                legacyKey: "seven_day_opus",
+                modelDisplayName: "Opus"
+            )?.percentage,
+            0
+        )
+    }
+
+    /// Unrecognised codename windows are read by nothing. Guessing which
+    /// model one of them describes would label one model's consumption with
+    /// another model's name, so being ignored is the correct handling.
+    func testCodenameWindowsAreIgnoredEntirely() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody(limits: "[]")
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertFalse(usage.opusWeeklyLimitAvailable)
+        XCTAssertFalse(usage.sonnetWeeklyLimitAvailable)
+        XCTAssertFalse(usage.fableWeeklyLimitAvailable)
+        XCTAssertEqual(usage.sessionPercentage, 12.5)
+    }
+
+    /// The member's own extra usage now rides on the same response as the
+    /// windows, so a terminal-only profile costs one request where it used to
+    /// cost a profile lookup and a usage lookup on top of a Messages call.
+    func testCLISourcedFetchTakesTheMemberFigureFromTheSameResponse()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody()
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.personalCostUsed, 4_200)
+        XCTAssertEqual(usage.personalCostLimit, 5_000)
+        XCTAssertEqual(usage.personalCostCurrency, "USD")
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/profile")
+            },
+            "the organization lookup is only needed to cross-attribute a "
+                + "figure from a different credential; here both come from "
+                + "one token"
+        )
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/v1/messages")
+            },
+            "the Messages fallback must not run when the endpoint answered"
+        )
+    }
+
+    /// The endpoint being disabled again is the reason the header path was
+    /// kept rather than deleted.
+    func testAMissingOAuthUsageEndpointFallsBackToMessagesHeaders()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageStatusCode: 404,
+            messagesRateLimitHeaders: [
+                "anthropic-ratelimit-unified-5h-utilization": "0.25",
+                "anthropic-ratelimit-unified-7d-utilization": "0.5"
+            ]
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.sessionPercentage, 25)
+        XCTAssertTrue(usage.sessionPercentageAvailable)
+        XCTAssertEqual(usage.weeklyPercentage, 50)
+        XCTAssertTrue(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/v1/messages")
+            }
+        )
+    }
+
+    /// A 401 is the one status that says something about the credential, so
+    /// it must not fall back: the Messages endpoint authenticates with the
+    /// same token and would refuse it for the same reason, producing a second
+    /// differently worded complaint about one dead sign-in.
+    func testARefusedCLITokenRaisesUnauthorizedWithoutFallingBack()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageStatusCode: 401
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(
+            for: try seededProfile(profileID)
+        )
+        do {
+            _ = try await service.fetchUsageData(using: request)
+            XCTFail("a refused CLI token must not produce usage")
+        } catch let error as AppError {
+            XCTAssertEqual(error.code, .apiUnauthorized)
+        }
+
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/v1/messages")
+            }
+        )
+        XCTAssertEqual(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: .signInExpired,
+                credentialFailureStreak: 0,
+                healthStatus: .degraded
+            ),
+            .claudeCode
+        )
+    }
+
+    /// The requirement that cannot be inferred from the old model: one
+    /// sign-in refused, the other still produces numbers. claude.ai answers
+    /// the organization's extra-usage request with the HTTP 403 carrying
+    /// `account_session_invalid` that means a dead browser session.
+    func testADeadBrowserSessionKeepsTheCLIWindows() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            overageSpendLimitStatusCode: 403,
+            overageSpendLimitBody: """
+                {"type":"error","error":{"type":"permission_error",
+                 "message":"Invalid authorization",
+                 "details":{"error_code":"account_session_invalid",
+                            "error_visibility":"user_facing"}}}
+                """,
+            oauthUsageBody: Self.oauthUsageBody()
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.sessionPercentage, 12.5)
+        XCTAssertEqual(usage.fableWeeklyPercentage, 20)
+        XCTAssertEqual(usage.personalCostUsed, 4_200)
+        XCTAssertEqual(usage.browserSignInIssue, .expired)
+        XCTAssertNil(usage.costUsed)
+    }
+
+    /// A server fault is not a credential verdict, so it stays silent — the
+    /// same discipline the Claude Code side has always followed.
+    func testAFailingOrganizationRequestKeepsTheWindowsAndStaysSilent()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            overageSpendLimitStatusCode: 500,
+            oauthUsageBody: Self.oauthUsageBody()
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.sessionPercentage, 12.5)
+        XCTAssertEqual(usage.browserSignInIssue, .temporarilyUnavailable)
+        XCTAssertNil(
+            MenuBarAttentionSignal.attention(
+                cliSignInIssue: nil,
+                browserSignInIssue: .temporarilyUnavailable,
+                credentialFailureStreak: 0,
+                healthStatus: .healthy
+            )
+        )
+    }
+
+    /// A browser-only profile is unchanged: no Claude Code credential exists,
+    /// so claude.ai remains the source and the whole existing sequence runs.
+    func testABrowserOnlyProfileStillFetchesFromClaudeAI() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        let profile = Profile(
+            id: profileID,
+            name: "Browser only",
+            claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            organizationIsPersonal: false
+        )
+        try seedProfilesForTesting([profile], in: store)
+        seededProfiles.append(profile)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(
+            for: try seededProfile(profileID)
+        )
+        XCTAssertEqual(request.source, .claudeAI)
+
+        let usage = try await service.fetchUsageData(using: request)
+
+        XCTAssertEqual(usage.costUsed, 26_118)
+        XCTAssertTrue(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/organizations/\(teamOrganizationID)/usage")
+            }
         )
     }
 
@@ -4001,6 +4676,8 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         DispatchSemaphore?
     nonisolated(unsafe) private static var onTokenRefreshStarted:
         (() -> Void)?
+    nonisolated(unsafe) private static var messagesRateLimitHeaders:
+        [String: String] = [:]
 
     static func install(
         cliOrganizationID: String,
@@ -4020,6 +4697,15 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         // A profile response with no `organization` key at all: what a
         // personal Max/Pro account looks like, as opposed to a team one.
         oauthProfileCarriesOrganization: Bool = true,
+        // The CLI usage source. `/api/oauth/usage` carries the session and
+        // weekly windows, the model-scoped `limits` array and the member's
+        // own extra usage in one body, so these two control every figure a
+        // CLI-sourced fetch produces.
+        oauthUsageStatusCode: Int = 200,
+        oauthUsageBody: String? = nil,
+        // Headers on the Messages response, which is the fallback source
+        // when `/api/oauth/usage` does not answer.
+        messagesRateLimitHeaders: [String: String] = [:],
         transportErrors: [String: URLError.Code] = [:],
         holdTokenRefreshResponse: Bool = false,
         onTokenRefreshStarted: (() -> Void)? = nil
@@ -4061,8 +4747,8 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
                 )
             ),
             "https://api.anthropic.com/api/oauth/usage": (
-                200,
-                Data(
+                oauthUsageStatusCode,
+                oauthUsageBody.map { Data($0.utf8) } ?? Data(
                     memberExtraUsageCarriesCreditFigures
                         ? """
                           {"extra_usage":{
@@ -4099,6 +4785,7 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
                 )
             )
         ]
+        Self.messagesRateLimitHeaders = messagesRateLimitHeaders
         isActive = true
         URLProtocol.registerClass(StubClaudeEndpointsURLProtocol.self)
     }
@@ -4126,6 +4813,7 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         transportErrors = [:]
         tokenRefreshResponseGate = nil
         onTokenRefreshStarted = nil
+        messagesRateLimitHeaders = [:]
     }
 
     static func releaseTokenRefreshResponse() {
@@ -4169,11 +4857,15 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         }
         let canned = Self.responses[url.absoluteString]
             ?? (404, Data("{}".utf8))
+        var headerFields = ["Content-Type": "application/json"]
+        if url.absoluteString == "https://api.anthropic.com/v1/messages" {
+            headerFields.merge(Self.messagesRateLimitHeaders) { _, new in new }
+        }
         guard let response = HTTPURLResponse(
             url: url,
             statusCode: canned.0,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: headerFields
         ) else {
             client?.urlProtocol(
                 self,

@@ -96,11 +96,13 @@ enum ClaudeUsageProviderAdapter {
             )
         ]
 
-        // Preserve the current app's model-window availability semantics:
-        // Opus and Sonnet are present when their token fields indicate that the
-        // API supplied the window. Fable has a dedicated availability flag so
-        // a supported 0% window remains visible immediately after reset.
-        if usage.opusWeeklyTokensUsed > 0 {
+        // All three model windows now carry an explicit availability flag, so
+        // "this account has no Opus entitlement" and "Opus is measured at 0%"
+        // stop being the same thing on screen. Opus and Sonnet used to be
+        // inferred from `tokensUsed > 0`, which hid a genuine post-reset zero
+        // and — once a null legacy key could shadow a good `limits` entry —
+        // drew a confident 0% for a figure that never arrived.
+        if usage.opusWeeklyLimitAvailable {
             groups.append(
                 try modelGroup(
                     id: "opus",
@@ -111,7 +113,7 @@ enum ClaudeUsageProviderAdapter {
             )
         }
 
-        if usage.sonnetWeeklyTokensUsed > 0 {
+        if usage.sonnetWeeklyLimitAvailable {
             groups.append(
                 try modelGroup(
                     id: "sonnet",

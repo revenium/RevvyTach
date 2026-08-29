@@ -12,10 +12,16 @@ enum SetupMode {
 
 // MARK: - Wizard State Machine
 
+/// CLI-first: the Claude Code sign-in comes first because it is the one that
+/// produces every usage number. The browser sign-in follows and is skippable —
+/// it adds the organization-wide extra-usage row and the organization name.
+///
+/// `Comparable` and the four step circles both follow the raw values, so the
+/// numbering below is the single source of the order.
 enum SetupWizardStep: Int, Comparable {
-    case enterKey = 1
-    case selectOrg = 2
-    case linkClaudeCode = 3
+    case linkClaudeCode = 1
+    case enterKey = 2
+    case selectOrg = 3
     case confirm = 4
 
     static func < (lhs: SetupWizardStep, rhs: SetupWizardStep) -> Bool {
@@ -31,7 +37,7 @@ enum ClaudeCodeDetectionStatus: Equatable {
 }
 
 struct SetupWizardState {
-    var currentStep: SetupWizardStep = .enterKey
+    var currentStep: SetupWizardStep = .linkClaudeCode
     var sessionKey: String = ""
     var validationState: ValidationState = .idle
     var testedOrganizations: [ClaudeAPIService.AccountInfo] = []
@@ -160,12 +166,12 @@ struct SetupWizardView: View {
 
                 // Step progress indicator
                 HStack(spacing: 8) {
-                    SetupStepCircle(number: 1, isCurrent: wizardState.currentStep == .enterKey, isCompleted: wizardState.currentStep > .enterKey)
-                    SetupStepLine(isCompleted: wizardState.currentStep > .enterKey)
-                    SetupStepCircle(number: 2, isCurrent: wizardState.currentStep == .selectOrg, isCompleted: wizardState.currentStep > .selectOrg)
-                    SetupStepLine(isCompleted: wizardState.currentStep > .selectOrg)
-                    SetupStepCircle(number: 3, isCurrent: wizardState.currentStep == .linkClaudeCode, isCompleted: wizardState.currentStep > .linkClaudeCode)
+                    SetupStepCircle(number: 1, isCurrent: wizardState.currentStep == .linkClaudeCode, isCompleted: wizardState.currentStep > .linkClaudeCode)
                     SetupStepLine(isCompleted: wizardState.currentStep > .linkClaudeCode)
+                    SetupStepCircle(number: 2, isCurrent: wizardState.currentStep == .enterKey, isCompleted: wizardState.currentStep > .enterKey)
+                    SetupStepLine(isCompleted: wizardState.currentStep > .enterKey)
+                    SetupStepCircle(number: 3, isCurrent: wizardState.currentStep == .selectOrg, isCompleted: wizardState.currentStep > .selectOrg)
+                    SetupStepLine(isCompleted: wizardState.currentStep > .selectOrg)
                     SetupStepCircle(number: 4, isCurrent: wizardState.currentStep == .confirm, isCompleted: false)
                     Spacer()
                 }
@@ -949,7 +955,7 @@ struct EnterKeyStepSetup: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Step header
                     SetupStepHeader(
-                        stepNumber: 1,
+                        stepNumber: 2,
                         title: "wizard.browser_sign_in.title".localized
                     )
 
@@ -1027,6 +1033,13 @@ struct EnterKeyStepSetup: View {
 
             // Footer
             HStack {
+                Button("common.back".localized) {
+                    withAnimation {
+                        wizardState.currentStep = .linkClaudeCode
+                    }
+                }
+                .buttonStyle(.bordered)
+
                 Button("common.cancel".localized) {
                     retireAttempt(clearKey: true)
                     dismiss()
@@ -1034,6 +1047,21 @@ struct EnterKeyStepSetup: View {
                 .buttonStyle(.bordered)
 
                 Spacer()
+
+                // The browser sign-in is optional now, so the wizard has to
+                // offer a way past it. Without this the only exits from this
+                // step were entering a session key or cancelling the whole
+                // wizard, which is what made a terminal-only setup feel like
+                // an unfinished one.
+                Button("wizard.link_terminal.skip_browser".localized) {
+                    retireAttempt(clearKey: true)
+                    wizardState.selectedOrgId = nil
+                    wizardState.testedOrganizations = []
+                    withAnimation {
+                        wizardState.currentStep = .confirm
+                    }
+                }
+                .buttonStyle(.bordered)
             }
             .padding(20)
         }
@@ -1220,7 +1248,7 @@ struct SelectOrgStepSetup: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Step header
                     SetupStepHeader(
-                        stepNumber: 2,
+                        stepNumber: 3,
                         title: "wizard.organization.title".localized
                     )
 
@@ -1308,7 +1336,7 @@ struct SelectOrgStepSetup: View {
 
                 Button("common.next".localized) {
                     withAnimation {
-                        wizardState.currentStep = .linkClaudeCode
+                        wizardState.currentStep = .confirm
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1339,7 +1367,7 @@ struct LinkClaudeCodeStepSetup: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     SetupStepHeader(
-                        stepNumber: 3,
+                        stepNumber: 1,
                         title: "wizard.link_terminal.title".localized
                     )
 
@@ -1372,20 +1400,15 @@ struct LinkClaudeCodeStepSetup: View {
             Divider()
 
             HStack {
-                Button("common.back".localized) {
-                    withAnimation {
-                        wizardState.currentStep = .selectOrg
-                    }
-                }
-                .buttonStyle(.bordered)
-
+                // First step now, so there is nothing to go back to. The
+                // browser sign-in that used to precede it follows it instead.
                 Spacer()
 
                 if wizardState.terminalDetectionStatus == .detected {
                     Button("wizard.link_terminal.continue_without".localized) {
                         wizardState.shouldLinkTerminalSignIn = false
                         withAnimation {
-                            wizardState.currentStep = .confirm
+                            wizardState.currentStep = .enterKey
                         }
                     }
                     .buttonStyle(.bordered)
@@ -1393,7 +1416,7 @@ struct LinkClaudeCodeStepSetup: View {
                     Button("wizard.link_terminal.link_continue".localized) {
                         wizardState.shouldLinkTerminalSignIn = true
                         withAnimation {
-                            wizardState.currentStep = .confirm
+                            wizardState.currentStep = .enterKey
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -1402,7 +1425,7 @@ struct LinkClaudeCodeStepSetup: View {
                     Button("wizard.link_terminal.continue_without".localized) {
                         wizardState.shouldLinkTerminalSignIn = false
                         withAnimation {
-                            wizardState.currentStep = .confirm
+                            wizardState.currentStep = .enterKey
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -1626,8 +1649,23 @@ struct ConfirmStepSetup: View {
         return ClaudeCodeSyncService.carriesLogin(credentials)
     }
 
+    /// A real three-way verdict now. It used to be binary — a browser
+    /// sign-in was always being entered by the time this step was reached, so
+    /// "no terminal sign-in" could only mean `.browserOnly`. The browser step
+    /// is skippable now, so `.terminalOnly` is reachable and must be reported
+    /// as the complete, working state it is.
     private var reviewSetupState: ClaudeSetupState {
-        willLinkTerminalSignIn ? .complete : .browserOnly
+        let hasBrowser = wizardState.selectedOrgId != nil
+        switch (hasBrowser, willLinkTerminalSignIn) {
+        case (true, true):
+            return .complete
+        case (true, false):
+            return .browserOnly
+        case (false, true):
+            return .terminalOnly
+        case (false, false):
+            return .none
+        }
     }
 
     private var browserReviewDetail: String {
@@ -1744,7 +1782,21 @@ struct ConfirmStepSetup: View {
                         if case .error = wizardState.validationState {
                             wizardState.validationState = .idle
                         }
-                        wizardState.currentStep = .linkClaudeCode
+                        // Confirm is reachable two ways now: from
+                        // SelectOrgStepSetup's Next after choosing an
+                        // organization, or from EnterKeyStepSetup's "Skip —
+                        // I only use Claude Code" button, which clears
+                        // `selectedOrgId`/`testedOrganizations` and jumps
+                        // straight here. Routing Back to `.selectOrg`
+                        // unconditionally sent a skip-browser user to an
+                        // empty organization list with no way forward
+                        // (Tessie finding on PR #98) — the same
+                        // `selectedOrgId != nil` check `reviewSetupState`
+                        // already uses tells the two paths apart.
+                        wizardState.currentStep =
+                            wizardState.selectedOrgId != nil
+                                ? .selectOrg
+                                : .enterKey
                     }
                 }
                 .buttonStyle(.bordered)
