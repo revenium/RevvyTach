@@ -57,11 +57,24 @@ struct ClaudeUsage: Codable, Equatable {
     // Weekly data (Opus only)
     var opusWeeklyTokensUsed: Int
     var opusWeeklyPercentage: Double
+    /// Whether the usage API reported an Opus weekly limit for this account.
+    ///
+    /// The same discipline as `fableWeeklyLimitAvailable`, and for the same
+    /// reason: the row used to be shown whenever `opusWeeklyTokensUsed > 0`,
+    /// which silently conflated "no Opus entitlement on this plan" with "Opus
+    /// measured at exactly 0%" — and, once a null legacy key could shadow a
+    /// good `limits` entry, drew a confident 0% for a figure the account
+    /// never received. An absent figure hides its row; a measured zero shows
+    /// one.
+    var opusWeeklyLimitAvailable: Bool
 
     // Weekly data (Sonnet only)
     var sonnetWeeklyTokensUsed: Int
     var sonnetWeeklyPercentage: Double
     var sonnetWeeklyResetTime: Date?
+    /// Whether the usage API reported a Sonnet weekly limit for this account.
+    /// See `opusWeeklyLimitAvailable`.
+    var sonnetWeeklyLimitAvailable: Bool
 
     // Weekly data (Fable only)
     var fableWeeklyTokensUsed: Int
@@ -243,9 +256,11 @@ struct ClaudeUsage: Codable, Equatable {
         weeklyPercentageAvailable: Bool = true,
         opusWeeklyTokensUsed: Int,
         opusWeeklyPercentage: Double,
+        opusWeeklyLimitAvailable: Bool = false,
         sonnetWeeklyTokensUsed: Int,
         sonnetWeeklyPercentage: Double,
         sonnetWeeklyResetTime: Date?,
+        sonnetWeeklyLimitAvailable: Bool = false,
         fableWeeklyTokensUsed: Int,
         fableWeeklyPercentage: Double,
         fableWeeklyResetTime: Date?,
@@ -276,9 +291,11 @@ struct ClaudeUsage: Codable, Equatable {
         self.weeklyPercentageAvailable = weeklyPercentageAvailable
         self.opusWeeklyTokensUsed = opusWeeklyTokensUsed
         self.opusWeeklyPercentage = opusWeeklyPercentage
+        self.opusWeeklyLimitAvailable = opusWeeklyLimitAvailable
         self.sonnetWeeklyTokensUsed = sonnetWeeklyTokensUsed
         self.sonnetWeeklyPercentage = sonnetWeeklyPercentage
         self.sonnetWeeklyResetTime = sonnetWeeklyResetTime
+        self.sonnetWeeklyLimitAvailable = sonnetWeeklyLimitAvailable
         self.fableWeeklyTokensUsed = fableWeeklyTokensUsed
         self.fableWeeklyPercentage = fableWeeklyPercentage
         self.fableWeeklyResetTime = fableWeeklyResetTime
@@ -329,6 +346,18 @@ struct ClaudeUsage: Codable, Equatable {
         sonnetWeeklyTokensUsed = try container.decode(Int.self, forKey: .sonnetWeeklyTokensUsed)
         sonnetWeeklyPercentage = try container.decode(Double.self, forKey: .sonnetWeeklyPercentage)
         sonnetWeeklyResetTime = try container.decodeIfPresent(Date.self, forKey: .sonnetWeeklyResetTime)
+        // Records written before these flags existed carry no value. The
+        // fallback reproduces the old display rule exactly — the row was
+        // shown when tokens were above zero — so a cached record keeps
+        // rendering what it rendered before the upgrade.
+        opusWeeklyLimitAvailable = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .opusWeeklyLimitAvailable
+        ) ?? (opusWeeklyTokensUsed > 0)
+        sonnetWeeklyLimitAvailable = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .sonnetWeeklyLimitAvailable
+        ) ?? (sonnetWeeklyTokensUsed > 0)
         fableWeeklyTokensUsed = try container.decodeIfPresent(Int.self, forKey: .fableWeeklyTokensUsed) ?? 0
         fableWeeklyPercentage = try container.decodeIfPresent(Double.self, forKey: .fableWeeklyPercentage) ?? 0
         fableWeeklyResetTime = try container.decodeIfPresent(Date.self, forKey: .fableWeeklyResetTime)

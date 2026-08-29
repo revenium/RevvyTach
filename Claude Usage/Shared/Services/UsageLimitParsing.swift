@@ -44,6 +44,21 @@ enum UsageLimitParsing {
 
     /// Extracts a model's weekly usage from its legacy top-level entry when available,
     /// otherwise from the generic model-scoped limits array.
+    ///
+    /// The legacy entry only wins when it carries a figure that actually
+    /// parses. `JSONSerialization` turns a JSON `null` into `NSNull`, which is
+    /// not `nil`, so `legacyLimit["utilization"]` succeeds for
+    /// `{"utilization": null}` and `parseUtilization`'s fallback hands back a
+    /// confident, measured-looking `0.0`. Worse, it does so *instead of*
+    /// falling through to `limits` — so a null legacy key shadows a perfectly
+    /// good `weekly_scoped` entry for the same model and the row renders 0%.
+    ///
+    /// `api.anthropic.com/api/oauth/usage` is the first response known to ship
+    /// both shapes in one body: on a Team account it returns
+    /// `"seven_day_opus": null` and `"seven_day_sonnet": null` alongside a
+    /// populated `limits` array. `parseUtilizationIfAvailable` exists for
+    /// exactly this distinction — an unparseable figure is an absent figure,
+    /// never a zero.
     static func parseWeeklyModelUsage(
         from json: [String: Any],
         legacyKey: String?,
@@ -51,8 +66,9 @@ enum UsageLimitParsing {
     ) -> (percentage: Double, resetTime: Date?)? {
         if let legacyKey,
            let legacyLimit = json[legacyKey] as? [String: Any],
-           let utilization = legacyLimit["utilization"] {
-            return (parseUtilization(utilization), parseResetTime(legacyLimit["resets_at"]))
+           let rawUtilization = legacyLimit["utilization"],
+           let utilization = parseUtilizationIfAvailable(rawUtilization) {
+            return (utilization, parseResetTime(legacyLimit["resets_at"]))
         }
 
         return parseWeeklyScopedLimit(
