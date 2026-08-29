@@ -27,6 +27,20 @@ struct ClaudeSignInSummaryAction {
     }
 }
 
+/// Whether the browser (claude.ai) sign-in is actually working, as opposed
+/// to merely being stored.
+///
+/// `ClaudeSetupState` answers only "is a session key present". A key that
+/// claude.ai has started rejecting is still present, so the row badged it
+/// "Working" and the banner stayed green while the menu bar showed the red
+/// disc for the same profile — the app contradicting itself on the one page
+/// a person opens to fix it. The caller supplies this from the menu bar's own
+/// verdict; see `ClaudeAccountView.browserSummaryHealth(attention:)`.
+enum ClaudeBrowserSummaryHealth: Equatable {
+    case working
+    case needsAttention
+}
+
 enum ClaudeTerminalSummaryHealth: Equatable {
     case working
     case workingNotRenewable
@@ -44,6 +58,7 @@ struct ClaudeSignInSummaryView: View {
     let browserAction: ClaudeSignInSummaryAction?
     let terminalAction: ClaudeSignInSummaryAction?
     let terminalHealth: ClaudeTerminalSummaryHealth
+    let browserHealth: ClaudeBrowserSummaryHealth
 
     init(
         state: ClaudeSetupState,
@@ -51,7 +66,8 @@ struct ClaudeSignInSummaryView: View {
         terminalDetail: String,
         browserAction: ClaudeSignInSummaryAction? = nil,
         terminalAction: ClaudeSignInSummaryAction? = nil,
-        terminalHealth: ClaudeTerminalSummaryHealth = .working
+        terminalHealth: ClaudeTerminalSummaryHealth = .working,
+        browserHealth: ClaudeBrowserSummaryHealth = .working
     ) {
         self.state = state
         self.browserDetail = browserDetail
@@ -59,6 +75,7 @@ struct ClaudeSignInSummaryView: View {
         self.browserAction = browserAction
         self.terminalAction = terminalAction
         self.terminalHealth = terminalHealth
+        self.browserHealth = browserHealth
     }
 
     var body: some View {
@@ -179,11 +196,43 @@ struct ClaudeSignInSummaryView: View {
     }
 
     private var browserStatus: Status {
+        Self.browserStatus(state: state, browserHealth: browserHealth)
+    }
+
+    /// A pure resolver so "which badge does the browser row get" is
+    /// answerable in a unit test without driving SwiftUI, in the style of
+    /// `NormalizedUsageView.accountHealthText`.
+    static func browserStatus(
+        state: ClaudeSetupState,
+        browserHealth: ClaudeBrowserSummaryHealth
+    ) -> Status {
         switch state {
         case .complete, .browserOnly:
-            return .working
+            return browserHealth == .needsAttention
+                ? .needsAttention
+                : .working
         case .terminalOnly, .none:
             return .missing
+        }
+    }
+
+    /// A stored-but-rejected browser sign-in, which only the health input can
+    /// see. Checked before the setup-state verdicts because those describe
+    /// which sign-ins exist, and this profile's problem is that one of them
+    /// exists and no longer works — the state is `.complete` while every
+    /// number on screen is frozen.
+    private static func browserNeedsAttention(
+        state: ClaudeSetupState,
+        browserHealth: ClaudeBrowserSummaryHealth
+    ) -> Bool {
+        guard browserHealth == .needsAttention else { return false }
+        switch state {
+        case .complete, .browserOnly:
+            return true
+        case .terminalOnly, .none:
+            // No browser sign-in to be broken; those verdicts already say to
+            // add one, which is the same repair and the better wording.
+            return false
         }
     }
 
@@ -204,6 +253,24 @@ struct ClaudeSignInSummaryView: View {
     }
 
     private var verdict: Verdict {
+        Self.verdict(state: state, browserHealth: browserHealth)
+    }
+
+    /// The banner's verdict, resolved without SwiftUI so the wording a
+    /// broken browser sign-in gets can be asserted directly.
+    static func verdict(
+        state: ClaudeSetupState,
+        browserHealth: ClaudeBrowserSummaryHealth
+    ) -> Verdict {
+        if browserNeedsAttention(state: state, browserHealth: browserHealth) {
+            return Verdict(
+                localizationKey:
+                    "claude_account.summary.verdict.browser_needs_attention",
+                icon: "exclamationmark.triangle.fill",
+                color: SettingsColors.error,
+                backgroundOpacity: 0.09
+            )
+        }
         switch state {
         case .complete:
             return Verdict(
@@ -239,47 +306,47 @@ struct ClaudeSignInSummaryView: View {
     private func localized(_ key: String) -> String {
         NSLocalizedString(key, comment: "")
     }
-}
 
-private struct Verdict {
-    let localizationKey: String
-    let icon: String
-    let color: Color
-    let backgroundOpacity: Double
-}
-
-private enum Status {
-    case working
-    case workingNotRenewable
-    case needsAttention
-    case notLinked
-    case missing
-
-    var localizationKey: String {
-        switch self {
-        case .working:
-            return "claude_account.summary.status.working"
-        case .workingNotRenewable:
-            return "claude_account.summary.status.working_not_renewable"
-        case .needsAttention:
-            return "claude_account.summary.status.needs_attention"
-        case .notLinked:
-            return "claude_account.summary.status.not_linked"
-        case .missing:
-            return "claude_account.summary.status.missing"
-        }
+    struct Verdict {
+        let localizationKey: String
+        let icon: String
+        let color: Color
+        let backgroundOpacity: Double
     }
 
-    var color: Color {
-        switch self {
-        case .working:
-            return SettingsColors.success
-        case .workingNotRenewable, .needsAttention:
-            return SettingsColors.error
-        case .notLinked:
-            return SettingsColors.secondary
-        case .missing:
-            return SettingsColors.error
+    enum Status: Equatable {
+        case working
+        case workingNotRenewable
+        case needsAttention
+        case notLinked
+        case missing
+
+        var localizationKey: String {
+            switch self {
+            case .working:
+                return "claude_account.summary.status.working"
+            case .workingNotRenewable:
+                return "claude_account.summary.status.working_not_renewable"
+            case .needsAttention:
+                return "claude_account.summary.status.needs_attention"
+            case .notLinked:
+                return "claude_account.summary.status.not_linked"
+            case .missing:
+                return "claude_account.summary.status.missing"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .working:
+                return SettingsColors.success
+            case .workingNotRenewable, .needsAttention:
+                return SettingsColors.error
+            case .notLinked:
+                return SettingsColors.secondary
+            case .missing:
+                return SettingsColors.error
+            }
         }
     }
 }

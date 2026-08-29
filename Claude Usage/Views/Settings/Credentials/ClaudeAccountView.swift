@@ -98,6 +98,13 @@ struct ClaudeBrowserCredentialDetail: Equatable {
 
 struct ClaudeAccountView: View {
     @StateObject private var profileManager = ProfileManager.shared
+    /// The menu bar's own attention verdict for each profile. Read rather
+    /// than recomputed: the claude.ai failure streak and provider health it
+    /// depends on are not reachable from Settings, and a second rule here is
+    /// exactly how this page came to say "Working" about a sign-in the icon
+    /// was already marking as broken.
+    @ObservedObject private var attentionStore =
+        ClaudeSignInAttentionStore.shared
     @State private var isSyncing = false
     @State private var syncError: String?
     @State private var cliAccountInfo: CLIAccountInfo?
@@ -183,6 +190,11 @@ struct ClaudeAccountView: View {
                         terminalHealth: Self.terminalSummaryHealth(
                             profile,
                             setupState: setupState
+                        ),
+                        browserHealth: Self.browserSummaryHealth(
+                            attention: attentionStore.credential(
+                                for: profile.id
+                            )
                         )
                     )
 
@@ -539,6 +551,20 @@ struct ClaudeAccountView: View {
         return (setupState ?? ClaudeSetupState.of(profile)) == .terminalOnly
             ? .workingNotRenewable
             : .working
+    }
+
+    /// Whether the browser (claude.ai) sign-in row should say it needs
+    /// attention, decided by the menu bar's verdict rather than by a second
+    /// rule of this page's own.
+    ///
+    /// Only `.claudeAI` counts. `.claudeCode` is the terminal sign-in, which
+    /// has its own row and its own health, and `.setupIncomplete` is already
+    /// carried by the setup-state verdict. Marking the browser row for either
+    /// of those would send the reader to the wrong repair.
+    static func browserSummaryHealth(
+        attention: MenuBarAttentionSignal.Credential?
+    ) -> ClaudeBrowserSummaryHealth {
+        attention == .claudeAI ? .needsAttention : .working
     }
 
     private func browserCredentialNotSavedCard(

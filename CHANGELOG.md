@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   points you at Settings to sign in again. Refusals that really are about
   permissions still say so and still ask for nothing.
 
+- **Settings no longer says a dead browser sign-in is fine.** The red marker
+  appeared on the menu bar, but the Claude Account page you open next still
+  showed a green "Fully set up" banner, badged the browser sign-in (claude.ai)
+  as Working, and said nothing about what to do — so the one page that can
+  repair the account was the one page denying anything was wrong. The browser
+  row now reads "Needs attention", the banner explains that claude.ai has
+  stopped accepting the sign-in and that your usage numbers are frozen, and the
+  Settings sidebar carries the same badge. Both surfaces take their verdict
+  from the same decision the menu bar icon uses, so they cannot disagree again.
+
 ## [4.1.2] - 2026-08-28
 
 ### Fixed

@@ -1307,6 +1307,7 @@
 "claude_account.summary.verdict.browser_only" = "ブラウザのサインインのみ — 使用状況の追跡は機能します。自分の追加使用量は表示されず、RevvyTach は Claude Code のアカウントを切り替えられません。";
 "claude_account.summary.verdict.terminal_only" = "設定が不完全です — このプロファイルは報告を停止します。ターミナルのサインインのみがリンクされています。RevvyTach はこれを単独で更新できないため、Claude Code のサインインが期限切れになるとこのプロファイルは報告を停止します。設定を完了するにはブラウザのサインインを追加してください。";
 "claude_account.summary.verdict.none" = "設定が不完全です — ブラウザのサインイン（claude.ai）を追加して追跡を開始してください。";
+"claude_account.summary.verdict.browser_needs_attention" = "ブラウザのサインインが機能しなくなりました — claude.ai が受け付けなくなったため、使用状況の数値は更新されません。再サインインして修正してください。";
 "claude_account.summary.browser.title" = "ブラウザのサインイン（claude.ai）";
 "claude_account.summary.terminal.title" = "ターミナルのサインイン（Claude Code）";
 "claude_account.summary.status.working" = "動作中";

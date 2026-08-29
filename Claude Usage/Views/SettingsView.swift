@@ -653,6 +653,10 @@ struct ProfileSectionContainer: View {
     let dependencies: ProviderUIDependencies
     @ObservedObject var navigation: SettingsNavigationModel
     @ObservedObject private var profileManager: ProfileManager
+    /// The menu bar's attention verdict, relayed rather than recomputed, so
+    /// the sidebar marker and the icon can never disagree.
+    @ObservedObject private var attentionStore =
+        ClaudeSignInAttentionStore.shared
 
     init(
         selectedSection: Binding<SettingsSection>,
@@ -713,18 +717,21 @@ struct ProfileSectionContainer: View {
                             )
                         HStack {
                             Text(profile.name)
-                            if ClaudeAccountAttention.isSetupIncomplete(
+                            if let badge = ClaudeAccountAttention.badge(
                                 profile,
                                 snapshot: profileManager.claudeSetupState(
                                     for: profile
-                                )
+                                ),
+                                browserSignInNeedsAttention:
+                                    attentionStore.credential(
+                                        for: profile.id
+                                    ) == .claudeAI
                             ) {
                                 Text("!")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(.red)
                                     .accessibilityLabel(
-                                        "claude_account.incomplete_badge"
-                                            .localized
+                                        badge.localizationKey.localized
                                     )
                             }
                             Spacer()
@@ -1105,6 +1112,9 @@ struct ProfileCredentialCardsRow: View {
     @Binding var selectedSection: SettingsSection
     let dependencies: ProviderUIDependencies
     @ObservedObject private var profileManager: ProfileManager
+    /// See `ProfileSectionContainer.attentionStore`.
+    @ObservedObject private var attentionStore =
+        ClaudeSignInAttentionStore.shared
     @State private var credentials: ProfileCredentials?
 
     init(
@@ -1161,16 +1171,19 @@ struct ProfileCredentialCardsRow: View {
                         isConnected:
                             credentials?.hasClaudeAI ?? false,
                         isSelected: selectedSection == .claudeAccount,
-                        badgeText: profileManager.activeClaudeProfile.map {
-                            ClaudeAccountAttention.isSetupIncomplete(
-                                $0,
+                        badgeText: profileManager.activeClaudeProfile.flatMap {
+                            profile in
+                            ClaudeAccountAttention.badge(
+                                profile,
                                 snapshot: profileManager.claudeSetupState(
-                                    for: $0
-                                )
-                            )
-                                ? "claude_account.incomplete_badge".localized
-                                : nil
-                        } ?? nil
+                                    for: profile
+                                ),
+                                browserSignInNeedsAttention:
+                                    attentionStore.credential(
+                                        for: profile.id
+                                    ) == .claudeAI
+                            )?.localizationKey.localized
+                        }
                     )
                 }
                 .buttonStyle(.plain)

@@ -1283,6 +1283,7 @@
 "claude_account.summary.verdict.browser_only" = "브라우저 로그인만 연결됨 — 사용량 추적은 작동합니다. 본인의 추가 사용량은 표시되지 않으며 RevvyTach는 Claude Code 계정을 전환할 수 없습니다.";
 "claude_account.summary.verdict.terminal_only" = "설정 미완료 — 이 프로필은 보고를 중지하게 됩니다. 터미널 로그인만 연결되어 있습니다. RevvyTach는 이를 자체적으로 갱신할 수 없으므로 Claude Code 로그인이 만료되면 이 프로필은 더 이상 보고하지 않습니다. 설정을 완료하려면 브라우저 로그인을 추가하세요.";
 "claude_account.summary.verdict.none" = "설정 미완료 — 브라우저 로그인(claude.ai)을 추가하여 사용량 추적을 시작하세요.";
+"claude_account.summary.verdict.browser_needs_attention" = "브라우저 로그인이 더 이상 작동하지 않습니다 — claude.ai가 이를 거부하므로 사용량 수치가 갱신되지 않습니다. 다시 로그인하여 해결하세요.";
 "claude_account.summary.browser.title" = "브라우저 로그인(claude.ai)";
 "claude_account.summary.terminal.title" = "터미널 로그인(Claude Code)";
 "claude_account.summary.status.working" = "작동 중";

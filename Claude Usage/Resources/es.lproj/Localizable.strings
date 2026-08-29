@@ -1290,6 +1290,7 @@
 "claude_account.summary.verdict.browser_only" = "Solo inicio de sesión del navegador — El seguimiento funciona. No verás aquí tu uso adicional y RevvyTach no podrá cambiar Claude Code a esta cuenta.";
 "claude_account.summary.verdict.terminal_only" = "Configuración incompleta — este perfil dejará de informar. Solo está vinculado el inicio de sesión de terminal. RevvyTach no puede renovarlo por sí solo, por lo que cuando caduque el inicio de sesión de Claude Code este perfil quedará en silencio. Añade el inicio de sesión del navegador para completar la configuración.";
 "claude_account.summary.verdict.none" = "Configuración incompleta — Añade el inicio de sesión del navegador (claude.ai) para empezar a seguir el uso.";
+"claude_account.summary.verdict.browser_needs_attention" = "El inicio de sesión del navegador ha dejado de funcionar — claude.ai ya no lo acepta, por lo que tus cifras de uso están congeladas. Inicia sesión de nuevo para solucionarlo.";
 "claude_account.summary.browser.title" = "Inicio de sesión del navegador (claude.ai)";
 "claude_account.summary.terminal.title" = "Inicio de sesión de terminal (Claude Code)";
 "claude_account.summary.status.working" = "Funciona";

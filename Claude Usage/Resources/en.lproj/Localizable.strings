@@ -1322,6 +1322,7 @@
 "claude_account.summary.verdict.browser_only" = "Browser sign-in only — Usage tracking works. You won't see your own extra usage here, and RevvyTach can't switch Claude Code to this account.";
 "claude_account.summary.verdict.terminal_only" = "Setup incomplete — this profile will stop reporting. Only the terminal sign-in is linked. RevvyTach can't renew it on its own, so when Claude Code's sign-in lapses this profile goes silent. Add the browser sign-in to finish setup.";
 "claude_account.summary.verdict.none" = "Setup incomplete — Add the browser sign-in (claude.ai) to start tracking usage.";
+"claude_account.summary.verdict.browser_needs_attention" = "Browser sign-in has stopped working — claude.ai no longer accepts it, so your usage numbers are frozen. Sign in again to fix it.";
 "claude_account.summary.browser.title" = "Browser sign-in (claude.ai)";
 "claude_account.summary.terminal.title" = "Terminal sign-in (Claude Code)";
 "claude_account.summary.status.working" = "Working";
