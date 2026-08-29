@@ -3050,6 +3050,126 @@ final class PersonalExtraUsageTests: XCTestCase {
 
     // MARK: - The CLI as the usage source
 
+    /// The `r3` profile's `/api/oauth/usage` body, saved verbatim from the
+    /// live probe on 2026-08-29. Reproduced whole rather than reduced,
+    /// because its exact key set is the evidence: `seven_day_opus` and
+    /// `seven_day_sonnet` are JSON `null`, `limits` carries one
+    /// `weekly_scoped` Fable row at 20% and no Opus or Sonnet entry, and ten
+    /// codename windows sit alongside them. Every per-model assertion below
+    /// is about one of those three facts, and a hand-written fixture would
+    /// let them drift from what the endpoint actually sends.
+    ///
+    /// The 20% matches what the claude.ai path had already stored as
+    /// `fableWeeklyPercentage` for the same profile — which is what says the
+    /// two sources agree and the Fable row does not regress.
+    private static let savedTeamOAuthUsageBody = """
+        {
+          "amber_ladder": null,
+          "cinder_cove": null,
+          "extra_usage": {
+            "credits_ever_enabled": false,
+            "currency": null,
+            "daily": null,
+            "decimal_places": null,
+            "disabled_reason": null,
+            "is_enabled": false,
+            "monthly_limit": null,
+            "spend_limit_reached": false,
+            "used_credits": null,
+            "user_disabled": false,
+            "utilization": null,
+            "weekly": null
+          },
+          "five_hour": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": null,
+            "used_dollars": null,
+            "utilization": 0.0
+          },
+          "iguana_necktie": null,
+          "juniper_tide": null,
+          "limits": [
+            {
+              "group": "session",
+              "is_active": false,
+              "kind": "session",
+              "percent": 0,
+              "resets_at": null,
+              "scope": null,
+              "severity": "normal"
+            },
+            {
+              "group": "weekly",
+              "is_active": true,
+              "kind": "weekly_all",
+              "percent": 100,
+              "resets_at": "2026-08-30T05:59:59.867369+00:00",
+              "scope": null,
+              "severity": "critical"
+            },
+            {
+              "group": "weekly",
+              "is_active": false,
+              "kind": "weekly_scoped",
+              "percent": 20,
+              "resets_at": "2026-08-30T05:59:59.867631+00:00",
+              "scope": {
+                "model": {
+                  "display_name": "Fable",
+                  "id": null
+                },
+                "surface": null
+              },
+              "severity": "normal"
+            }
+          ],
+          "member_dashboard_available": false,
+          "nimbus_quill": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": null,
+            "used_dollars": null,
+            "utilization": 0.0
+          },
+          "omelette_promotional": null,
+          "seven_day": {
+            "limit_dollars": null,
+            "locked_reason": null,
+            "remaining_dollars": null,
+            "resets_at": "2026-08-30T05:59:59.867369+00:00",
+            "used_dollars": null,
+            "utilization": 100.0
+          },
+          "seven_day_cowork": null,
+          "seven_day_oauth_apps": null,
+          "seven_day_omelette": null,
+          "seven_day_opus": null,
+          "seven_day_sonnet": null,
+          "spend": {
+            "auto_reload": null,
+            "balance": null,
+            "can_purchase_credits": false,
+            "can_toggle": false,
+            "cap": null,
+            "disabled_reason": null,
+            "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+            "enabled": false,
+            "limit": null,
+            "percent": 0,
+            "severity": "normal",
+            "used": {
+              "amount_minor": 0,
+              "currency": "USD",
+              "exponent": 2
+            }
+          },
+          "tangelo": null
+        }
+        """
+
     /// Every window the OAuth body carries, in the shape a live probe
     /// returned. `seven_day_opus` and `seven_day_sonnet` come back as JSON
     /// `null` on a Team account, which is exactly the case the `limits`
@@ -3152,6 +3272,100 @@ final class PersonalExtraUsageTests: XCTestCase {
 
         XCTAssertEqual(usage.fableWeeklyPercentage, 20)
         XCTAssertTrue(usage.fableWeeklyLimitAvailable)
+        XCTAssertEqual(usage.weeklyPercentage, 100)
+        XCTAssertTrue(usage.weeklyPercentageAvailable)
+    }
+
+    /// The other half of the saved body, and the reason the two availability
+    /// flags exist. `seven_day_opus` and `seven_day_sonnet` are JSON `null`
+    /// and `limits` carries no entry for either, so neither model resolves
+    /// from anywhere — and `parseUsageResponse` turns that nil into `0.0`.
+    ///
+    /// Asserted through the flags rather than through `tokensUsed == 0`,
+    /// because `tokensUsed > 0` is exactly the inference being replaced: it
+    /// happened to hide this particular zero, and it hides a real one just as
+    /// thoroughly. claude.ai's own body for this profile returns the same two
+    /// nulls, so moving source loses nothing visible — the flags are what
+    /// stop the zero becoming visible later.
+    func testAbsentOpusAndSonnetWindowsReportThemselvesUnavailable()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.savedTeamOAuthUsageBody
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertFalse(usage.opusWeeklyLimitAvailable)
+        XCTAssertFalse(usage.sonnetWeeklyLimitAvailable)
+
+        // And the rows are genuinely absent from what the popover renders,
+        // which is the fact the flags exist to produce.
+        let ids = try Self.limitGroupIDs(for: usage)
+        XCTAssertFalse(ids.contains("opus"))
+        XCTAssertFalse(ids.contains("sonnet"))
+        XCTAssertTrue(ids.contains("fable"))
+    }
+
+    /// The case `tokensUsed > 0` gets wrong today, and the reason the flag is
+    /// an improvement rather than a formality: an account that DOES have an
+    /// Opus allowance, measured at 0% because the week just reset, must show
+    /// its row. Fable has had this since v4.0.8; Opus and Sonnet never did.
+    func testAMeasuredZeroPercentOpusWeekStillShowsItsRow() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedTerminalOnlyProfile(id: profileID, in: store)
+        let service = try makeService(profileID: profileID, store: store)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthUsageBody: Self.oauthUsageBody(
+                sevenDayOpus: #"{"utilization":0,"resets_at":null}"#
+            )
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(
+                for: try seededProfile(profileID)
+            )
+        )
+
+        XCTAssertEqual(usage.opusWeeklyPercentage, 0)
+        XCTAssertEqual(usage.opusWeeklyTokensUsed, 0)
+        XCTAssertTrue(
+            usage.opusWeeklyLimitAvailable,
+            "a measured zero is a figure, not a missing window"
+        )
+        XCTAssertTrue(
+            try Self.limitGroupIDs(for: usage).contains("opus"),
+            "the row this zero belongs to was hidden by `tokensUsed > 0`"
+        )
+    }
+
+    /// The rows the popover would draw for a record, by id.
+    private static func limitGroupIDs(
+        for usage: ClaudeUsage
+    ) throws -> [String] {
+        try ClaudeUsageProviderAdapter.makeReport(
+            from: usage,
+            context: ClaudeUsageProviderContext(
+                health: ProviderHealth(
+                    status: .healthy,
+                    checkedAt: Date()
+                ),
+                fetchedAt: Date()
+            )
+        ).limitGroups.map(\.id.rawValue)
     }
 
     /// The §1.5 hardening, end to end. A null legacy key used to satisfy the
