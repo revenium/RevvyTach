@@ -1782,7 +1782,21 @@ struct ConfirmStepSetup: View {
                         if case .error = wizardState.validationState {
                             wizardState.validationState = .idle
                         }
-                        wizardState.currentStep = .selectOrg
+                        // Confirm is reachable two ways now: from
+                        // SelectOrgStepSetup's Next after choosing an
+                        // organization, or from EnterKeyStepSetup's "Skip —
+                        // I only use Claude Code" button, which clears
+                        // `selectedOrgId`/`testedOrganizations` and jumps
+                        // straight here. Routing Back to `.selectOrg`
+                        // unconditionally sent a skip-browser user to an
+                        // empty organization list with no way forward
+                        // (Tessie finding on PR #98) — the same
+                        // `selectedOrgId != nil` check `reviewSetupState`
+                        // already uses tells the two paths apart.
+                        wizardState.currentStep =
+                            wizardState.selectedOrgId != nil
+                                ? .selectOrg
+                                : .enterKey
                     }
                 }
                 .buttonStyle(.bordered)

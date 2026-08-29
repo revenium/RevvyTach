@@ -1306,11 +1306,13 @@
 "claude_account.summary.verdict.complete" = "設定完了 — 両方のサインインがリンクされています。自分の使用状況と組織の追加使用量が表示されます。";
 "claude_account.summary.verdict.browser_only" = "ブラウザーのサインインのみ — 使用状況の追跡は動作しています。自分の追加使用量を表示しアカウントを切り替えるには、Claude Code をリンクしてください。";
 "claude_account.summary.verdict.terminal_only" = "設定済み — 使用状況の追跡は動作しており、RevvyTach がこのサインインを自動的に更新します。組織全体の追加使用量も表示するには、ブラウザーのサインインを追加してください。";
+"claude_account.summary.verdict.terminal_needs_attention" = "ターミナルのサインインが機能しなくなりました — Claude Code のセッションが拒否されました。使用状況の追跡を復元するには、Claude Code に再度サインインしてください。";
 "claude_account.summary.verdict.none" = "設定が不完全です — 使用状況の追跡を開始するには Claude Code でサインインしてください。";
 "claude_account.summary.verdict.browser_needs_attention" = "ブラウザのサインインが機能しなくなりました — claude.ai が受け付けなくなりました。使用状況は引き続き更新されますが、組織の追加使用量は更新されません。再サインインしてください。";
 "claude_account.summary.browser.title" = "ブラウザのサインイン（claude.ai）";
 "claude_account.summary.terminal.title" = "ターミナルのサインイン（Claude Code）";
 "claude_account.summary.status.working" = "動作中";
+"claude_account.summary.status.working_not_renewable" = "動作中";
 "claude_account.summary.status.optional" = "任意";
 "claude_account.summary.status.recommended" = "推奨";
 "claude_account.summary.status.needs_attention" = "要確認";

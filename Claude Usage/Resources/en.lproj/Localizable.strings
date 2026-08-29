@@ -1321,11 +1321,13 @@
 "claude_account.summary.verdict.complete" = "Fully set up — Both sign-ins linked. You'll see your own usage and your organization's extra usage.";
 "claude_account.summary.verdict.browser_only" = "Browser sign-in only — Usage tracking works. Link Claude Code to see your own extra usage and to switch accounts.";
 "claude_account.summary.verdict.terminal_only" = "Set up — Usage tracking works, and RevvyTach renews this sign-in for you. Add the browser sign-in to also see organization-wide extra usage.";
+"claude_account.summary.verdict.terminal_needs_attention" = "Terminal sign-in has stopped working — Claude Code's session was refused. Sign in to Claude Code again to restore usage tracking.";
 "claude_account.summary.verdict.none" = "Setup incomplete — Sign in with Claude Code to start tracking usage.";
-"claude_account.summary.verdict.browser_needs_attention" = "Browser sign-in has stopped working — claude.ai no longer accepts it. Your usage keeps updating; your organization's extra usage does not. Sign in again to fix it.";
+"claude_account.summary.verdict.browser_needs_attention" = "Browser sign-in has stopped working — claude.ai no longer accepts it. Your usage keeps updating; sign in again to restore extra usage.";
 "claude_account.summary.browser.title" = "Browser sign-in (claude.ai)";
 "claude_account.summary.terminal.title" = "Terminal sign-in (Claude Code)";
 "claude_account.summary.status.working" = "Working";
+"claude_account.summary.status.working_not_renewable" = "Working";
 "claude_account.summary.status.optional" = "Optional";
 "claude_account.summary.status.recommended" = "Recommended";
 "claude_account.summary.status.needs_attention" = "Needs attention";

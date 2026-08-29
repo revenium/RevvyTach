@@ -1306,11 +1306,13 @@
 "claude_account.summary.verdict.complete" = "Vollständig eingerichtet — Beide Anmeldungen sind verknüpft. Sie sehen Ihre eigene Nutzung und die Zusatznutzung Ihrer Organisation.";
 "claude_account.summary.verdict.browser_only" = "Nur Browser-Anmeldung — Die Nutzungsverfolgung funktioniert. Verknüpfen Sie Claude Code, um Ihre eigene Zusatznutzung zu sehen und Konten zu wechseln.";
 "claude_account.summary.verdict.terminal_only" = "Eingerichtet — Die Nutzungsverfolgung funktioniert, und RevvyTach erneuert diese Anmeldung für Sie. Fügen Sie die Browser-Anmeldung hinzu, um auch die organisationsweite Zusatznutzung zu sehen.";
+"claude_account.summary.verdict.terminal_needs_attention" = "Terminal-Anmeldung funktioniert nicht mehr — die Sitzung von Claude Code wurde abgelehnt. Melden Sie sich in Claude Code erneut an, um die Nachverfolgung wiederherzustellen.";
 "claude_account.summary.verdict.none" = "Einrichtung unvollständig — Melden Sie sich mit Claude Code an, um die Nutzungsverfolgung zu starten.";
 "claude_account.summary.verdict.browser_needs_attention" = "Browser-Anmeldung funktioniert nicht mehr — claude.ai akzeptiert sie nicht mehr. Ihre Nutzung wird weiterhin aktualisiert, die Zusatznutzung Ihrer Organisation nicht. Melden Sie sich erneut an.";
 "claude_account.summary.browser.title" = "Browser-Anmeldung (claude.ai)";
 "claude_account.summary.terminal.title" = "Terminal-Anmeldung (Claude Code)";
 "claude_account.summary.status.working" = "Funktioniert";
+"claude_account.summary.status.working_not_renewable" = "Funktioniert";
 "claude_account.summary.status.optional" = "Optional";
 "claude_account.summary.status.recommended" = "Empfohlen";
 "claude_account.summary.status.needs_attention" = "Handlungsbedarf";

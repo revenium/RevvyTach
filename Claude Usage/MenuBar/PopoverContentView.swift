@@ -217,7 +217,13 @@ enum LegacyPopoverBanner: Equatable {
         // it above a real credential error, so the one surface a person looks
         // at complained about setup while an actually broken sign-in went
         // unnamed underneath it.
-        if setupState == .none, !hasAPIConsoleCredentials {
+        // See the identical fix (and its rationale) in
+        // `MenuBarAttentionSignal.attention`: `setupState == .none` is
+        // ambiguous and the compiler silently reads it as "setupState is
+        // nil", which fired on every call site that leaves `setupState`
+        // unset rather than only on the real `.none` case.
+        if let setupState, setupState == ClaudeSetupState.none,
+           !hasAPIConsoleCredentials {
             return .setupIncomplete
         }
         // The Claude Code sign-in comes first, because it takes every number

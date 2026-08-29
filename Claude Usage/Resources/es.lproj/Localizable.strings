@@ -1289,11 +1289,13 @@
 "claude_account.summary.verdict.complete" = "Configuración completa — Ambos inicios de sesión vinculados. Verás tu propio uso y el uso adicional de tu organización.";
 "claude_account.summary.verdict.browser_only" = "Solo inicio de sesión del navegador — El seguimiento de uso funciona. Vincula Claude Code para ver tu propio uso adicional y cambiar de cuenta.";
 "claude_account.summary.verdict.terminal_only" = "Configurado — El seguimiento de uso funciona y RevvyTach renueva este inicio de sesión por ti. Añade el inicio de sesión del navegador para ver también el uso adicional de toda la organización.";
+"claude_account.summary.verdict.terminal_needs_attention" = "El inicio de sesión de terminal ha dejado de funcionar — la sesión de Claude Code fue rechazada. Inicia sesión en Claude Code de nuevo para restablecer el seguimiento de uso.";
 "claude_account.summary.verdict.none" = "Configuración incompleta — Inicia sesión con Claude Code para empezar a seguir el uso.";
 "claude_account.summary.verdict.browser_needs_attention" = "El inicio de sesión del navegador ha dejado de funcionar — claude.ai ya no lo acepta. Tu uso sigue actualizándose; el uso adicional de tu organización, no. Inicia sesión de nuevo.";
 "claude_account.summary.browser.title" = "Inicio de sesión del navegador (claude.ai)";
 "claude_account.summary.terminal.title" = "Inicio de sesión de terminal (Claude Code)";
 "claude_account.summary.status.working" = "Funciona";
+"claude_account.summary.status.working_not_renewable" = "Funciona";
 "claude_account.summary.status.optional" = "Opcional";
 "claude_account.summary.status.recommended" = "Recomendado";
 "claude_account.summary.status.needs_attention" = "Requiere atención";

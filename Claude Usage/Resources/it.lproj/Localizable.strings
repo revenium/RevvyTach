@@ -1306,11 +1306,13 @@
 "claude_account.summary.verdict.complete" = "Configurazione completa — Entrambi gli accessi sono collegati. Vedrai il tuo utilizzo e l'utilizzo extra della tua organizzazione.";
 "claude_account.summary.verdict.browser_only" = "Solo accesso dal browser — Il monitoraggio dell'utilizzo funziona. Collega Claude Code per vedere il tuo utilizzo extra e cambiare account.";
 "claude_account.summary.verdict.terminal_only" = "Configurato — Il monitoraggio dell'utilizzo funziona e RevvyTach rinnova questo accesso al posto tuo. Aggiungi l'accesso dal browser per vedere anche l'utilizzo extra dell'intera organizzazione.";
+"claude_account.summary.verdict.terminal_needs_attention" = "L'accesso al terminale ha smesso di funzionare — la sessione di Claude Code è stata rifiutata. Accedi di nuovo a Claude Code per ripristinare il monitoraggio dell'utilizzo.";
 "claude_account.summary.verdict.none" = "Configurazione incompleta — Accedi con Claude Code per iniziare a monitorare l'utilizzo.";
 "claude_account.summary.verdict.browser_needs_attention" = "L'accesso dal browser ha smesso di funzionare — claude.ai non lo accetta più. Il tuo utilizzo continua ad aggiornarsi; quello extra della tua organizzazione no. Accedi di nuovo.";
 "claude_account.summary.browser.title" = "Accesso dal browser (claude.ai)";
 "claude_account.summary.terminal.title" = "Accesso al terminale (Claude Code)";
 "claude_account.summary.status.working" = "Funzionante";
+"claude_account.summary.status.working_not_renewable" = "Funzionante";
 "claude_account.summary.status.optional" = "Facoltativo";
 "claude_account.summary.status.recommended" = "Consigliato";
 "claude_account.summary.status.needs_attention" = "Richiede attenzione";

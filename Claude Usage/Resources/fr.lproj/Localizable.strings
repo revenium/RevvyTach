@@ -1286,11 +1286,13 @@
 "claude_account.summary.verdict.complete" = "Configuration complète — Les deux connexions sont liées. Vous voyez votre propre utilisation et l'utilisation supplémentaire de votre organisation.";
 "claude_account.summary.verdict.browser_only" = "Connexion au navigateur uniquement — Le suivi de l'utilisation fonctionne. Liez Claude Code pour voir votre propre utilisation supplémentaire et changer de compte.";
 "claude_account.summary.verdict.terminal_only" = "Configuré — Le suivi de l'utilisation fonctionne, et RevvyTach renouvelle cette connexion pour vous. Ajoutez la connexion au navigateur pour voir aussi l'utilisation supplémentaire de toute l'organisation.";
+"claude_account.summary.verdict.terminal_needs_attention" = "La connexion au terminal ne fonctionne plus — la session de Claude Code a été refusée. Reconnectez-vous à Claude Code pour rétablir le suivi de l'utilisation.";
 "claude_account.summary.verdict.none" = "Configuration incomplète — Connectez-vous avec Claude Code pour commencer le suivi de l'utilisation.";
 "claude_account.summary.verdict.browser_needs_attention" = "La connexion au navigateur ne fonctionne plus — claude.ai ne l'accepte plus. Votre utilisation continue de se mettre à jour, mais pas celle de votre organisation. Reconnectez-vous.";
 "claude_account.summary.browser.title" = "Connexion au navigateur (claude.ai)";
 "claude_account.summary.terminal.title" = "Connexion au terminal (Claude Code)";
 "claude_account.summary.status.working" = "Opérationnelle";
+"claude_account.summary.status.working_not_renewable" = "Opérationnelle";
 "claude_account.summary.status.optional" = "Facultatif";
 "claude_account.summary.status.recommended" = "Recommandé";
 "claude_account.summary.status.needs_attention" = "Action requise";

@@ -2422,8 +2422,25 @@ class ClaudeAPIService: APIServiceProtocol {
             // numbers are still reachable, and the broken Claude Code sign-in
             // is reported through `personalExtraUsageIssue` where it can name
             // itself.
-            if sessionKey != nil, organizationID != nil {
-                return try captureUsageRequest(for: profile)
+            //
+            // Built directly as `.claudeAI` rather than by calling
+            // `captureUsageRequest(for:)`: that selector re-derives the CLI
+            // branch from `profile.cliCredentialsJSON` with only a local
+            // `isTokenExpired` check, which knows nothing about the
+            // rejection `usableCLICredential` just returned. A token that is
+            // locally not-yet-expired but was just proven unusable would be
+            // re-selected as `.profileCLI` again, sending a known-bad access
+            // token to `fetchUsageData(oauthAccessToken:)` instead of the
+            // browser fallback promised above (Tessie finding on PR #98).
+            if let sessionKey, let organizationID {
+                return CapturedUsageRequest(
+                    source: .claudeAI,
+                    sessionKey: sessionKey,
+                    organizationID: organizationID,
+                    oauthAccessToken: nil,
+                    checkOverage: checkOverage,
+                    profileID: profile.id
+                )
             }
             throw AppError(
                 code: .sessionKeyNotFound,
@@ -2506,7 +2523,8 @@ class ClaudeAPIService: APIServiceProtocol {
             }
             do {
                 var usage = try await fetchUsageData(
-                    oauthAccessToken: accessToken
+                    oauthAccessToken: accessToken,
+                    checkOverageLimitEnabled: request.checkOverage
                 )
 
                 // The organization-wide figure, when the profile also holds a
@@ -2521,6 +2539,27 @@ class ClaudeAPIService: APIServiceProtocol {
                         organizationId: organizationID,
                         sessionKey: sessionKey
                     )
+                    // The member figure itself already came from the same
+                    // CLI-authenticated response `applyMemberExtraUsage`
+                    // read above, with no profile needed. But when the
+                    // profile this request was captured for has since
+                    // vanished — removed, or no longer resolvable — and the
+                    // organization-wide row above is about to be shown
+                    // anyway, leaving `personalExtraUsageIssue` nil would be
+                    // the same silent fifth outcome the browser-primary
+                    // fetch above closes off. Only overrides a genuinely
+                    // unset issue: a real verdict `applyMemberExtraUsage`
+                    // already wrote must survive.
+                    if profile == nil, usage.costUsed != nil,
+                       usage.personalExtraUsageIssue == nil {
+                        LoggingService.shared.logWarning(
+                            "No profile could be resolved for organization "
+                            + "\(organizationID) on this refresh; the "
+                            + "member's own extra usage will be reported as "
+                            + "unresolved rather than left unexplained."
+                        )
+                        usage.personalExtraUsageIssue = .claudeAccountUnresolved
+                    }
                 }
                 return usage
             } catch let error as AppError where error.code == .apiUnauthorized {
@@ -2578,14 +2617,24 @@ class ClaudeAPIService: APIServiceProtocol {
     /// model's name on the surface people use to decide whether they can keep
     /// working. A future model arriving in `limits`, as Fable did, needs no
     /// code at all.
-    func fetchUsageData(oauthAccessToken: String) async throws -> ClaudeUsage {
+    func fetchUsageData(
+        oauthAccessToken: String,
+        checkOverageLimitEnabled: Bool = true
+    ) async throws -> ClaudeUsage {
         switch await performOAuthRequest(
             urlString: Self.oauthUsageURL,
             accessToken: oauthAccessToken
         ) {
         case .succeeded(let data):
             var usage = try parseUsageResponse(data)
-            applyMemberExtraUsage(from: data, to: &usage)
+            // Gated on the same preference the claude.ai-sourced path checks
+            // before its equivalent `applyPersonalExtraUsage` call: a
+            // profile that switched extra-usage checks off must not see its
+            // own cost figures just because its usage happens to be
+            // CLI-sourced (Tessie finding on PR #98).
+            if checkOverageLimitEnabled {
+                applyMemberExtraUsage(from: data, to: &usage)
+            }
             return usage
 
         case .unauthorized:
@@ -2850,7 +2899,10 @@ class ClaudeAPIService: APIServiceProtocol {
 
         case .cliOAuth(let accessToken):
             return try await fetchUsageData(
-                oauthAccessToken: accessToken
+                oauthAccessToken: accessToken,
+                checkOverageLimitEnabled:
+                    profileManager.activeClaudeProfile?
+                        .checkOverageLimitEnabled ?? true
             )
 
         case .consoleAPISession:

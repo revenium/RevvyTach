@@ -110,7 +110,14 @@ enum MenuBarAttentionSignal {
         // that outranks whichever generic refresh error happens to be visible
         // at the same time. It used to fire on `.terminalOnly` too, which put
         // a setup complaint on a profile that was working.
-        if setupState == .none, !hasAPIConsoleCredentials {
+        // `setupState == .none` is ambiguous between "the `.none` case" and
+        // `Optional<ClaudeSetupState>.none` (nil) — the compiler silently
+        // picks the latter, so an unset `setupState` (every call site that
+        // doesn't compute one, including these tests) always matched and
+        // returned `.setupIncomplete` regardless of `hasAPIConsoleCredentials`.
+        // `if let` first forces the comparison onto the non-optional case.
+        if let setupState, setupState == ClaudeSetupState.none,
+           !hasAPIConsoleCredentials {
             return .setupIncomplete
         }
 

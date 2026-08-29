@@ -245,6 +245,25 @@ struct ClaudeSignInSummaryView: View {
         }
     }
 
+    /// A present terminal sign-in whose Claude Code token has stopped
+    /// working. Checked before the setup-state verdicts for the same reason
+    /// `browserNeedsAttention` is: `state` alone can only say a terminal
+    /// sign-in is linked, not that it has since been rejected.
+    private static func terminalNeedsAttention(
+        state: ClaudeSetupState,
+        terminalHealth: ClaudeTerminalSummaryHealth
+    ) -> Bool {
+        guard terminalHealth == .needsAttention else { return false }
+        switch state {
+        case .complete, .terminalOnly:
+            return true
+        case .browserOnly, .none:
+            // No terminal sign-in to be broken; those verdicts already
+            // describe the actual problem.
+            return false
+        }
+    }
+
     private var terminalStatus: Status {
         switch state {
         case .complete, .terminalOnly:
@@ -266,15 +285,35 @@ struct ClaudeSignInSummaryView: View {
     }
 
     private var verdict: Verdict {
-        Self.verdict(state: state, browserHealth: browserHealth)
+        Self.verdict(
+            state: state,
+            terminalHealth: terminalHealth,
+            browserHealth: browserHealth
+        )
     }
 
     /// The banner's verdict, resolved without SwiftUI so the wording a
     /// broken browser sign-in gets can be asserted directly.
     static func verdict(
         state: ClaudeSetupState,
+        terminalHealth: ClaudeTerminalSummaryHealth = .working,
         browserHealth: ClaudeBrowserSummaryHealth
     ) -> Verdict {
+        // Checked first: under CLI-first the Claude Code sign-in produces
+        // every number on screen, so its own failure is the more severe one
+        // — a green "Set up"/"Fully set up" verdict while the terminal row
+        // says "Needs attention" would contradict the row directly beneath
+        // it and imply tracking still works when it does not (Tessie
+        // finding on PR #98).
+        if terminalNeedsAttention(state: state, terminalHealth: terminalHealth) {
+            return Verdict(
+                localizationKey:
+                    "claude_account.summary.verdict.terminal_needs_attention",
+                icon: "exclamationmark.triangle.fill",
+                color: SettingsColors.error,
+                backgroundOpacity: 0.09
+            )
+        }
         if browserNeedsAttention(state: state, browserHealth: browserHealth) {
             return Verdict(
                 localizationKey:

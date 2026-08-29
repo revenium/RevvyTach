@@ -1303,11 +1303,13 @@
 "claude_account.summary.verdict.complete" = "设置完成 — 两种登录均已关联。你将看到自己的使用量和组织的额外用量。";
 "claude_account.summary.verdict.browser_only" = "仅浏览器登录 — 用量跟踪正常。关联 Claude Code 即可查看自己的额外用量并切换账户。";
 "claude_account.summary.verdict.terminal_only" = "已设置 — 用量跟踪正常，RevvyTach 会自动为你续期此登录。添加浏览器登录还可查看整个组织的额外用量。";
+"claude_account.summary.verdict.terminal_needs_attention" = "终端登录已失效 — Claude Code 的会话被拒绝。请重新登录 Claude Code 以恢复用量跟踪。";
 "claude_account.summary.verdict.none" = "设置未完成 — 请使用 Claude Code 登录以开始跟踪用量。";
 "claude_account.summary.verdict.browser_needs_attention" = "浏览器登录已失效 — claude.ai 不再接受该登录。你的用量仍会更新，但组织的额外用量不会。请重新登录。";
 "claude_account.summary.browser.title" = "浏览器登录（claude.ai）";
 "claude_account.summary.terminal.title" = "终端登录（Claude Code）";
 "claude_account.summary.status.working" = "正常";
+"claude_account.summary.status.working_not_renewable" = "正常";
 "claude_account.summary.status.optional" = "可选";
 "claude_account.summary.status.recommended" = "建议";
 "claude_account.summary.status.needs_attention" = "需要处理";

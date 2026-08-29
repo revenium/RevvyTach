@@ -933,9 +933,9 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             LegacyPopoverBanner.browserSignInBroken.action,
             .claudeAccount
         )
-        XCTAssertNotEqual(
+        XCTAssertEqual(
             LegacyPopoverBanner.browserSignInBroken.message,
-            "popover.banner.browser_sign_in_expired"
+            "popover.banner.browser_sign_in_expired".localized
         )
     }
 
