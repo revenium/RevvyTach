@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Right-click a Claude menu bar item to make it active.** Every other
+  provider's menu bar item already had "Make Active" in its right-click menu;
+  Claude items were missing it, so switching the active Claude profile meant
+  opening the popover first.
+
 ### Changed
 
 - **Your usage numbers now come from your Claude Code sign-in, and the

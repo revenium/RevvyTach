@@ -10,6 +10,7 @@ final class MenuReliabilityTests: HostedAppTestCase {
         @objc func refresh() {}
         @objc func settings() {}
         @objc func quit() {}
+        @objc func activate() {}
     }
 
     private final class ThreadSafeRecorder: @unchecked Sendable {
@@ -837,6 +838,45 @@ final class MenuReliabilityTests: HostedAppTestCase {
         XCTAssertTrue(quit.target === target)
         XCTAssertEqual(quit.keyEquivalent, "q")
         XCTAssertEqual(quit.keyEquivalentModifierMask, .command)
+    }
+
+    /// Claude profiles are the one provider stuck on this legacy menu
+    /// (`usesLegacyContextMenu`), so "Make Active" has to be threaded
+    /// through here rather than through `makeProviderContextMenu`. It must
+    /// appear first, ahead of Refresh, when the caller says the profile can
+    /// be activated, and be entirely absent — not just disabled — when it
+    /// cannot, so the profile-is-already-active case matches the behavior
+    /// every non-Claude provider's own menu already has.
+    func testContextMenuAddsMakeActiveOnlyWhenAnActivateActionIsSupplied() {
+        let target = MenuTarget()
+        let withActivate = MenuBarManager.makeContextMenu(
+            target: target,
+            activateAction: #selector(MenuTarget.activate),
+            refreshAction: #selector(MenuTarget.refresh),
+            settingsAction: #selector(MenuTarget.settings),
+            quitAction: #selector(MenuTarget.quit)
+        )
+
+        XCTAssertEqual(withActivate.items.count, 5)
+        let activate = withActivate.items[0]
+        XCTAssertEqual(activate.title, "menu.provider.make_active".localized)
+        XCTAssertEqual(activate.action, #selector(MenuTarget.activate))
+        XCTAssertTrue(activate.target === target)
+        XCTAssertEqual(withActivate.items[1].title, "common.refresh".localized)
+
+        let withoutActivate = MenuBarManager.makeContextMenu(
+            target: target,
+            refreshAction: #selector(MenuTarget.refresh),
+            settingsAction: #selector(MenuTarget.settings),
+            quitAction: #selector(MenuTarget.quit)
+        )
+        XCTAssertEqual(withoutActivate.items.count, 4)
+        XCTAssertNil(
+            withoutActivate.items.first {
+                $0.title == "menu.provider.make_active".localized
+            },
+            "an already-active profile must not show Make Active at all"
+        )
     }
 
     func testContextMenuQuitDoesNotDependOnCapturedProfileIdentity() {
