@@ -231,6 +231,33 @@ struct ClaudeUsage: Codable, Equatable {
     /// asked for (the per-profile extra-usage preference is off).
     var organizationExtraUsageIssue: OrganizationExtraUsageIssue?
 
+    /// Why the claude.ai browser sign-in did not answer, when it did not.
+    ///
+    /// This exists because a refused browser sign-in no longer fails the
+    /// refresh. Under CLI-first the Claude Code sign-in produces every
+    /// percentage on screen, so claude.ai being refused costs exactly one
+    /// row — the organization-wide extra usage — and the numbers stay live.
+    /// That is the desired behaviour, and it has a cost: the refresh failure
+    /// that used to drive the menu-bar marker and the popover banner never
+    /// happens, so without a verdict recorded here a dead browser cookie
+    /// would produce no signal anywhere at all.
+    ///
+    /// Follows the same discipline as `PersonalExtraUsageIssue`: settled and
+    /// transient outcomes stay silent, and only `expired` raises a marker.
+    enum BrowserSignInIssue: String, Codable, Equatable {
+        /// The session key was rejected: HTTP 401, or claude.ai's HTTP 403
+        /// carrying `account_session_invalid`. Actionable — sign in again.
+        case expired
+        /// Offline, timed out, rate limited, 5xx, an ordinary 403, or a body
+        /// that would not decode. Retried unaided, and says nothing about the
+        /// credential.
+        case temporarilyUnavailable
+    }
+
+    /// Nil when the browser sign-in answered, or when there is no browser
+    /// sign-in on this profile to ask.
+    var browserSignInIssue: BrowserSignInIssue?
+
     // Overage credit grant balance
     var overageBalance: Double?
     var overageBalanceCurrency: String?
@@ -274,6 +301,7 @@ struct ClaudeUsage: Codable, Equatable {
         personalCostCurrency: String? = nil,
         personalExtraUsageIssue: PersonalExtraUsageIssue? = nil,
         organizationExtraUsageIssue: OrganizationExtraUsageIssue? = nil,
+        browserSignInIssue: BrowserSignInIssue? = nil,
         overageBalance: Double? = nil,
         overageBalanceCurrency: String? = nil,
         lastUpdated: Date,
@@ -309,6 +337,7 @@ struct ClaudeUsage: Codable, Equatable {
         self.personalCostCurrency = personalCostCurrency
         self.personalExtraUsageIssue = personalExtraUsageIssue
         self.organizationExtraUsageIssue = organizationExtraUsageIssue
+        self.browserSignInIssue = browserSignInIssue
         self.overageBalance = overageBalance
         self.overageBalanceCurrency = overageBalanceCurrency
         self.lastUpdated = lastUpdated
@@ -380,6 +409,10 @@ struct ClaudeUsage: Codable, Equatable {
         organizationExtraUsageIssue = try container.decodeIfPresent(
             OrganizationExtraUsageIssue.self,
             forKey: .organizationExtraUsageIssue
+        )
+        browserSignInIssue = try container.decodeIfPresent(
+            BrowserSignInIssue.self,
+            forKey: .browserSignInIssue
         )
         overageBalance = try container.decodeIfPresent(Double.self, forKey: .overageBalance)
         overageBalanceCurrency = try container.decodeIfPresent(String.self, forKey: .overageBalanceCurrency)
