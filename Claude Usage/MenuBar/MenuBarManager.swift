@@ -1373,7 +1373,11 @@ class MenuBarManager: NSObject, ObservableObject {
         case .apiForbidden:
             // Without this the code falls to `default:` and is described as
             // "Usage refresh failed", losing the one thing worth saying
-            // about a 403: the sign-in is fine and there is nothing to do.
+            // about this 403: the sign-in is fine and there is nothing to
+            // do. That is true of every 403 that reaches this code — a dead
+            // claude.ai browser session is also answered 403, but it is
+            // classified from its body as `sessionKeyExpired` and never
+            // arrives here. See `ClaudeAISessionRefusal`.
             return .apiForbidden()
         case .apiRateLimited:
             return .apiRateLimited()

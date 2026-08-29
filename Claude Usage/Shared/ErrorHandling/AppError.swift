@@ -380,6 +380,12 @@ extension AppError {
     /// them to do nothing at all. Folding 403 into 401 is what made the menu
     /// bar tell people their working sign-in had been rejected, so the
     /// recovery suggestion here deliberately says no action is needed.
+    ///
+    /// One 403 body is the exception and must never reach this constructor:
+    /// claude.ai reports a dead browser session as 403
+    /// `account_session_invalid`, which *is* a statement about the
+    /// credential. `ClaudeAISessionRefusal` reads the body and routes that
+    /// one to `claudeAISessionExpired` instead.
     static func apiForbidden(
         statusDetail: String? = nil,
         file: String = #file,
@@ -394,6 +400,39 @@ extension AppError {
                 + "resource is not permitted for this account",
             isRecoverable: true,
             recoverySuggestion: "error.api_forbidden.suggestion".localized,
+            statusCode: 403,
+            file: file,
+            line: line,
+            function: function
+        )
+    }
+
+    /// The claude.ai browser session key has stopped working.
+    ///
+    /// Carries `sessionKeyExpired` even though the wire status is 403,
+    /// because the code is what every downstream surface reads: it is what
+    /// makes the refresh boundary call the account unauthenticated, which is
+    /// what lights the menu bar's credential marker and names the browser
+    /// sign-in as the broken one. The status code is kept at 403 so logs
+    /// still say what the server actually answered.
+    ///
+    /// The wording is the existing expired-credential wording on purpose —
+    /// this is the same fact people have always been told, arriving now from
+    /// the status code that really reports it.
+    static func claudeAISessionExpired(
+        statusDetail: String? = nil,
+        file: String = #file,
+        line: Int = #line,
+        function: String = #function
+    ) -> AppError {
+        return AppError(
+            code: .sessionKeyExpired,
+            message: "error.api_unauthorized".localized,
+            technicalDetails: statusDetail
+                ?? "claude.ai returned 403 account_session_invalid - the "
+                + "browser session key is no longer valid",
+            isRecoverable: true,
+            recoverySuggestion: "error.api_unauthorized.suggestion".localized,
             statusCode: 403,
             file: file,
             line: line,
