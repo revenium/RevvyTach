@@ -419,11 +419,11 @@ final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
     // MARK: - Terminal-first redesign
 
     /// An absent browser sign-in must never draw the red "Missing"/"Needs
-    /// attention" treatment — only `.optional` (terminal-only, complete
-    /// picture) or `.missing` paired with the neutral `.none` verdict, which
-    /// itself points at the terminal sign-in, not the browser one. Swept
-    /// across every setup state so a future state added to the enum cannot
-    /// silently regress this.
+    /// attention" treatment — every swept state resolves to `.working` or
+    /// `.optional`, never `.missing`, including the neutral `.none` verdict,
+    /// which itself points at the terminal sign-in, not the browser one.
+    /// Swept across every setup state so a future state added to the enum
+    /// cannot silently regress this.
     func testAbsentBrowserSignInIsNeverTheRedBadgeOnAnySetupState() {
         // Every state, with the health input reporting nothing broken —
         // a working key where one is present, or none to break where one

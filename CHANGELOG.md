@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Claude Account page now leads with Claude Code too.** The terminal
   sign-in row moved above the browser row and carries the page's one primary
   button, since it is both simpler to set up and the sign-in every number on
-  screen comes from. The browser row still shows a "Missing" badge only when
+  screen comes from. The browser row still shows "Needs attention" only when
   it is truly broken; a browser sign-in that was simply never added now reads
   as a neutral "Optional," not a red warning, and its own copy says plainly
   what it is for: your organization's extra-usage balance. The setup wizard's
