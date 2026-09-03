@@ -1,0 +1,25 @@
+### ideas-3-04 · Make Active follows through into the terminal: flag the sessions that predate the switch, offer a new one on the new account
+**Job:** JTBD-2 "Move the terminal with me… Make Active rewrites `CLAUDE_CONFIG_DIR`/`CODEX_HOME` pointers and tmux env." · **Lens:** job-gap (merged with adjacent)
+**Score:** 0.50 = value 2 × confidence 3 ÷ (risk 4 × effort M=3)
+- value: lowered 4→2 — it corrects a README overclaim, not a gap in JTBD-2, whose scope per the promise is new terminals; new windows already land correctly.
+- confidence: the docs gap is real and verified, but the capability that would justify a feature — naming the account a running pane is on — does not exist on macOS.
+- risk: raised 3→4 — the only shippable signal mislabels panes after A→B→A and panes with no snippet, asserted unattended by auto-switch at the moment the user just acted. Failure mode #1.
+- effort: two switch services, the context menus, one string × 9 locales, plus a terminal-launch path — for a signal that cannot be made correct.
+
+**User story.** As a developer with `claude`/`codex` already running in tmux panes, when I press Make Active on another profile, I want the app to say that older sessions predate the switch and offer one click to open a terminal already on the new account, so that I never keep working blind on a session the switch never reached.
+
+**Why we think it is valuable.** Make Active writes the pointer file and shells out to `tmux set-environment -g` (`Claude Usage/Shared/Services/ClaudeSwitchService.swift:829-854`; `CodexSwitchService.swift:166-192`). It never inspects or signals a running process — `list-panes`/`list-sessions` appear nowhere in the Swift sources (grep, zero hits). `docs/multi-account-cli.md:220-222` states the consequence: "Existing panes keep the environment they were created with; open a new one." But `README.md:156` and `docs/multi-account-cli.md:115` both say running tmux sessions are updated. The hotkey path is silent: `MenuBarManager.swift:4400-4414` (`switchToNextProfile`) activates with no confirmation, while auto-switch notifies at `MenuBarManager.swift:4196`.
+
+Two claims failed verification here (tmux 3.6a, macOS 26). You cannot tell which account a running pane is on — `ps eww -p <pid>` prints no environment. And `pane_current_command` reports `2.1.259` for a live `claude`, which sets its process title to its version, so matching "claude" finds nothing.
+
+**What it would take.** No feature slice survives review (see Response). The shippable residue is a docs correction: `README.md:156` and `docs/multi-account-cli.md:115` should say the global tmux environment is updated for *new* windows, matching `docs/multi-account-cli.md:220-222`. Revvie could implement unattended: yes, for that correction only — two sentences, no code, no strings.
+
+**Risk.** The feature as posed asserts a wrong number at the moment of action and repeats it unattended through auto-switch. The docs correction carries none of that.
+
+**Alternatives.** The docs correction, now the recommendation. Doing nothing is defensible too: `docs/multi-account-cli.md:220-222` already tells anyone who looks.
+
+**Strongest objection (critic).** "Open Terminal" is a no-op: a new tmux window merges the global env `propagateToTmux` just wrote (`ClaudeSwitchService.swift:838-840`), and a new shell reads `.last-account` via the rc snippet (`multi-account-cli.md:128-138`) — prefix-c already does it. Users without the snippet are served by Settings, which shows it and says whether it is needed (`README.md:159-161`). That leaves the passive line, which the brief concedes is a one-sentence docs fix (`README.md:156` contradicts `README.md:148`). The residue is a count from process start time that does not mean "on the old account": switch A→B→A and correctly-placed panes get flagged; auto-switch fires it unattended. Failure mode #1, for nine translations. JTBD-2's broken symptom is "new terminal on wrong account" — running panes are out of scope.
+
+**Response.** DROPPED — objection wins. Every cited claim held. The decisive one is tmux's own manual (GLOBAL AND SESSION ENVIRONMENT): "When a window is created, the session and global environments are merged" — and `CLAUDE_CONFIG_DIR` is not in `update-environment`'s default list, so it never enters a session environment to override the app's write. A new window already lands on the new account; the button adds nothing. With that gone the passive line is the whole feature, and I cannot make it correct: `ps eww` yields no environment, so start time is the only signal, and it mislabels A→B→A and snippet-less panes. Asserting that unattended after auto-switch is exactly failure mode #1. What is real is the docs defect at `README.md:156` and `docs/multi-account-cli.md:115` — a one-line correction, not a brief.
+
+**Open questions for the owner.** (1) Fix the two docs overclaims (`README.md:156`, `docs/multi-account-cli.md:115`) as a standalone change? (2) Is there appetite for a "which account is this pane on" capability if a reliable mechanism is ever found, or is JTBD-3 ("look without touching") a deliberate stop?
