@@ -9,9 +9,11 @@ When I hit a Claude or Codex limit, I can see at a glance which of my accounts s
 
 ## Who it is for
 
-**Primary:** developers on macOS 14+ running **2–7 subscription accounts** across Claude (Pro/Max/Team/Enterprise seats) and/or ChatGPT-via-Codex, working in the `claude`/`codex` CLIs, often in tmux. The CHANGELOG's reference machine has seven profiles. Many already run a menu bar manager (Ice, Thaw, Bartender…).
+**Primary:** developers on macOS 14+ running **two or more subscription accounts** (topping out around ten for nearly everyone, with no hard limit by design) across Claude (Pro/Max/Team/Enterprise seats) and/or ChatGPT-via-Codex, mixed but biased toward Claude, working in the `claude`/`codex` CLIs, often in tmux. The CHANGELOG's reference machine has seven profiles. Many already run a menu bar manager (Ice, Thaw, Bartender…).
 
-**Secondary:** Team/Enterprise members who need *their own* extra-usage spend separated from the org's (4.0.6); people also tracking Anthropic Console spend; non-English users (9 locales); Remote Desktop/headless Macs; automation users (auto-switch, auto-start on reset).
+**Also first-class (owner, 2026-09-03):** Team/Enterprise members who need *their own* extra-usage spend separated from the org's (4.0.6). Org-versus-member correctness ranks with personal Max/Pro correctness, not below it.
+
+**Secondary:** people also tracking Anthropic Console spend; non-English users (9 locales); Remote Desktop/headless Macs; automation users (auto-switch, auto-start on reset).
 
 **NOT for** (README, verbatim intent): one Claude account wanting the 5-hour window in the menu bar — "so would something simpler." Also not: Codex API-key/Bedrock accounts, OpenAI Platform billing, Windows/Linux, macOS < 14.
 
@@ -45,7 +47,7 @@ When I hit a Claude or Codex limit, I can see at a glance which of my accounts s
 - No telemetry, analytics, crash reporting, cloud sync, or third-party services.
 - Never reads/copies/logs `CODEX_HOME/auth.json` or any Codex token; never bundles the Codex CLI.
 - Never edits shell rc files, `settings.json`, or Codex files; the snippet is copy-only.
-- Never reads Chrome cookies/login DBs; Chrome-assisted setup reads profile labels only.
+- Today: never reads Chrome cookies/login DBs; Chrome-assisted setup reads profile labels only. **Not a permanent non-goal.** The owner would welcome reading the claude.ai session key from Chrome with explicit, clearly disclosed user permission, because it would make setup far easier. The dream loop may propose it; any brief must cover the consent flow, what is read and when, and the changes to `docs/data-and-privacy.md`.
 - Read-only: cannot send messages, spend credits, or redeem Codex reset credits.
 - No OpenAI Platform billing; no Codex API-key/Bedrock accounts.
 - Removed on purpose: header account dropdown (3.1.0); Claude Code statusline integration (3.2.0 — the platform does it natively).
@@ -83,10 +85,10 @@ The cheapest alternative is nothing: Claude Code's statusline already exposes `r
 
 **Relied on:** `README.md`; `CHANGELOG.md` (3.0.4–4.2.0); `docs/{menu-bar,multi-account-cli,data-and-privacy,codex-subscriptions}.md`; `SECURITY.md`; `CONTRIBUTING.md`; `RELEASING.md`; `project-documentation/implementation-plans/active-execution/claude-usage-desktop-app-codex-support/{implementation-plan,decisions,final-parity-audit}.md`; sources `Claude Usage/Shared/Services/{ClaudeAPIService,ClaudeCLITokenRefresher,ClaudeSwitchService,AutoStartSessionService,KeychainService}.swift`, `Claude Usage/MenuBar/{MenuBarManager,MenuBarManagerDetection}.swift`, `Packages/UsageKit/Sources/CodexUsageProvider/Transport/CodexProtocol.swift`, `Claude Usage/Resources/*.lproj`.
 
-**Open questions for the owner:**
-1. Median real-user account count — 2–3 or 5–7? `[confirm]` Decides how much overflow/manager work matters versus per-account accuracy.
-2. Split of Codex-only / Claude-only / mixed users? `[confirm]` Codex has far fewer Fixed entries — less usage, or fewer bugs?
-3. Does auto-switch also run Make Active (moving the CLI), or only change the viewed/refreshed profile? (`MenuBarManager.checkAutoSwitchIfNeeded`) `[confirm]`
-4. Loudest Discord/issue complaints today — wrong numbers, login breakage, or updates? `[confirm]`
-5. Is login-Keychain-only acceptable long-term, or is the data-protection Keychain a planned return? `[confirm]`
-6. Should the loops weight Team/Enterprise org-vs-member correctness as first-class, or prioritise personal Max/Pro users? `[confirm]`
+**Owner answers (2026-09-03)**
+1. Accounts per user: two to about ten, no hard limit by design. Overflow and menu-bar-manager behaviour matter up to ten.
+2. Assume mixed users biased toward Claude. Hunt Codex paths proportionally less, never skip them.
+3. Auto-switch should move the CLI as well as the viewed profile. Verified in code: `checkAutoSwitchIfNeeded` calls `ProfileManager.activateProfile`, the same path as Make Active, which rewrites the CLI pointers (`CODEX_HOME` linked home, Claude account link) and tmux environment. The owner has not used the feature; treat it as promising but unproven, and weight bugs in it by JTBD 4.
+4. No loud complaints today. Rank by the promise, not by inbound reports.
+5. Login-Keychain-only: unknown. If the current stance is weak, improve it. The bug loop should assess whether another process could read the stored items without a user prompt, and the dream loop may propose returning to the data-protection Keychain with the migration cost spelled out.
+6. Team/Enterprise org-versus-member correctness is first-class.
