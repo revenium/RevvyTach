@@ -1,6 +1,6 @@
 # RevvyTach — Product Promise
 
-> **Draft for owner review.** Drafted by an agent from the README, changelog, roadmap and source on 2026-09-03. The bug-hunt and dream loops (see `revvie-sdlc/project-documentation/agent-loops/`) read this file as ground truth. Edit freely, resolve every `[confirm]` marker, then merge to `main` to switch the loops on for this repo.
+> Ground truth for the bug-hunt and dream loops (`revvie-sdlc/project-documentation/agent-loops/`). Drafted from the README, changelog, roadmap docs and source, then reviewed and decided by the owner on 2026-09-03. Edit it whenever the product's promise changes; the next loop run picks it up.
 
 
 ## The promise
@@ -79,13 +79,13 @@ The upstream class recurs and users cannot fix it: token rotation, 401-vs-403 me
 
 ## Competitive context
 
-The cheapest alternative is nothing: Claude Code's statusline already exposes `rate_limits.five_hour`/`seven_day`, which is why RevvyTach dropped its own. Single-account menu bar widgets — including the upstream Claude Usage Tracker forked at 3.0.3 — cover "one account, one gauge." CodexBar `[confirm]` is the closest peer: a menu bar usage tracker covering Codex and Claude, but as far as read `[confirm]` it does not switch the CLI's active credentials or manage per-account config directories. RevvyTach bets on the painful end: many accounts, two providers, one active slot each, the terminal following via tmux and rc pointers, coexistence with menu bar managers — under a strict no-exfiltration, no-telemetry stance.
+The cheapest alternative is nothing: Claude Code's statusline already exposes `rate_limits.five_hour`/`seven_day`, which is why RevvyTach dropped its own. Single-account menu bar widgets — including the upstream Claude Usage Tracker forked at 3.0.3 — cover "one account, one gauge." CodexBar is the closest peer: a menu bar usage tracker covering Codex and Claude that, as far as its public description goes, does not switch the CLI's active credentials or manage per-account config directories. RevvyTach bets on the painful end: many accounts, two providers, one active slot each, the terminal following via tmux and rc pointers, coexistence with menu bar managers — under a strict no-exfiltration, no-telemetry stance.
 
-## Evidence and open questions
+## Evidence and owner decisions
 
 **Relied on:** `README.md`; `CHANGELOG.md` (3.0.4–4.2.0); `docs/{menu-bar,multi-account-cli,data-and-privacy,codex-subscriptions}.md`; `SECURITY.md`; `CONTRIBUTING.md`; `RELEASING.md`; `project-documentation/implementation-plans/active-execution/claude-usage-desktop-app-codex-support/{implementation-plan,decisions,final-parity-audit}.md`; sources `Claude Usage/Shared/Services/{ClaudeAPIService,ClaudeCLITokenRefresher,ClaudeSwitchService,AutoStartSessionService,KeychainService}.swift`, `Claude Usage/MenuBar/{MenuBarManager,MenuBarManagerDetection}.swift`, `Packages/UsageKit/Sources/CodexUsageProvider/Transport/CodexProtocol.swift`, `Claude Usage/Resources/*.lproj`.
 
-**Owner answers (2026-09-03)**
+**Owner decisions (2026-09-03)**
 1. Accounts per user: two to about ten, no hard limit by design. Overflow and menu-bar-manager behaviour matter up to ten.
 2. Assume mixed users biased toward Claude. Hunt Codex paths proportionally less, never skip them.
 3. Auto-switch should move the CLI as well as the viewed profile. Verified in code: `checkAutoSwitchIfNeeded` calls `ProfileManager.activateProfile`, the same path as Make Active, which rewrites the CLI pointers (`CODEX_HOME` linked home, Claude account link) and tmux environment. The owner has not used the feature; treat it as promising but unproven, and weight bugs in it by JTBD 4.
