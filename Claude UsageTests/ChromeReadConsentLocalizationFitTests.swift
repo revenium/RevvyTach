@@ -223,6 +223,46 @@ final class ChromeReadConsentLocalizationFitTests: XCTestCase {
         }
     }
 
+    /// Reading from Chrome is a shortcut, never a replacement. A user who
+    /// declines the macOS password prompt, cancels the consent notice, or
+    /// simply prefers to type it themselves still gets the original manual
+    /// route, so its words cannot quietly disappear from a locale.
+    func testManualSessionKeyEntryKeepsItsWordsInEveryLocale() throws {
+        for key in [
+            "personal.label_session_key",
+            "personal.placeholder_session_key",
+            "setup.instruction.step1",
+            "setup.instruction.step2",
+            "setup.instruction.step3",
+            "setup.instruction.step4",
+            "wizard.test_connection",
+        ] {
+            for locale in Self.locales {
+                _ = try string(key, locale)
+            }
+        }
+    }
+
+    /// The notice names Chrome's keychain item, and that name is what a user
+    /// matches against the macOS prompt in front of them. macOS shows that
+    /// prompt twice for this one read, so the paragraph explaining it has to
+    /// survive translation intact.
+    func testConsentBodyKeepsItsFourParagraphsAndNamesTheKeychainItem() throws {
+        for locale in Self.locales {
+            let body = try string("chrome_assisted.read_consent_body", locale)
+            XCTAssertEqual(
+                body.components(separatedBy: "\n\n").count,
+                4,
+                "\(locale) no longer has the four consent paragraphs"
+            )
+            XCTAssertTrue(
+                body.contains("Chrome Safe Storage"),
+                "\(locale) dropped the Chrome Safe Storage name, which is "
+                    + "what the user matches against the macOS prompt"
+            )
+        }
+    }
+
     func testEveryNewKeyIsTranslatedInEveryLocale() throws {
         for key in Self.newKeys {
             for locale in Self.locales {

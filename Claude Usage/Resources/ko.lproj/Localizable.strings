@@ -1241,7 +1241,7 @@
 // Launch splash
 "launch.splash.running" = "메뉴 막대에서 실행 중";
 "chrome_assisted.recommended" = "권장: Chrome에서 Claude 계정 열기";
-"chrome_assisted.description" = "원하는 Chrome 프로필에서 Claude를 연 다음 “Chrome에서 읽기”를 누르거나 아래에 세션 키를 직접 붙여넣으세요.";
+"chrome_assisted.description" = "Chrome 프로필을 선택해 Claude를 여세요. 그런 다음 “Chrome에서 읽기”를 누르거나, 아래에 세션 키를 직접 붙여넣으세요.";
 "chrome_assisted.no_profiles" = "사용 가능한 Chrome 프로필을 찾지 못했습니다. 세션 키는 계속 직접 입력할 수 있습니다.";
 "chrome_assisted.profile_picker" = "Chrome 프로필";
 "chrome_assisted.choose_profile" = "Chrome 프로필 선택";
@@ -1260,7 +1260,7 @@
 "chrome_assisted.read_button" = "Chrome에서 읽기";
 "chrome_assisted.reading" = "읽는 중…";
 "chrome_assisted.read_consent_title" = "Chrome에서 세션 키를 읽을까요?";
-"chrome_assisted.read_consent_body" = "잠시 후 macOS가 로그인 암호를 요청합니다. 허용하면 RevvyTach는 Chrome의 마스터 키 자체를 받습니다. Chrome에 저장된 모든 쿠키와 모든 비밀번호를 여는 바로 그 키입니다. macOS는 이 키를 쿠키 하나로 제한하지 않습니다. 제한하는 것은 RevvyTach 자체의 코드뿐입니다.\n\nRevvyTach는 이 Chrome 프로필의 쿠키를 하나도 빠짐없이 잠시 복사해, 그 복사본에서 claude.ai 세션 키만 읽고 복사본을 즉시 삭제합니다. 그 밖에는 아무것도 읽지 않고 아무것도 보관하지 않습니다.\n\nmacOS 창에는 RevvyTach와 “Chrome Safe Storage”가 표시됩니다. “허용”을 클릭하세요. 이는 한 번만 유효한 허가이며, 다음에 읽을 때 macOS가 다시 묻습니다. “항상 허용”은 클릭하지 마세요. 그 허가는 만료되지 않으며 RevvyTach를 삭제한 뒤에도 계속 유효합니다.\n\n언제든 취소할 수 있습니다. “키체인 접근”을 열고 로그인 키체인에서 “Chrome Safe Storage”를 찾은 다음, “접근 제어” 탭을 열어 RevvyTach를 제거하세요.";
+"chrome_assisted.read_consent_body" = "잠시 후 macOS가 로그인 암호를 요청합니다. 허용하면 RevvyTach는 Chrome의 마스터 키 자체를 받습니다. Chrome에 저장된 모든 쿠키와 모든 비밀번호를 여는 바로 그 키입니다. macOS는 이 키를 쿠키 하나로 제한하지 않습니다. 제한하는 것은 RevvyTach 자체의 코드뿐입니다.\n\nRevvyTach는 이 Chrome 프로필의 쿠키를 하나도 빠짐없이 잠시 복사해, 그 복사본에서 claude.ai 세션 키만 읽고 복사본을 즉시 삭제합니다. 그 밖에는 아무것도 읽지 않고 아무것도 보관하지 않습니다.\n\nmacOS는 두 번 묻습니다. 두 창 모두 RevvyTach와 “Chrome Safe Storage”를 표시합니다. 이는 macOS가 하나의 허가를 두 단계로 확인하는 것이며, RevvyTach가 두 번 읽는 것이 아닙니다. 두 번 모두 “허용”을 클릭하세요. 이는 한 번만 유효한 허가이며, 다음에 읽을 때 macOS가 다시 묻습니다. “항상 허용”은 클릭하지 마세요. 그 허가는 만료되지 않으며 RevvyTach를 삭제한 뒤에도 계속 유효합니다.\n\n언제든 취소할 수 있습니다. “키체인 접근”을 열고 로그인 키체인에서 “Chrome Safe Storage”를 찾은 다음, “접근 제어” 탭을 열어 RevvyTach를 제거하세요.";
 "chrome_assisted.read_consent_continue" = "계속";
 "chrome_assisted.read_scope_note" = "방금 연 Chrome 프로필만 사용합니다: %@";
 "chrome_assisted.read_failed_generic" = "Chrome에서 세션 키를 읽지 못했습니다. DevTools에서 직접 복사해 아래에 붙여 넣으세요.";

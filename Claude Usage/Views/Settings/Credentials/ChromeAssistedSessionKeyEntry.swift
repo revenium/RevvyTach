@@ -412,6 +412,17 @@ struct ChromeAssistedSessionKeyEntry: View {
                 )
             }
 
+            // Manual entry, and it stays. Reading from Chrome is an optional
+            // shortcut, never a replacement: a user who declines the macOS
+            // password prompt, cancels the consent notice, or simply prefers
+            // to do it themselves must be able to paste a key exactly as
+            // before. So the DevTools steps, the key field and Test
+            // Connection are siblings of the Chrome card, always visible,
+            // never collapsed behind it and never gated on a Chrome launch.
+            // Nothing here is conditional. The field's only disabled state is
+            // while a read is actually in flight, which clears the moment the
+            // read finishes, succeeds or fails — cancelling the notice never
+            // starts one.
             VStack(alignment: .leading, spacing: 8) {
                 Text("personal.label_session_key".localized)
                     .font(.system(size: 12, weight: .medium))

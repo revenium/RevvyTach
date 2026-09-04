@@ -1262,7 +1262,7 @@
 // Launch splash
 "launch.splash.running" = "正在菜单栏中运行";
 "chrome_assisted.recommended" = "推荐：在 Chrome 中打开您的 Claude 帐户";
-"chrome_assisted.description" = "在你想使用的 Chrome 配置文件中打开 Claude，然后点按“从 Chrome 读取”，或在下方手动粘贴会话密钥。";
+"chrome_assisted.description" = "选择一个 Chrome 配置文件并打开 Claude。然后点按“从 Chrome 读取”，或在下方手动粘贴会话密钥。";
 "chrome_assisted.no_profiles" = "未找到符合条件的 Chrome 配置文件。您仍可手动输入会话密钥。";
 "chrome_assisted.profile_picker" = "Chrome 配置文件";
 "chrome_assisted.choose_profile" = "选择 Chrome 配置文件";
@@ -1281,7 +1281,7 @@
 "chrome_assisted.read_button" = "从 Chrome 读取";
 "chrome_assisted.reading" = "正在读取…";
 "chrome_assisted.read_consent_title" = "从 Chrome 读取会话密钥？";
-"chrome_assisted.read_consent_body" = "macOS 即将请求你的登录密码。一旦允许，RevvyTach 就拿到了 Chrome 的主密钥本身——正是这把密钥可以解开 Chrome 中的每一个 Cookie 和每一个已保存的密码。macOS 不会把这把密钥限制在一个 Cookie 上，只有 RevvyTach 自己的代码才会。\n\nRevvyTach 会短暂地复制这个 Chrome 配置文件的全部 Cookie（不只是一个），从副本中读取 claude.ai 的会话密钥，然后立即删除副本。除此之外不读取任何内容，也不保留任何内容。\n\nmacOS 的提示会显示 RevvyTach 和“Chrome Safe Storage”。请点按“允许”：这是一次性授权，下次读取时 macOS 会再次询问。请不要点按“始终允许”：该授权永不过期，即使你删除 RevvyTach 后依然有效。\n\n你可以随时收回。打开“钥匙串访问”，在登录钥匙串中找到“Chrome Safe Storage”，打开“访问控制”标签页，移除 RevvyTach。";
+"chrome_assisted.read_consent_body" = "macOS 即将请求你的登录密码。一旦允许，RevvyTach 就拿到了 Chrome 的主密钥本身——正是这把密钥可以解开 Chrome 中的每一个 Cookie 和每一个已保存的密码。macOS 不会把这把密钥限制在一个 Cookie 上，只有 RevvyTach 自己的代码才会。\n\nRevvyTach 会短暂地复制这个 Chrome 配置文件的全部 Cookie（不只是一个），从副本中读取 claude.ai 的会话密钥，然后立即删除副本。除此之外不读取任何内容，也不保留任何内容。\n\nmacOS 会询问两次，两次提示都会显示 RevvyTach 和“Chrome Safe Storage”。这是 macOS 分两步确认同一次授权，并不是 RevvyTach 读取了两次。请两次都点按“允许”：这是一次性授权，下次读取时 macOS 会再次询问。请不要点按“始终允许”：该授权永不过期，即使你删除 RevvyTach 后依然有效。\n\n你可以随时收回。打开“钥匙串访问”，在登录钥匙串中找到“Chrome Safe Storage”，打开“访问控制”标签页，移除 RevvyTach。";
 "chrome_assisted.read_consent_continue" = "继续";
 "chrome_assisted.read_scope_note" = "只会使用你刚刚打开的 Chrome 配置文件：%@";
 "chrome_assisted.read_failed_generic" = "无法从 Chrome 读取会话密钥。请从开发者工具中手动复制，并粘贴到下方。";

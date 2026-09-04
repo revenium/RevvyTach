@@ -1280,7 +1280,7 @@
 // Launch splash
 "launch.splash.running" = "Running in the menu bar";
 "chrome_assisted.recommended" = "Recommended: open your Claude account in Chrome";
-"chrome_assisted.description" = "Open Claude in the Chrome profile you want, then either press Read from Chrome or paste your session key in below.";
+"chrome_assisted.description" = "Choose a Chrome profile and open Claude. Then either press Read from Chrome, or paste the session key by hand below.";
 "chrome_assisted.no_profiles" = "No eligible Chrome profiles were found. You can still enter a session key manually.";
 "chrome_assisted.profile_picker" = "Chrome profile";
 "chrome_assisted.choose_profile" = "Choose a Chrome profile";
@@ -1299,7 +1299,7 @@
 "chrome_assisted.read_button" = "Read from Chrome";
 "chrome_assisted.reading" = "Reading…";
 "chrome_assisted.read_consent_title" = "Read your session key from Chrome?";
-"chrome_assisted.read_consent_body" = "macOS is about to ask for your login password. Approving it hands RevvyTach Chrome's own master key — the same key that unlocks every cookie and every saved password in Chrome. macOS does not limit that key to one cookie. Only RevvyTach's own code does.\n\nRevvyTach makes a short-lived private copy of this Chrome profile's cookies — all of them, not just one — reads the claude.ai session key out of the copy, and deletes the copy right away. It reads nothing else and keeps nothing else.\n\nThe macOS prompt will name RevvyTach and Chrome Safe Storage. Click Allow — a one-time grant, so macOS asks again the next time you read. Do not click Always Allow: that grant never expires, and it keeps working even after you delete RevvyTach.\n\nYou can undo it at any time. Open Keychain Access, find Chrome Safe Storage in your login keychain, open its Access Control tab, and remove RevvyTach.";
+"chrome_assisted.read_consent_body" = "macOS is about to ask for your login password. Approving it hands RevvyTach Chrome's own master key — the same key that unlocks every cookie and every saved password in Chrome. macOS does not limit that key to one cookie. Only RevvyTach's own code does.\n\nRevvyTach makes a short-lived private copy of this Chrome profile's cookies — all of them, not just one — reads the claude.ai session key out of the copy, and deletes the copy right away. It reads nothing else and keeps nothing else.\n\nmacOS asks twice, and both prompts name RevvyTach and Chrome Safe Storage. That is macOS confirming one grant in two steps, not RevvyTach reading twice. Click Allow on both — a one-time grant, so macOS asks again the next time you read. Do not click Always Allow: that grant never expires, and it keeps working even after you delete RevvyTach.\n\nYou can undo it at any time. Open Keychain Access, find Chrome Safe Storage in your login keychain, open its Access Control tab, and remove RevvyTach.";
 "chrome_assisted.read_consent_continue" = "Continue";
 "chrome_assisted.read_scope_note" = "Only the Chrome profile you just opened is used: %@";
 "chrome_assisted.read_failed_generic" = "Couldn't read the session key from Chrome. Please copy it manually from DevTools and paste it below.";

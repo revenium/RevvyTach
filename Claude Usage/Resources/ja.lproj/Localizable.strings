@@ -1265,7 +1265,7 @@
 // Launch splash
 "launch.splash.running" = "メニューバーで実行中";
 "chrome_assisted.recommended" = "推奨：Chrome で Claude アカウントを開く";
-"chrome_assisted.description" = "使いたい Chrome プロファイルで Claude を開き、「Chrome から読み取る」を押すか、下にセッションキーを手動で貼り付けてください。";
+"chrome_assisted.description" = "Chrome プロファイルを選んで Claude を開きます。そのあと「Chrome から読み取る」を押すか、下にセッションキーを手動で貼り付けてください。";
 "chrome_assisted.no_profiles" = "利用可能な Chrome プロファイルが見つかりませんでした。セッションキーは手動で入力できます。";
 "chrome_assisted.profile_picker" = "Chrome プロファイル";
 "chrome_assisted.choose_profile" = "Chrome プロファイルを選択";
@@ -1284,7 +1284,7 @@
 "chrome_assisted.read_button" = "Chrome から読み取る";
 "chrome_assisted.reading" = "読み取り中…";
 "chrome_assisted.read_consent_title" = "Chrome からセッションキーを読み取りますか？";
-"chrome_assisted.read_consent_body" = "このあと macOS がログインパスワードを求めます。許可すると、RevvyTach は Chrome のマスターキーそのものを受け取ります。これは Chrome 内のすべての Cookie と保存済みパスワードを解除できる鍵です。macOS はこの鍵を 1 つの Cookie に限定しません。限定しているのは RevvyTach 自身のコードだけです。\n\nRevvyTach は、この Chrome プロファイルの Cookie を一時的にすべて複製し、その複製から claude.ai のセッションキーだけを読み取って、複製をすぐに削除します。ほかには何も読み取らず、何も保持しません。\n\nmacOS の画面には RevvyTach と「Chrome Safe Storage」が表示されます。「許可」をクリックしてください。これは一度だけの許可で、次に読み取るときに macOS がまた確認します。「常に許可」はクリックしないでください。この許可には期限がなく、RevvyTach を削除したあとも有効なままです。\n\n許可はいつでも取り消せます。「キーチェーンアクセス」を開き、ログインキーチェーンで「Chrome Safe Storage」を探し、「アクセス制御」タブを開いて RevvyTach を削除してください。";
+"chrome_assisted.read_consent_body" = "このあと macOS がログインパスワードを求めます。許可すると、RevvyTach は Chrome のマスターキーそのものを受け取ります。これは Chrome 内のすべての Cookie と保存済みパスワードを解除できる鍵です。macOS はこの鍵を 1 つの Cookie に限定しません。限定しているのは RevvyTach 自身のコードだけです。\n\nRevvyTach は、この Chrome プロファイルの Cookie を一時的にすべて複製し、その複製から claude.ai のセッションキーだけを読み取って、複製をすぐに削除します。ほかには何も読み取らず、何も保持しません。\n\nmacOS は 2 回たずねます。どちらの画面にも RevvyTach と「Chrome Safe Storage」が表示されます。これは macOS が 1 つの許可を 2 段階で確認しているだけで、RevvyTach が 2 回読み取るわけではありません。両方で「許可」をクリックしてください。これは一度だけの許可で、次に読み取るときに macOS がまた確認します。「常に許可」はクリックしないでください。この許可には期限がなく、RevvyTach を削除したあとも有効なままです。\n\n許可はいつでも取り消せます。「キーチェーンアクセス」を開き、ログインキーチェーンで「Chrome Safe Storage」を探し、「アクセス制御」タブを開いて RevvyTach を削除してください。";
 "chrome_assisted.read_consent_continue" = "続ける";
 "chrome_assisted.read_scope_note" = "使用するのは、いま開いた Chrome プロファイルだけです：%@";
 "chrome_assisted.read_failed_generic" = "Chrome からセッションキーを読み取れませんでした。DevTools から手動でコピーして、下に貼り付けてください。";

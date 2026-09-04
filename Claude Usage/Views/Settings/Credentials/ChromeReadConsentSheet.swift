@@ -15,8 +15,12 @@ import SwiftUI
 /// `bodyHeightBudget` so a translation that has drifted into an overrun fails
 /// CI rather than making a user scroll a consent notice.
 struct ChromeReadConsentSheet: View {
-    static let sheetWidth: CGFloat = 480
-    static let sheetHeight: CGFloat = 500
+    /// Grown from 480×500 when the notice gained the paragraph saying macOS
+    /// asks for the password twice. At the old size the German and Portuguese
+    /// translations no longer fit, and a consent notice a user has to scroll
+    /// is a notice they can miss half of.
+    static let sheetWidth: CGFloat = 520
+    static let sheetHeight: CGFloat = 600
     static let contentPadding: CGFloat = 24
 
     /// The wrap width every measured string is asserted against.
@@ -25,7 +29,7 @@ struct ChromeReadConsentSheet: View {
     /// `sheetHeight` minus the fixed chrome: 2×24 padding, an 18pt title,
     /// 12 + 12 + 16 of spacing, a 22pt button row, and a 39pt scope-note
     /// allowance (three wrapped lines at 11pt).
-    static let bodyHeightBudget: CGFloat = 333
+    static let bodyHeightBudget: CGFloat = 433
 
     let profileLabel: String
     let onContinue: () -> Void
