@@ -1170,7 +1170,11 @@ class ClaudeCodeSyncService {
         }
 
         do {
-            try replaceOAuthObject(inCredentialsFileFor: accountName, with: renewed)
+            guard try replaceOAuthObject(
+                inCredentialsFileFor: accountName,
+                with: renewed,
+                expectedRefreshToken: spentRefreshToken
+            ) else { return }
             let message =
                 "Mirrored the rotated token back into Claude Code's credentials "
                 + "file for \(Self.describeAccount(accountName)), so the terminals "
@@ -1382,10 +1386,15 @@ class ClaudeCodeSyncService {
 
     private func replaceOAuthObject(
         inCredentialsFileFor accountName: String?,
-        with renewed: String
-    ) throws {
+        with renewed: String,
+        expectedRefreshToken: String
+    ) throws -> Bool {
         let fileURL = credentialsFileURL(forAccountNamed: accountName)
         let original = try Data(contentsOf: fileURL)
+        guard let current = String(data: original, encoding: .utf8),
+              ClaudeCLITokenRefresher.refreshToken(in: current)
+                == expectedRefreshToken,
+              isAtLeastAsFresh(renewed, as: current) else { return false }
         let updated = try replaceOAuthObject(in: original, with: renewed)
         let directory = fileURL.deletingLastPathComponent()
         let temporaryURL = directory.appendingPathComponent(
@@ -1416,6 +1425,7 @@ class ClaudeCodeSyncService {
                 POSIXErrorCode(rawValue: errno) ?? .EIO
             )
         }
+        return true
     }
 
     /// Removes CLI credentials from profile (doesn't affect system)
