@@ -134,6 +134,119 @@ final class UnknownUsageReadingTests: HostedAppTestCase {
         XCTAssertTrue(stringZero.isAvailable)
     }
 
+    /// The `limits[]` twin of the guard above, and the last path in this file
+    /// that could still manufacture a measured-looking zero. A model-scoped
+    /// entry whose `percent` does not parse must hide its row, exactly as a
+    /// model with no entry at all already does. `JSONSerialization` hands back
+    /// `NSNull` for an explicit JSON `null`, which cleared the old
+    /// presence-only guard and then went straight through `parseUtilization`'s
+    /// fallback-to-zero — so the row rendered "0%" and the account read as wide
+    /// open on a figure Anthropic never sent.
+    func testUnreadableModelScopedPercentHidesTheRowRatherThanReadingZero() {
+        let cases: [(name: String, percent: Any)] = [
+            ("explicit null", NSNull()),
+            ("non-numeric string", "not-a-number"),
+            ("wrong type (array)", [1, 2, 3]),
+            ("non-finite", Double.nan)
+        ]
+
+        for testCase in cases {
+            let limits: [[String: Any]] = [
+                [
+                    "kind": "weekly_scoped",
+                    "group": "weekly",
+                    "percent": testCase.percent,
+                    "resets_at": "2026-09-03T08:59:59.801278+00:00",
+                    "scope": ["model": ["id": NSNull(), "display_name": "Opus"]]
+                ]
+            ]
+
+            XCTAssertNil(
+                UsageLimitParsing.parseWeeklyScopedLimit(
+                    from: limits,
+                    modelDisplayName: "Opus"
+                ),
+                "\(testCase.name) must not report a figure for Opus."
+            )
+        }
+    }
+
+    /// The correction must not overreach. A model measured at 0% has a
+    /// reading, and its row belongs on screen — both in the numeric form and
+    /// in the percent-suffixed string form the API has been seen to use.
+    func testMeasuredZeroModelScopedPercentStillReadsAsAFigure() {
+        let numericZero: [[String: Any]] = [
+            [
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": 0,
+                "scope": ["model": ["display_name": "Opus"]]
+            ]
+        ]
+        let stringZeroPercent: [[String: Any]] = [
+            [
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": "0%",
+                "scope": ["model": ["display_name": "Opus"]]
+            ]
+        ]
+
+        XCTAssertEqual(
+            UsageLimitParsing.parseWeeklyScopedLimit(
+                from: numericZero,
+                modelDisplayName: "Opus"
+            )?.percentage,
+            0,
+            "A reported 0 is a reading and must stay one."
+        )
+        XCTAssertEqual(
+            UsageLimitParsing.parseWeeklyScopedLimit(
+                from: stringZeroPercent,
+                modelDisplayName: "Opus"
+            )?.percentage,
+            0,
+            "A reported \"0%\" is a reading and must stay one."
+        )
+    }
+
+    /// Skipping an unreadable entry must continue the scan, not end it. A
+    /// response that repeats a model — one entry with nothing in it, one with
+    /// the figure — still contains the figure, and giving up on the first row
+    /// would throw away a reading the account actually reported.
+    func testAnUnreadableEntryDoesNotHideALaterGoodOneForTheSameModel() {
+        let limits: [[String: Any]] = [
+            [
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": NSNull(),
+                "scope": ["model": ["display_name": "Opus"]]
+            ],
+            [
+                "kind": "weekly_scoped",
+                "group": "weekly",
+                "percent": 37,
+                "resets_at": "2026-09-03T08:59:59.801278+00:00",
+                "scope": ["model": ["display_name": "Opus"]]
+            ]
+        ]
+
+        let result = UsageLimitParsing.parseWeeklyScopedLimit(
+            from: limits,
+            modelDisplayName: "Opus"
+        )
+
+        XCTAssertEqual(
+            result?.percentage,
+            37,
+            "The second entry carried the only figure in the response."
+        )
+        XCTAssertNotNil(
+            result?.resetTime,
+            "The reset time must come from the entry that carried the figure."
+        )
+    }
+
     // MARK: - Model
 
     func testEmptyUsageReportsNoReadingForEitherWindow() {

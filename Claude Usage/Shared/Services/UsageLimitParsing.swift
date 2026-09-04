@@ -81,7 +81,8 @@ enum UsageLimitParsing {
     /// Entries look like:
     /// `{ "kind": "weekly_scoped", "group": "weekly", "percent": 32,
     ///    "scope": { "model": { "display_name": "Fable" } }, "resets_at": "..." }`
-    /// - Returns: nil if the array is absent or no entry matches the given model name.
+    /// - Returns: nil if the array is absent, if no entry matches the given model name, or if
+    ///   no matching entry carries a figure that actually parses.
     static func parseWeeklyScopedLimit(
         from limits: [[String: Any]]?,
         modelDisplayName: String
@@ -101,9 +102,17 @@ enum UsageLimitParsing {
                   let model = scope["model"] as? [String: Any],
                   let displayName = model["display_name"] as? String,
                   displayName.caseInsensitiveCompare(modelDisplayName) == .orderedSame else { continue }
-            guard let percent = limit["percent"] else { continue }
+            // `JSONSerialization` turns a JSON `null` into `NSNull`, which is not `nil`, so a
+            // bare presence check clears for `"percent": null` and `parseUtilization`'s
+            // fallback then hands back a confident, measured-looking `0.0` for a figure the
+            // response never carried. An unparseable figure is an absent figure, never a zero —
+            // the same rule `parseWeeklyModelUsage` already applies to the legacy top-level key.
+            // Skipping rather than returning keeps the scan alive, so a response that repeats a
+            // model still yields whichever of its entries does carry a figure. A genuine `0` or
+            // `"0%"` is a measured zero and still returns normally.
+            guard let percent = limit["percent"],
+                  let percentage = parseUtilizationIfAvailable(percent) else { continue }
 
-            let percentage = parseUtilization(percent)
             let resetTime = parseResetTime(limit["resets_at"])
             return (percentage, resetTime)
         }
