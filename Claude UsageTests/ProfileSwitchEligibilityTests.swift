@@ -130,13 +130,20 @@ final class ProfileSwitchEligibilityTests: HostedAppTestCase {
 
     private var healthy: ClaudeUsage { reading(session: 10, weekly: 20) }
 
+    /// `codexHomeAvailable` defaults to "every linked home is usable" so the
+    /// existing presence-only fixtures (`linkedCodex` decodes a path-only,
+    /// identity-less `CanonicalCodexHome` — see `canonicalHome` below) keep
+    /// meaning what they always meant, without touching the real filesystem.
+    /// Only `testStaleCodexHomeIsSkippedInFavorOfALiveOne` overrides it.
     private func next(
         after active: Profile,
-        in profiles: [Profile]
+        in profiles: [Profile],
+        codexHomeAvailable: (CanonicalCodexHome) -> Bool = { _ in true }
     ) -> Profile? {
         ProfileSwitchEligibility.nextEligibleProfile(
             after: active.id,
-            in: profiles
+            in: profiles,
+            codexHomeAvailable: codexHomeAvailable
         )
     }
 
@@ -286,6 +293,33 @@ final class ProfileSwitchEligibilityTests: HostedAppTestCase {
         let b = unlinkedCodex("B")
 
         XCTAssertNil(next(after: a, in: [a, b]))
+    }
+
+    /// A linked home is not automatically a usable one. `B` is linked but its
+    /// directory is gone (or moved, or on an unavailable volume) — the exact
+    /// failure `CodexProviderFactory.capture(linkedHome:)` catches at
+    /// activation time. Because `nextEligibleProfile` returns the first
+    /// match, a presence-only check would land on `B` and never reach `C`,
+    /// the linked home that is actually still there.
+    func testStaleCodexHomeIsSkippedInFavorOfALiveOne() throws {
+        let a = try linkedCodex("A", home: "/Users/example/codex-a")
+        let b = try linkedCodex("B", home: "/Users/example/codex-b-stale")
+        let c = try linkedCodex("C", home: "/Users/example/codex-c-live")
+
+        let chosen = next(after: a, in: [a, b, c]) { linkedHome in
+            linkedHome.path == "/Users/example/codex-c-live"
+        }
+
+        XCTAssertEqual(chosen?.id, c.id)
+    }
+
+    /// Every linked home in the walk is stale: no candidate qualifies, the
+    /// same outcome as no candidate being linked at all.
+    func testAllStaleCodexHomesReturnsNil() throws {
+        let a = try linkedCodex("A", home: "/Users/example/codex-a")
+        let b = try linkedCodex("B", home: "/Users/example/codex-b-stale")
+
+        XCTAssertNil(next(after: a, in: [a, b]) { _ in false })
     }
 
     // MARK: - Claude credentials and sign-in

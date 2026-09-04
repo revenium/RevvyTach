@@ -68,16 +68,25 @@ import UsageCore
 /// sign-in cases only after both capacity windows have already arrived, and
 /// one of its cases is `.notLinked`, an ordinary well-configured profile.
 ///
-/// **Codex.** A linked `CODEX_HOME`, and nothing else — because nothing else
-/// exists to read. `hasImmediatelyUsableCredentials` and `claudeUsage` are not
-/// "false" and "nil" for a Codex profile in the sense of a failed test; they
-/// read fields `Profile.validateProviderIsolation` *throws* on, so they answer
-/// "this question does not apply". Enforcing them would silently turn the
-/// hotkey into a permanent no-op for every Codex-only user, with no message
-/// allowed to explain it. `linkedHome` is the Codex-shaped form of the same
-/// question the Claude branch asks, and it matters on its own: activating an
-/// unlinked Codex profile *clears* `CODEX_HOME`, repointing every terminal at
-/// Codex's own `~/.codex` default.
+/// **Codex.** A linked `CODEX_HOME` that still resolves, and nothing else —
+/// because nothing else exists to read. `hasImmediatelyUsableCredentials` and
+/// `claudeUsage` are not "false" and "nil" for a Codex profile in the sense
+/// of a failed test; they read fields `Profile.validateProviderIsolation`
+/// *throws* on, so they answer "this question does not apply". Enforcing
+/// them would silently turn the hotkey into a permanent no-op for every
+/// Codex-only user, with no message allowed to explain it. `linkedHome` is
+/// the Codex-shaped form of the same question the Claude branch asks, and it
+/// matters on its own: activating an unlinked Codex profile *clears*
+/// `CODEX_HOME`, repointing every terminal at Codex's own `~/.codex` default.
+/// A *linked* home still has to be revalidated, though: `nextEligibleProfile`
+/// returns the first match it finds, so a stale link (directory removed,
+/// replaced, or on an unavailable volume) sitting earlier in the wrap order
+/// would otherwise be chosen over a genuinely usable one later in the list,
+/// and only discovered stale after activation had already committed to it.
+/// `defaultCodexHomeAvailable` re-runs the exact physical path and
+/// filesystem-identity check `CodexProviderFactory` performs before handing a
+/// home to the Codex CLI, so eligibility and activation cannot disagree about
+/// what "usable" means.
 ///
 /// Nothing here ranks candidates by headroom. The nearest eligible profile
 /// after the current one wins, wrapping around, exactly as the list has always
@@ -91,7 +100,8 @@ enum ProfileSwitchEligibility {
     /// the first eligible entry. The active profile is never its own answer.
     static func nextEligibleProfile(
         after activeProfileID: UUID,
-        in profiles: [Profile]
+        in profiles: [Profile],
+        codexHomeAvailable: (CanonicalCodexHome) -> Bool = defaultCodexHomeAvailable
     ) -> Profile? {
         // Counted over the whole array, tombstones included, because `count`
         // is also the modulus for the wrap below — filtering here would
@@ -109,7 +119,11 @@ enum ProfileSwitchEligibility {
 
         for offset in 1..<count {
             let candidate = profiles[(activeIndex + offset) % count]
-            if isEligible(candidate, switchingFrom: active) {
+            if isEligible(
+                candidate,
+                switchingFrom: active,
+                codexHomeAvailable: codexHomeAvailable
+            ) {
                 return candidate
             }
         }
@@ -119,9 +133,16 @@ enum ProfileSwitchEligibility {
     /// Whether `candidate` is somewhere the app may send someone, given the
     /// profile it would be leaving. Split out from the walk above so each rule
     /// can be tested without standing up an ordered list.
+    ///
+    /// `codexHomeAvailable` defaults to `defaultCodexHomeAvailable`, which
+    /// reuses `CodexProviderFactory.isHomeAvailable(_:)` — the same physical
+    /// path + filesystem identity check activation performs before handing a
+    /// linked home to the Codex CLI. Injectable so tests can stand up a
+    /// stale-vs-live pair without touching the real filesystem.
     static func isEligible(
         _ candidate: Profile,
-        switchingFrom active: Profile
+        switchingFrom active: Profile,
+        codexHomeAvailable: (CanonicalCodexHome) -> Bool = defaultCodexHomeAvailable
     ) -> Bool {
         guard !candidate.deletionInProgress,
               candidate.id != active.id,
@@ -154,8 +175,29 @@ enum ProfileSwitchEligibility {
 
         case .codex(let configuration):
             // Activating an unlinked Codex profile clears `CODEX_HOME` for
-            // every terminal, so it is a reset rather than a destination.
-            return configuration.linkedHome != nil
+            // every terminal, so it is a reset rather than a destination. A
+            // *linked* home is not automatically a usable one: the directory
+            // can have been removed, replaced, or moved to an unavailable
+            // volume since it was linked. Presence alone used to be enough
+            // here, but `nextEligibleProfile` stops at the first match — a
+            // stale-but-linked profile earlier in the wrap order would be
+            // returned and a genuinely usable one later in the list would
+            // never be reached. Re-verify the same way activation does.
+            guard let linkedHome = configuration.linkedHome else {
+                return false
+            }
+            return codexHomeAvailable(linkedHome)
         }
+    }
+
+    /// Revalidates a linked Codex home's physical path and filesystem
+    /// identity, exactly as `CodexProviderFactory.capture(linkedHome:)` does
+    /// immediately before activation. Reused rather than reimplemented so
+    /// eligibility and activation can never quietly disagree about what
+    /// "usable" means.
+    private static func defaultCodexHomeAvailable(
+        _ linkedHome: CanonicalCodexHome
+    ) -> Bool {
+        CodexProviderFactory().isHomeAvailable(linkedHome)
     }
 }
