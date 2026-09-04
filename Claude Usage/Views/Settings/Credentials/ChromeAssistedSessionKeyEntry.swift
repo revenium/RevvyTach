@@ -108,11 +108,57 @@ nonisolated enum SessionKeyAttemptPolicy {
     }
 }
 
-/// The recommended, manual browser-assisted path for Claude session-key setup.
+/// The one Chrome profile the user launched in this attempt.
 ///
-/// This deliberately reads only Chrome profile labels/directories via
-/// `ChromeProfileDiscoverer` and hands the selected profile to the hardened
-/// launcher. It never reads cookies, login databases, or a session key.
+/// Label and directory name travel together on purpose. They were separate
+/// values once, and a failed second launch left the directory name pointing
+/// at the profile from the attempt before it — so the read would have been
+/// scoped to a profile the user had not just opened, which is the promise the
+/// consent notice makes.
+nonisolated struct LaunchedChromeProfile: Equatable, Sendable {
+    let label: String
+    let directoryName: String
+}
+
+nonisolated enum ChromeLaunchBookkeeping {
+    /// The launched-profile state after one launch attempt. Every attempt
+    /// clears the previous result first (the user must choose a profile
+    /// again for each launch), so a failed attempt leaves nothing
+    /// addressable — never the profile from the attempt before it.
+    static func result(
+        didLaunch: Bool,
+        profile: ChromeProfile
+    ) -> LaunchedChromeProfile? {
+        guard didLaunch else { return nil }
+        return LaunchedChromeProfile(
+            label: profile.label,
+            directoryName: profile.directoryName
+        )
+    }
+}
+
+nonisolated enum ChromeReadAvailabilityPolicy {
+    /// Default-off contract: nothing is readable until a specific profile has
+    /// been launched successfully in this attempt.
+    static func permitsRead(
+        launchedProfile: LaunchedChromeProfile?,
+        isLaunching: Bool,
+        isReading: Bool,
+        isValidating: Bool
+    ) -> Bool {
+        launchedProfile != nil && !isLaunching && !isReading && !isValidating
+    }
+}
+
+/// The recommended browser-assisted path for Claude session-key setup.
+///
+/// Profile discovery reads only Chrome profile labels/directories via
+/// `ChromeProfileDiscoverer`, and launching a profile reads nothing else.
+/// Reading the claude.ai session key is a separate, default-off action: the
+/// **Read from Chrome** button, which is disabled until a specific profile has
+/// been launched in this attempt, shows a consent sheet, and only then runs
+/// `ChromeCookieSessionKeyReader` off the main actor. Login databases, saved
+/// passwords and browser history are never read.
 struct ChromeAssistedSessionKeyEntry: View {
     @Binding var sessionKey: String
     let validationState: ValidationState
@@ -122,13 +168,23 @@ struct ChromeAssistedSessionKeyEntry: View {
     let onLaunchStarted: () -> UUID
     let isLaunchCurrent: (UUID) -> Bool
     let onChromeProfileLaunched: (String) -> Void
+    /// Adopts a key read from Chrome. Deliberately not `onSessionKeyChanged`:
+    /// the adoption path has to keep the captured setup target and the
+    /// Chrome-context confirmation gate, which a plain paste does not.
+    let onSessionKeyReadFromChrome: (String) -> Void
 
     @State private var profiles: [ChromeProfile] = []
     @State private var selectedDirectoryName: String?
     @State private var isLaunching = false
     @State private var launchError: String?
-    @State private var launchedProfileLabel: String?
+    @State private var launchedProfile: LaunchedChromeProfile?
     @State private var launchNonce = UUID()
+    @State private var isReadingFromChrome = false
+    @State private var readError: String?
+    @State private var showingChromeReadConsent = false
+    /// Captured when the consent sheet opens, so neither the sheet's copy nor
+    /// the background read can drift onto a different profile mid-flight.
+    @State private var pendingRead: LaunchedChromeProfile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -189,15 +245,53 @@ struct ChromeAssistedSessionKeyEntry: View {
                         .foregroundColor(.red)
                 }
 
-                if let launchedProfileLabel {
+                if let launchedProfile {
                     Text(
                         String(
                             format: "chrome_assisted.verify_account".localized,
-                            launchedProfileLabel
+                            launchedProfile.label
                         )
                     )
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                }
+
+                // Default-off: this cannot be pressed until the user has
+                // launched a specific profile in this attempt, and pressing
+                // it only opens the consent notice.
+                Button(action: beginChromeRead) {
+                    HStack(spacing: 6) {
+                        if isReadingFromChrome {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "key")
+                                .font(.system(size: 12))
+                        }
+                        Text(
+                            isReadingFromChrome
+                                ? "chrome_assisted.reading".localized
+                                : "chrome_assisted.read_button".localized
+                        )
+                        .font(.system(size: 12))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    !ChromeReadAvailabilityPolicy.permitsRead(
+                        launchedProfile: launchedProfile,
+                        isLaunching: isLaunching,
+                        isReading: isReadingFromChrome,
+                        isValidating: validationState == .validating
+                    )
+                )
+                .accessibilityIdentifier("chrome.read_from_chrome")
+
+                if let readError {
+                    Text(readError)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
                 }
 
                 Text("chrome_assisted.no_extraction".localized)
@@ -207,6 +301,15 @@ struct ChromeAssistedSessionKeyEntry: View {
             .padding(12)
             .background(Color.accentColor.opacity(0.07))
             .cornerRadius(8)
+            .sheet(isPresented: $showingChromeReadConsent) {
+                if let pendingRead {
+                    ChromeReadConsentSheet(
+                        profileLabel: pendingRead.label,
+                        onContinue: continueChromeRead,
+                        onCancel: cancelChromeRead
+                    )
+                }
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("personal.label_session_key".localized)
@@ -292,6 +395,79 @@ struct ChromeAssistedSessionKeyEntry: View {
         selectedDirectoryName = nil
     }
 
+    // MARK: - Read from Chrome
+
+    private func beginChromeRead() {
+        readError = nil
+        guard let launchedProfile else { return }
+        pendingRead = launchedProfile
+        showingChromeReadConsent = true
+    }
+
+    private func cancelChromeRead() {
+        showingChromeReadConsent = false
+        pendingRead = nil
+    }
+
+    private func continueChromeRead() {
+        showingChromeReadConsent = false
+        guard let pending = pendingRead else { return }
+        readError = nil
+        isReadingFromChrome = true
+        let directoryName = pending.directoryName
+
+        // The read blocks on the macOS password prompt, so it must not run on
+        // the main thread — a frozen wizard at the moment the user is asked
+        // for their login password is the worst possible look. The work is
+        // pushed to a global queue rather than a detached task so this view's
+        // non-Sendable closures are never captured in a `@Sendable` closure.
+        Task { @MainActor in
+            let outcome: Result<String, Error> = await withCheckedContinuation {
+                continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(
+                        returning: Result {
+                            try ChromeCookieSessionKeyReader().readSessionKey(
+                                profileDirectoryName: directoryName
+                            )
+                        }
+                    )
+                }
+            }
+            finishChromeRead(outcome)
+        }
+    }
+
+    private func finishChromeRead(_ outcome: Result<String, Error>) {
+        isReadingFromChrome = false
+        pendingRead = nil
+        switch outcome {
+        case .success(let key):
+            readError = nil
+            onSessionKeyReadFromChrome(key)
+        case .failure(let error):
+            readError = Self.message(for: error)
+        }
+    }
+
+    /// Maps a failure to a fixed localized sentence. Nothing here
+    /// interpolates a value, a path, or an `OSStatus`, so no decrypted or
+    /// identifying bytes can reach the screen.
+    static func message(for error: Error) -> String {
+        switch error as? ChromeCookieReadError {
+        case .keychainAccessDenied:
+            return "chrome_assisted.read_failed_denied".localized
+        case .databaseLocked:
+            return "chrome_assisted.read_failed_locked".localized
+        case .sessionCookieMissing, .keychainItemMissing:
+            return "chrome_assisted.read_failed_missing".localized
+        case .unknownEncryptionVersion:
+            return "chrome_assisted.read_failed_version".localized
+        default:
+            return "chrome_assisted.read_failed_generic".localized
+        }
+    }
+
     private func launchSelectedProfile() {
         guard let directoryName = selectedDirectoryName,
               let profile = profiles.first(where: {
@@ -303,7 +479,8 @@ struct ChromeAssistedSessionKeyEntry: View {
         // A user must choose a profile again for every browser launch.
         selectedDirectoryName = nil
         launchError = nil
-        launchedProfileLabel = nil
+        readError = nil
+        launchedProfile = nil
         let parentGeneration = onLaunchStarted()
         let attempt = ChromeLaunchAttempt(
             nonce: UUID(),
@@ -327,12 +504,18 @@ struct ChromeAssistedSessionKeyEntry: View {
                     return
                 }
                 isLaunching = false
-                guard didLaunch else {
+                // Assigned unconditionally, so a failed attempt clears the
+                // profile the previous attempt launched instead of leaving it
+                // addressable.
+                launchedProfile = ChromeLaunchBookkeeping.result(
+                    didLaunch: didLaunch,
+                    profile: profile
+                )
+                guard let launched = launchedProfile else {
                     launchError = "chrome_assisted.launch_failed".localized
                     return
                 }
-                launchedProfileLabel = profile.label
-                onChromeProfileLaunched(profile.label)
+                onChromeProfileLaunched(launched.label)
             }
         }
     }

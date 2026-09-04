@@ -1252,7 +1252,7 @@
 "chrome_assisted.launch" = "Ouvrir le profil Chrome sélectionné";
 "chrome_assisted.launch_failed" = "Chrome n’a pas pu être ouvert avec ce profil. Choisissez un profil et réessayez, ou utilisez une autre méthode.";
 "chrome_assisted.verify_account" = "Le profil Chrome %@ est ouvert. Vérifiez visuellement le compte Claude voulu dans Chrome avant de coller une clé de session.";
-"chrome_assisted.no_extraction" = "La sélection d’un profil de navigateur n’extrait ni ne vérifie une clé de session.";
+"chrome_assisted.no_extraction" = "Ouvrir un profil ne lit rien. Une clé de session n'est lue que si vous cliquez sur « Lire depuis Chrome » et acceptez la fenêtre de macOS.";
 "chrome_assisted.embedded_fallback" = "Alternative : connectez-vous avec le navigateur intégré.";
 "chrome_assisted.validation_success" = "Clé de session validée. %ld organisation(s) trouvée(s).";
 "chrome_assisted.no_organizations" = "La clé de session est valide, mais aucune organisation n’a été trouvée. Choisissez un autre compte ou une autre clé.";
@@ -1260,6 +1260,17 @@
 "chrome_assisted.profile_changed" = "Le profil Claude actif a changé. Recommencez cette configuration.";
 "chrome_assisted.confirm_context" = "Je confirme que le profil Chrome %@ est le contexte à utiliser pour le profil RevvyTach %@. Cela n’est pas vérifié par l’API.";
 "chrome_assisted.new_claude_profile" = "nouveau profil Claude";
+"chrome_assisted.read_button" = "Lire depuis Chrome";
+"chrome_assisted.reading" = "Lecture…";
+"chrome_assisted.read_consent_title" = "Lire votre clé de session depuis Chrome ?";
+"chrome_assisted.read_consent_body" = "macOS va vous demander votre mot de passe de session. En acceptant, vous confiez à RevvyTach la clé maîtresse de Chrome : celle qui déverrouille tous les cookies et tous les mots de passe enregistrés dans Chrome. macOS ne limite pas cette clé à un seul cookie. Seul le code de RevvyTach le fait.\n\nRevvyTach crée une copie privée et brève des cookies de ce profil Chrome — de tous, pas d'un seul —, y lit la clé de session claude.ai, puis supprime la copie immédiatement. Il ne lit rien d'autre et ne conserve rien d'autre.\n\nLa fenêtre de macOS nommera RevvyTach et « Chrome Safe Storage ». Cliquez sur « Autoriser » : l'autorisation ne vaut qu'une fois, macOS redemandera à la prochaine lecture. Ne cliquez pas sur « Toujours autoriser » : cette autorisation n'expire jamais et reste valable même après la suppression de RevvyTach.\n\nVous pouvez la retirer à tout moment. Ouvrez Trousseaux d'accès, cherchez « Chrome Safe Storage » dans votre trousseau de session, ouvrez l'onglet « Contrôle d'accès » et supprimez RevvyTach.";
+"chrome_assisted.read_consent_continue" = "Continuer";
+"chrome_assisted.read_scope_note" = "Seul le profil Chrome que vous venez d'ouvrir est utilisé : %@";
+"chrome_assisted.read_failed_generic" = "Impossible de lire la clé de session depuis Chrome. Copiez-la manuellement depuis les DevTools et collez-la ci-dessous.";
+"chrome_assisted.read_failed_denied" = "L'accès au trousseau a été refusé, rien n'a été lu. Cliquez sur « Autoriser » dans la fenêtre de macOS, ou collez la clé de session ci-dessous.";
+"chrome_assisted.read_failed_locked" = "La base de cookies de Chrome est occupée pour le moment. Quittez Chrome et réessayez, ou collez la clé de session ci-dessous.";
+"chrome_assisted.read_failed_missing" = "Aucune clé de session claude.ai utilisable n'a été trouvée dans ce profil Chrome : elle est absente ou expirée. Connectez-vous à claude.ai dans Chrome, ou collez la clé ci-dessous.";
+"chrome_assisted.read_failed_version" = "Chrome a changé sa façon de stocker les cookies : cette version de RevvyTach ne peut pas les lire. La lecture depuis Chrome reste désactivée jusqu'à la mise à jour de RevvyTach. Collez la clé de session ci-dessous.";
 "personal.session_key_validated" = "Clé de session validée";
 "menubar.overage_balance" = "Solde de Crédits";
 "menubar.overage_balance_organization" = "Solde de Crédits · Organisation";

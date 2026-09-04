@@ -1269,7 +1269,7 @@
 "chrome_assisted.launch" = "打开所选 Chrome 配置文件";
 "chrome_assisted.launch_failed" = "无法使用该配置文件打开 Chrome。请选择配置文件后重试，或使用备用方法。";
 "chrome_assisted.verify_account" = "已打开 Chrome 配置文件 %@。粘贴会话密钥前，请在 Chrome 中目视确认目标 Claude 帐户。";
-"chrome_assisted.no_extraction" = "选择浏览器配置文件不会提取或验证会话密钥。";
+"chrome_assisted.no_extraction" = "打开配置文件不会读取任何内容。只有在你点按“从 Chrome 读取”并在 macOS 提示中允许后，才会读取会话密钥。";
 "chrome_assisted.embedded_fallback" = "备用方法：使用内嵌浏览器登录。";
 "chrome_assisted.validation_success" = "会话密钥已验证。找到 %ld 个组织。";
 "chrome_assisted.no_organizations" = "会话密钥有效，但未找到组织。请选择其他帐户或密钥。";
@@ -1277,6 +1277,17 @@
 "chrome_assisted.profile_changed" = "活跃的 Claude 配置文件已更改。请重新开始此设置。";
 "chrome_assisted.confirm_context" = "我确认 Chrome 配置文件 %@ 是我希望用于 RevvyTach 配置文件 %@ 的上下文。这未经 API 验证。";
 "chrome_assisted.new_claude_profile" = "新的 Claude 配置文件";
+"chrome_assisted.read_button" = "从 Chrome 读取";
+"chrome_assisted.reading" = "正在读取…";
+"chrome_assisted.read_consent_title" = "从 Chrome 读取会话密钥？";
+"chrome_assisted.read_consent_body" = "macOS 即将请求你的登录密码。一旦允许，RevvyTach 就拿到了 Chrome 的主密钥本身——正是这把密钥可以解开 Chrome 中的每一个 Cookie 和每一个已保存的密码。macOS 不会把这把密钥限制在一个 Cookie 上，只有 RevvyTach 自己的代码才会。\n\nRevvyTach 会短暂地复制这个 Chrome 配置文件的全部 Cookie（不只是一个），从副本中读取 claude.ai 的会话密钥，然后立即删除副本。除此之外不读取任何内容，也不保留任何内容。\n\nmacOS 的提示会显示 RevvyTach 和“Chrome Safe Storage”。请点按“允许”：这是一次性授权，下次读取时 macOS 会再次询问。请不要点按“始终允许”：该授权永不过期，即使你删除 RevvyTach 后依然有效。\n\n你可以随时收回。打开“钥匙串访问”，在登录钥匙串中找到“Chrome Safe Storage”，打开“访问控制”标签页，移除 RevvyTach。";
+"chrome_assisted.read_consent_continue" = "继续";
+"chrome_assisted.read_scope_note" = "只会使用你刚刚打开的 Chrome 配置文件：%@";
+"chrome_assisted.read_failed_generic" = "无法从 Chrome 读取会话密钥。请从开发者工具中手动复制，并粘贴到下方。";
+"chrome_assisted.read_failed_denied" = "钥匙串访问被拒绝，因此没有读取任何内容。请在 macOS 提示中点按“允许”，或在下方手动粘贴会话密钥。";
+"chrome_assisted.read_failed_locked" = "Chrome 的 Cookie 数据库正忙。请退出 Chrome 后重试，或在下方手动粘贴会话密钥。";
+"chrome_assisted.read_failed_missing" = "在该 Chrome 配置文件中没有找到可用的 claude.ai 会话密钥——可能不存在或已过期。请在 Chrome 中登录 claude.ai，或在下方手动粘贴密钥。";
+"chrome_assisted.read_failed_version" = "Chrome 更改了 Cookie 的存储方式，因此当前版本的 RevvyTach 无法读取。在 RevvyTach 更新之前，从 Chrome 读取将保持关闭。请在下方手动粘贴会话密钥。";
 "personal.session_key_validated" = "会话密钥已验证";
 "menubar.overage_balance" = "积分余额";
 "menubar.overage_balance_organization" = "积分余额 · 组织";

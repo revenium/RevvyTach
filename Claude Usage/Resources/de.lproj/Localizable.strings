@@ -1272,7 +1272,7 @@
 "chrome_assisted.launch" = "Ausgewähltes Chrome-Profil öffnen";
 "chrome_assisted.launch_failed" = "Chrome konnte nicht mit diesem Profil geöffnet werden. Wählen Sie ein Profil und versuchen Sie es erneut, oder verwenden Sie eine Alternative.";
 "chrome_assisted.verify_account" = "Chrome-Profil %@ wurde geöffnet. Prüfen Sie vor dem Einfügen eines Sitzungsschlüssels visuell das gewünschte Claude-Konto in Chrome.";
-"chrome_assisted.no_extraction" = "Die Auswahl eines Browserprofils extrahiert oder überprüft keinen Sitzungsschlüssel.";
+"chrome_assisted.no_extraction" = "Beim Öffnen eines Profils wird nichts gelesen. Ein Sitzungsschlüssel wird nur gelesen, wenn Sie auf „Aus Chrome auslesen“ klicken und die macOS-Meldung bestätigen.";
 "chrome_assisted.embedded_fallback" = "Alternative: Melden Sie sich stattdessen im eingebetteten Browser an.";
 "chrome_assisted.validation_success" = "Sitzungsschlüssel validiert. %ld Organisation(en) gefunden.";
 "chrome_assisted.no_organizations" = "Der Sitzungsschlüssel ist gültig, aber es wurden keine Organisationen gefunden. Wählen Sie ein anderes Konto oder einen anderen Schlüssel.";
@@ -1280,6 +1280,17 @@
 "chrome_assisted.profile_changed" = "Das aktive Claude-Profil wurde geändert. Starten Sie diesen Einrichtungsvorgang erneut.";
 "chrome_assisted.confirm_context" = "Ich bestätige, dass das Chrome-Profil %@ der Kontext ist, den ich für das RevvyTach-Profil %@ verwenden möchte. Dies ist nicht API-verifiziert.";
 "chrome_assisted.new_claude_profile" = "neues Claude-Profil";
+"chrome_assisted.read_button" = "Aus Chrome auslesen";
+"chrome_assisted.reading" = "Wird gelesen …";
+"chrome_assisted.read_consent_title" = "Sitzungsschlüssel aus Chrome auslesen?";
+"chrome_assisted.read_consent_body" = "macOS fragt gleich nach Ihrem Anmeldekennwort. Wenn Sie zustimmen, erhält RevvyTach den Hauptschlüssel von Chrome – denselben Schlüssel, der jedes Cookie und jedes in Chrome gespeicherte Passwort entsperrt. macOS beschränkt diesen Schlüssel nicht auf ein einzelnes Cookie. Das tut nur der Code von RevvyTach selbst.\n\nRevvyTach legt kurz eine private Kopie der Cookies dieses Chrome-Profils an – aller Cookies, nicht nur eines –, liest den Sitzungsschlüssel von claude.ai aus dieser Kopie und löscht die Kopie sofort wieder. Mehr wird nicht gelesen, und nichts davon wird behalten.\n\nIn der Meldung von macOS stehen RevvyTach und „Chrome Safe Storage“. Klicken Sie auf „Erlauben“ – das gilt nur einmal, macOS fragt beim nächsten Auslesen erneut. Klicken Sie nicht auf „Immer erlauben“: Diese Freigabe läuft nie ab und gilt auch weiter, nachdem Sie RevvyTach gelöscht haben.\n\nSie können sie jederzeit zurücknehmen. Öffnen Sie die Schlüsselbundverwaltung, suchen Sie „Chrome Safe Storage“ in Ihrem Anmeldeschlüsselbund, öffnen Sie den Tab „Zugriffskontrolle“ und entfernen Sie RevvyTach.";
+"chrome_assisted.read_consent_continue" = "Fortfahren";
+"chrome_assisted.read_scope_note" = "Verwendet wird nur das Chrome-Profil, das Sie gerade geöffnet haben: %@";
+"chrome_assisted.read_failed_generic" = "Der Sitzungsschlüssel konnte nicht aus Chrome gelesen werden. Kopieren Sie ihn bitte manuell aus den DevTools und fügen Sie ihn unten ein.";
+"chrome_assisted.read_failed_denied" = "Der Schlüsselbundzugriff wurde verweigert, es wurde nichts gelesen. Klicken Sie in der macOS-Meldung auf „Erlauben“ oder fügen Sie den Sitzungsschlüssel unten manuell ein.";
+"chrome_assisted.read_failed_locked" = "Die Cookie-Datenbank von Chrome ist gerade belegt. Beenden Sie Chrome und versuchen Sie es erneut, oder fügen Sie den Sitzungsschlüssel unten manuell ein.";
+"chrome_assisted.read_failed_missing" = "In diesem Chrome-Profil wurde kein verwendbarer Sitzungsschlüssel für claude.ai gefunden – er fehlt möglicherweise oder ist abgelaufen. Melden Sie sich in Chrome bei claude.ai an oder fügen Sie den Schlüssel unten manuell ein.";
+"chrome_assisted.read_failed_version" = "Chrome speichert Cookies jetzt anders, deshalb kann diese Version von RevvyTach sie nicht lesen. Das Auslesen aus Chrome bleibt deaktiviert, bis RevvyTach aktualisiert wird. Bitte fügen Sie den Sitzungsschlüssel unten manuell ein.";
 "personal.session_key_validated" = "Sitzungsschlüssel validiert";
 "menubar.overage_balance" = "Guthaben";
 "menubar.overage_balance_organization" = "Guthaben · Organisation";

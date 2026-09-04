@@ -1272,7 +1272,7 @@
 "chrome_assisted.launch" = "Abrir o perfil selecionado do Chrome";
 "chrome_assisted.launch_failed" = "Não foi possível abrir o Chrome com esse perfil. Escolha um perfil e tente novamente ou use uma alternativa.";
 "chrome_assisted.verify_account" = "O perfil do Chrome %@ foi aberto. Verifique visualmente a conta Claude desejada no Chrome antes de colar uma chave de sessão.";
-"chrome_assisted.no_extraction" = "Selecionar um perfil de navegador não extrai nem verifica uma chave de sessão.";
+"chrome_assisted.no_extraction" = "Abrir um perfil não lê nada. Uma chave de sessão só é lida se premir «Ler do Chrome» e aprovar o aviso do macOS.";
 "chrome_assisted.embedded_fallback" = "Alternativa: entre usando o navegador integrado.";
 "chrome_assisted.validation_success" = "Chave de sessão validada. %ld organização(ões) encontrada(s).";
 "chrome_assisted.no_organizations" = "A chave de sessão é válida, mas nenhuma organização foi encontrada. Escolha outra conta ou chave.";
@@ -1280,6 +1280,17 @@
 "chrome_assisted.profile_changed" = "O perfil Claude ativo foi alterado. Inicie esta configuração novamente.";
 "chrome_assisted.confirm_context" = "Confirmo que o perfil do Chrome %@ é o contexto que pretendo usar para o perfil do RevvyTach %@. Isso não é verificado pela API.";
 "chrome_assisted.new_claude_profile" = "novo perfil Claude";
+"chrome_assisted.read_button" = "Ler do Chrome";
+"chrome_assisted.reading" = "A ler…";
+"chrome_assisted.read_consent_title" = "Ler a sua chave de sessão do Chrome?";
+"chrome_assisted.read_consent_body" = "O macOS vai pedir a sua senha de início de sessão. Ao aprovar, o RevvyTach recebe a própria chave-mestra do Chrome — a mesma chave que abre todos os cookies e todas as senhas guardadas no Chrome. O macOS não limita essa chave a um único cookie. Só o código do próprio RevvyTach faz isso.\n\nO RevvyTach faz uma cópia privada e breve dos cookies deste perfil do Chrome — de todos, não apenas de um —, lê nessa cópia a chave de sessão do claude.ai e apaga a cópia em seguida. Não lê mais nada e não guarda mais nada.\n\nO aviso do macOS vai citar o RevvyTach e o «Chrome Safe Storage». Clique em «Permitir»: é uma autorização válida uma só vez, e o macOS pergunta de novo na leitura seguinte. Não clique em «Permitir sempre»: essa autorização nunca expira e continua a valer mesmo depois de apagar o RevvyTach.\n\nPode retirá-la quando quiser. Abra o Acesso a Chaves, procure «Chrome Safe Storage» no porta-chaves de início de sessão, abra o separador «Controlo de acesso» e remova o RevvyTach.";
+"chrome_assisted.read_consent_continue" = "Continuar";
+"chrome_assisted.read_scope_note" = "Só é usado o perfil do Chrome que acabou de abrir: %@";
+"chrome_assisted.read_failed_generic" = "Não foi possível ler a chave de sessão do Chrome. Copie-a manualmente das DevTools e cole-a abaixo.";
+"chrome_assisted.read_failed_denied" = "O acesso ao porta-chaves foi negado, por isso nada foi lido. Clique em «Permitir» no aviso do macOS ou cole a chave de sessão abaixo.";
+"chrome_assisted.read_failed_locked" = "A base de dados de cookies do Chrome está ocupada neste momento. Feche o Chrome e tente de novo, ou cole a chave de sessão abaixo.";
+"chrome_assisted.read_failed_missing" = "Não foi encontrada uma chave de sessão do claude.ai utilizável nesse perfil do Chrome — pode estar em falta ou expirada. Inicie sessão no claude.ai no Chrome, ou cole a chave abaixo.";
+"chrome_assisted.read_failed_version" = "O Chrome mudou a forma como guarda os cookies, por isso esta versão do RevvyTach não os consegue ler. A leitura a partir do Chrome fica desativada até o RevvyTach ser atualizado. Cole a chave de sessão abaixo.";
 "personal.session_key_validated" = "Chave de sessão validada";
 "menubar.overage_balance" = "Saldo de Créditos";
 "menubar.overage_balance_organization" = "Saldo de Créditos · Organização";

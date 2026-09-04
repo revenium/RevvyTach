@@ -58,6 +58,41 @@ struct SetupWizardState {
     var shouldLinkTerminalSignIn = false
 }
 
+extension SetupWizardState {
+    /// The one place a setup attempt is retired, so the transition is
+    /// reachable from tests rather than trapped in a private method on a
+    /// SwiftUI view.
+    ///
+    /// `rearmChromeConfirmation` exists for the Chrome read: it keeps the
+    /// launched profile label (so the step-4 account confirmation keeps
+    /// rendering and keeps gating Save) while clearing the confirmation
+    /// itself, because the key just changed. Every pre-existing caller keeps
+    /// its behaviour: the parameter defaults to `false`, and the
+    /// `clearChromeContext` branch already clears the confirmation.
+    mutating func retireAttempt(
+        clearKey: Bool,
+        clearChromeContext: Bool = true,
+        clearTarget: Bool = true,
+        rearmChromeConfirmation: Bool = false
+    ) {
+        attempt.invalidate()
+        validationState = .idle
+        testedOrganizations = []
+        selectedOrgId = nil
+        if clearTarget {
+            claudeSetupTarget = nil
+            targetProfileName = nil
+        }
+        if clearChromeContext {
+            launchedChromeProfileLabel = nil
+            hasConfirmedChromeContext = false
+        } else if rearmChromeConfirmation {
+            hasConfirmedChromeContext = false
+        }
+        if clearKey { sessionKey = "" }
+    }
+}
+
 @MainActor
 private enum SetupTargetFreshness {
     static func isCurrent(
@@ -980,7 +1015,9 @@ struct EnterKeyStepSetup: View {
                         onChromeProfileLaunched: { label in
                             wizardState.launchedChromeProfileLabel = label
                             wizardState.hasConfirmedChromeContext = false
-                        }
+                        },
+                        onSessionKeyReadFromChrome:
+                            adoptSessionKeyReadFromChrome
                     )
 
                     // Fallback: the hardened embedded sign-in remains an
@@ -1161,6 +1198,24 @@ struct EnterKeyStepSetup: View {
         )
     }
 
+    /// A key read from Chrome takes the same paste path as a manual key, but
+    /// it must not discard the two things that make this flow safe: the
+    /// captured setup target, and the launched Chrome profile label that keeps
+    /// `SessionKeyAttemptPolicy.permitsSave` demanding the step-4 account
+    /// confirmation. The confirmation itself is re-armed, because the key just
+    /// changed and a confirmation earned for a previous key is not consent for
+    /// this one.
+    private func adoptSessionKeyReadFromChrome(_ key: String) {
+        wizardState.sessionKey = key
+        retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            clearTarget: false,
+            rearmChromeConfirmation: true
+        )
+        testConnection()
+    }
+
     private func beginEmbeddedAuth() {
         _ = beginChromeLaunch()
         wizardState.showingAuthSheet = true
@@ -1183,21 +1238,15 @@ struct EnterKeyStepSetup: View {
     private func retireAttempt(
         clearKey: Bool,
         clearChromeContext: Bool = true,
-        clearTarget: Bool = true
+        clearTarget: Bool = true,
+        rearmChromeConfirmation: Bool = false
     ) {
-        wizardState.attempt.invalidate()
-        wizardState.validationState = .idle
-        wizardState.testedOrganizations = []
-        wizardState.selectedOrgId = nil
-        if clearTarget {
-            wizardState.claudeSetupTarget = nil
-            wizardState.targetProfileName = nil
-        }
-        if clearChromeContext {
-            wizardState.launchedChromeProfileLabel = nil
-            wizardState.hasConfirmedChromeContext = false
-        }
-        if clearKey { wizardState.sessionKey = "" }
+        wizardState.retireAttempt(
+            clearKey: clearKey,
+            clearChromeContext: clearChromeContext,
+            clearTarget: clearTarget,
+            rearmChromeConfirmation: rearmChromeConfirmation
+        )
     }
 
     private func isCurrent(generation: UUID, key: String) -> Bool {

@@ -1272,7 +1272,7 @@
 "chrome_assisted.launch" = "選択した Chrome プロファイルを開く";
 "chrome_assisted.launch_failed" = "このプロファイルで Chrome を開けませんでした。プロファイルを選び直すか、別の方法を使用してください。";
 "chrome_assisted.verify_account" = "Chrome プロファイル %@ を開きました。セッションキーを貼り付ける前に、Chrome で目的の Claude アカウントを目視で確認してください。";
-"chrome_assisted.no_extraction" = "ブラウザプロファイルを選択しても、セッションキーの取得や検証は行われません。";
+"chrome_assisted.no_extraction" = "プロファイルを開くだけでは何も読み取りません。セッションキーは、「Chrome から読み取る」を押して macOS の画面で許可した場合にのみ読み取られます。";
 "chrome_assisted.embedded_fallback" = "代替手段：埋め込みブラウザでサインインします。";
 "chrome_assisted.validation_success" = "セッションキーを検証しました。%ld 件の組織が見つかりました。";
 "chrome_assisted.no_organizations" = "セッションキーは有効ですが、組織が見つかりませんでした。別のアカウントまたはキーを選択してください。";
@@ -1280,6 +1280,17 @@
 "chrome_assisted.profile_changed" = "アクティブな Claude プロファイルが変更されました。設定をやり直してください。";
 "chrome_assisted.confirm_context" = "Chrome プロファイル %@ が RevvyTach プロファイル %@ に使用するコンテキストであることを確認しました。これは API で検証されていません。";
 "chrome_assisted.new_claude_profile" = "新しい Claude プロファイル";
+"chrome_assisted.read_button" = "Chrome から読み取る";
+"chrome_assisted.reading" = "読み取り中…";
+"chrome_assisted.read_consent_title" = "Chrome からセッションキーを読み取りますか？";
+"chrome_assisted.read_consent_body" = "このあと macOS がログインパスワードを求めます。許可すると、RevvyTach は Chrome のマスターキーそのものを受け取ります。これは Chrome 内のすべての Cookie と保存済みパスワードを解除できる鍵です。macOS はこの鍵を 1 つの Cookie に限定しません。限定しているのは RevvyTach 自身のコードだけです。\n\nRevvyTach は、この Chrome プロファイルの Cookie を一時的にすべて複製し、その複製から claude.ai のセッションキーだけを読み取って、複製をすぐに削除します。ほかには何も読み取らず、何も保持しません。\n\nmacOS の画面には RevvyTach と「Chrome Safe Storage」が表示されます。「許可」をクリックしてください。これは一度だけの許可で、次に読み取るときに macOS がまた確認します。「常に許可」はクリックしないでください。この許可には期限がなく、RevvyTach を削除したあとも有効なままです。\n\n許可はいつでも取り消せます。「キーチェーンアクセス」を開き、ログインキーチェーンで「Chrome Safe Storage」を探し、「アクセス制御」タブを開いて RevvyTach を削除してください。";
+"chrome_assisted.read_consent_continue" = "続ける";
+"chrome_assisted.read_scope_note" = "使用するのは、いま開いた Chrome プロファイルだけです：%@";
+"chrome_assisted.read_failed_generic" = "Chrome からセッションキーを読み取れませんでした。DevTools から手動でコピーして、下に貼り付けてください。";
+"chrome_assisted.read_failed_denied" = "キーチェーンへのアクセスが拒否されたため、何も読み取っていません。macOS の画面で「許可」をクリックするか、下にセッションキーを手動で貼り付けてください。";
+"chrome_assisted.read_failed_locked" = "Chrome の Cookie データベースが使用中です。Chrome を終了してもう一度お試しになるか、下にセッションキーを手動で貼り付けてください。";
+"chrome_assisted.read_failed_missing" = "その Chrome プロファイルには使用できる claude.ai のセッションキーが見つかりませんでした。存在しないか、期限切れの可能性があります。Chrome で claude.ai にサインインするか、下にキーを手動で貼り付けてください。";
+"chrome_assisted.read_failed_version" = "Chrome の Cookie の保存方法が変わったため、このバージョンの RevvyTach では読み取れません。RevvyTach を更新するまで、Chrome からの読み取りは無効です。下にセッションキーを手動で貼り付けてください。";
 "personal.session_key_validated" = "セッションキーを検証しました";
 "menubar.overage_balance" = "クレジット残高";
 "menubar.overage_balance_organization" = "クレジット残高 · 組織";
