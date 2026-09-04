@@ -6,6 +6,7 @@
 //
 
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 
@@ -102,17 +103,27 @@ class ClaudeCodeSyncService {
     private let systemCredentialsReader: (() throws -> String?)?
     private let keychainCredentialsReader: ((String?) throws -> String?)?
     private let securityRunner: SecurityCommandRunning
+    /// Test seam for the directory containing Claude Code's credentials file.
+    /// Production deliberately follows Claude Code's account-directory rule.
+    private let credentialsFileDirectory: ((String?) -> URL)?
+    /// The file repair is best effort, but its precise outcome is useful to
+    /// both support logs and isolated tests without observing global logging.
+    private let credentialLogSink: ((String) -> Void)?
 
     init(
         profileStore: ProfileStore = .shared,
         systemCredentialsReader: (() throws -> String?)? = nil,
         keychainCredentialsReader: ((String?) throws -> String?)? = nil,
-        securityRunner: SecurityCommandRunning = SecurityCLIRunner()
+        securityRunner: SecurityCommandRunning = SecurityCLIRunner(),
+        credentialsFileDirectory: ((String?) -> URL)? = nil,
+        credentialLogSink: ((String) -> Void)? = nil
     ) {
         self.profileStore = profileStore
         self.systemCredentialsReader = systemCredentialsReader
         self.keychainCredentialsReader = keychainCredentialsReader
         self.securityRunner = securityRunner
+        self.credentialsFileDirectory = credentialsFileDirectory
+        self.credentialLogSink = credentialLogSink
     }
 
     // MARK: - System Credentials Access (Fallback Chain)
@@ -309,11 +320,9 @@ class ClaudeCodeSyncService {
         // A linked account keeps its own configuration directory, so its
         // credentials file is the one that describes it. Only fall back to
         // the shared directory when no account is named.
-        let directory = accountName.map {
-            Self.configurationDirectory(forAccountNamed: $0)
-        } ?? Constants.ClaudePaths.claudeDirectory
+        let directory = credentialsDirectory(forAccountNamed: accountName)
         let paths = [
-            directory.appendingPathComponent(".credentials.json"),
+            credentialsFileURL(forAccountNamed: accountName),
             directory.appendingPathComponent("credentials.json")
         ]
 
@@ -354,6 +363,71 @@ class ClaudeCodeSyncService {
         }
 
         return nil
+    }
+
+    /// The one file Claude Code itself uses when its Keychain is unavailable.
+    /// The legacy unhidden `credentials.json` remains a read-only fallback in
+    /// `readCredentialsFile`; it must never be selected as a write target.
+    private func credentialsFileURL(forAccountNamed accountName: String?) -> URL {
+        credentialsDirectory(forAccountNamed: accountName)
+            .appendingPathComponent(".credentials.json")
+    }
+
+    private func credentialsDirectory(forAccountNamed accountName: String?) -> URL {
+        credentialsFileDirectory?(accountName) ?? accountName.map {
+            Self.configurationDirectory(forAccountNamed: $0)
+        } ?? Constants.ClaudePaths.claudeDirectory
+    }
+
+    /// Reads only Claude Code's canonical credentials file, unlike the
+    /// compatibility reader above which also accepts the old unhidden name.
+    private func readCanonicalCredentialsFile(
+        forAccountNamed accountName: String?
+    ) -> String? {
+        let fileURL = credentialsFileURL(forAccountNamed: accountName)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return nil // Claude Code has not selected the file store.
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            logCredentialDecision(
+                "Could not read Claude Code's credentials file for "
+                + "\(Self.describeAccount(accountName)); leaving it unchanged: "
+                + "\(error.localizedDescription)",
+                warning: true
+            )
+            return nil
+        }
+
+        guard let json = String(data: data, encoding: .utf8) else {
+            logCredentialDecision(
+                "Could not parse Claude Code's credentials file for "
+                + "\(Self.describeAccount(accountName)); leaving it unchanged "
+                + "because it is not valid UTF-8",
+                warning: true
+            )
+            return nil
+        }
+
+        guard (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            != nil else {
+            logCredentialDecision(
+                "Could not parse Claude Code's credentials file for "
+                + "\(Self.describeAccount(accountName)); leaving it unchanged "
+                + "because it is not valid JSON",
+                warning: true
+            )
+            return nil
+        }
+
+        // Ownership is refresh-token-only. Unlike `readSystemCredentials`,
+        // this helper must not require an access token: a partial file login
+        // carrying the token we just spent still must not be copied into the
+        // Keychain or left holding a refresh token that is now invalid.
+        return json
     }
 
     /// Reads Claude Code credentials from system Keychain using security command.
@@ -873,6 +947,48 @@ class ClaudeCodeSyncService {
             return
         }
 
+        // A profile snapshot may have originated in either one of Claude
+        // Code's stores. Never make a second copy of that same refresh-token
+        // family: the first process to refresh it invalidates the other.
+        let keychainLogin: String?
+        do {
+            keychainLogin = try readKeychainLoginAtWriteTarget(
+                forAccountNamed: accountName
+            )
+        } catch {
+            LoggingService.shared.log(
+                "Could not read this account's Keychain item to determine "
+                + "whether its login is already applied; continuing with the "
+                + "existing write behavior: "
+                + "\(error.localizedDescription)"
+            )
+            keychainLogin = nil
+        }
+
+        if let keychainLogin,
+           hasSameLoginPair(keychainLogin, as: jsonData) {
+            logCredentialDecision(
+                "Claude Code's Keychain item already holds this login for "
+                + "\(Self.describeAccount(accountName)); nothing to apply"
+            )
+            return
+        }
+
+        if let fileLogin = readCanonicalCredentialsFile(
+            forAccountNamed: accountName
+        ), let snapshotRefreshToken = ClaudeCLITokenRefresher.refreshToken(
+            in: jsonData
+        ), ClaudeCLITokenRefresher.refreshToken(in: fileLogin)
+            == snapshotRefreshToken {
+            logCredentialDecision(
+                "This login lives in Claude Code's credentials file for "
+                + "\(Self.describeAccount(accountName)); not copying it "
+                + "into the Keychain, where a second copy would let two "
+                + "stores rotate one login out from under each other"
+            )
+            return
+        }
+
         LoggingService.shared.log("📦 Found CLI credentials, writing to keychain...")
         try writeSystemCredentials(jsonData, forAccountNamed: accountName)
 
@@ -992,58 +1108,312 @@ class ClaudeCodeSyncService {
             in: spent
         ) else { return }
 
-        // Deliberately the Keychain item itself, not `readSystemCredentials`.
-        // That chain prefers an unexpired `.credentials.json` snapshot, which
-        // can carry a different refresh token from the Keychain item Claude
-        // Code actually authenticates with — and the Keychain item is both
-        // what this renewal invalidated and what the write below replaces.
-        // Checking one and overwriting the other would skip the repair in
-        // exactly the case it is needed, leaving the user signed out.
-        guard let serviceName = accountServiceNameForWriting(
-            forAccountNamed: accountName
-        ) else { return }
-
-        let live: String?
+        // Check and repair the Keychain item independently of the file. A
+        // machine can legitimately have only one store, or two unrelated
+        // logins in those stores; touching one must not decide for the other.
+        let keychainLogin: String?
         do {
-            live = try readKeychainSecret(serviceName: serviceName)
+            keychainLogin = try readKeychainLoginAtWriteTarget(
+                forAccountNamed: accountName
+            )
         } catch {
             LoggingService.shared.log(
                 "Could not read the live Claude Code login for "
                 + "\(Self.describeAccount(accountName)) after renewing its "
                 + "token; leaving it unchanged: \(error.localizedDescription)"
             )
-            return
+            // A Keychain failure must not prevent an independent file repair.
+            keychainLogin = nil
         }
 
-        // No item at all means Claude Code is holding nothing this renewal
-        // could have invalidated, and nothing this write would replace.
-        guard let live else { return }
+        if let keychainLogin,
+           ClaudeCLITokenRefresher.refreshToken(in: keychainLogin)
+                == spentRefreshToken {
+            if !isAtLeastAsFresh(renewed, as: keychainLogin) {
+                LoggingService.shared.log(
+                    "Cannot establish that the renewed token is at least as new "
+                    + "as the live login for \(Self.describeAccount(accountName)); "
+                    + "leaving that login in place rather than risking a rollback"
+                )
+            } else {
+                do {
+                    try writeSystemCredentials(renewed, forAccountNamed: accountName)
+                    LoggingService.shared.log(
+                        "Mirrored the rotated token back into Claude Code's own login "
+                        + "for \(Self.describeAccount(accountName)), so the CLI keeps "
+                        + "working after the app spent its refresh token"
+                    )
+                } catch {
+                    LoggingService.shared.logWarning(
+                        "Could not write the rotated token back into Claude Code's "
+                        + "login for \(Self.describeAccount(accountName)): "
+                        + "\(error.localizedDescription). Claude Code may ask for a "
+                        + "fresh sign-in."
+                    )
+                }
+            }
+        }
 
-        guard ClaudeCLITokenRefresher.refreshToken(in: live) == spentRefreshToken
-        else { return }
+        guard let fileLogin = readCanonicalCredentialsFile(
+            forAccountNamed: accountName
+        ), ClaudeCLITokenRefresher.refreshToken(in: fileLogin)
+            == spentRefreshToken else { return }
 
-        guard isAtLeastAsFresh(renewed, as: live) else {
-            LoggingService.shared.log(
-                "Cannot establish that the renewed token is at least as new "
-                + "as the live login for \(Self.describeAccount(accountName)); "
-                + "leaving that login in place rather than risking a rollback"
-            )
+        guard isAtLeastAsFresh(renewed, as: fileLogin) else {
+            let message =
+                "Cannot establish that the renewed token is at least as new as "
+                + "the login in Claude Code's credentials file for "
+                + "\(Self.describeAccount(accountName)); leaving that file in place "
+                + "rather than risking a rollback"
+            logCredentialDecision(message)
             return
         }
 
         do {
-            try writeSystemCredentials(renewed, forAccountNamed: accountName)
-            LoggingService.shared.log(
-                "Mirrored the rotated token back into Claude Code's own login "
-                + "for \(Self.describeAccount(accountName)), so the CLI keeps "
-                + "working after the app spent its refresh token"
-            )
+            try replaceOAuthObject(inCredentialsFileFor: accountName, with: renewed)
+            let message =
+                "Mirrored the rotated token back into Claude Code's credentials "
+                + "file for \(Self.describeAccount(accountName)), so the terminals "
+                + "that read that file keep working after the app spent its refresh token"
+            logCredentialDecision(message)
         } catch {
-            LoggingService.shared.logWarning(
+            let message =
                 "Could not write the rotated token back into Claude Code's "
-                + "login for \(Self.describeAccount(accountName)): "
-                + "\(error.localizedDescription). Claude Code may ask for a "
-                + "fresh sign-in."
+                + "credentials file for \(Self.describeAccount(accountName)): "
+                + "\(error.localizedDescription). Claude Code may ask for a fresh sign-in."
+            logCredentialDecision(message, warning: true)
+        }
+    }
+
+    private func logCredentialDecision(_ message: String, warning: Bool = false) {
+        credentialLogSink?(message)
+        if warning {
+            LoggingService.shared.logWarning(message)
+        } else {
+            LoggingService.shared.log(message)
+        }
+    }
+
+    /// Reads the exact Keychain item a write would target. The injected
+    /// reader lets isolated tests model that item without opening a real
+    /// Keychain, while production deliberately avoids service-name discovery.
+    private func readKeychainLoginAtWriteTarget(
+        forAccountNamed accountName: String?
+    ) throws -> String? {
+        if let keychainCredentialsReader {
+            return try keychainCredentialsReader(accountName)
+        }
+        let serviceName = accountServiceNameForWriting(
+            forAccountNamed: accountName
+        ) ?? resolveServiceName()
+        return try readKeychainSecret(serviceName: serviceName)
+    }
+
+    private func hasSameLoginPair(_ lhs: String, as rhs: String) -> Bool {
+        guard let lhsAccessToken = accessToken(in: lhs),
+              let lhsRefreshToken = ClaudeCLITokenRefresher.refreshToken(in: lhs),
+              let rhsAccessToken = accessToken(in: rhs),
+              let rhsRefreshToken = ClaudeCLITokenRefresher.refreshToken(in: rhs)
+        else { return false }
+        return lhsAccessToken == rhsAccessToken
+            && lhsRefreshToken == rhsRefreshToken
+    }
+
+    private func accessToken(in credentialsJSON: String) -> String? {
+        guard let data = credentialsJSON.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+              let oauth = object["claudeAiOauth"] as? [String: Any]
+        else { return nil }
+        return oauth["accessToken"] as? String
+    }
+
+    /// Replaces only the top-level `claudeAiOauth` value. Re-serializing the
+    /// entire file would alter unrelated values such as `mcpOAuth`; keeping
+    /// the original bytes on either side means those credentials are exactly
+    /// as Claude Code wrote them.
+    private func replaceOAuthObject(
+        in credentialsFile: Data,
+        with renewed: String
+    ) throws -> Data {
+        guard let renewedData = renewed.data(using: .utf8),
+              let renewedObject = try JSONSerialization.jsonObject(
+                with: renewedData
+              ) as? [String: Any],
+              let renewedOAuth = renewedObject["claudeAiOauth"],
+              JSONSerialization.isValidJSONObject(renewedOAuth),
+              let replacement = try? JSONSerialization.data(
+                withJSONObject: renewedOAuth
+              ),
+              let range = topLevelObjectValueRange(
+                named: "claudeAiOauth", in: credentialsFile
+              )
+        else { throw ClaudeCodeError.invalidJSON }
+
+        var updated = credentialsFile
+        updated.replaceSubrange(range, with: replacement)
+        return updated
+    }
+
+    /// Returns the byte range of a named top-level object's value. Credentials
+    /// JSON is UTF-8, and JSON punctuation is ASCII, so byte offsets preserve
+    /// every unrelated byte even when token values contain Unicode.
+    private func topLevelObjectValueRange(
+        named name: String,
+        in data: Data
+    ) -> Range<Data.Index>? {
+        let bytes = Array(data)
+        var index = 0
+
+        func skipWhitespace() {
+            while index < bytes.count,
+                  bytes[index] == 0x20 || bytes[index] == 0x09
+                    || bytes[index] == 0x0A || bytes[index] == 0x0D {
+                index += 1
+            }
+        }
+
+        func skipJSONString() -> Range<Int>? {
+            guard index < bytes.count, bytes[index] == 0x22 else { return nil }
+            let start = index
+            index += 1
+            while index < bytes.count {
+                if bytes[index] == 0x5C {
+                    index += 2
+                } else if bytes[index] == 0x22 {
+                    index += 1
+                    return start..<index
+                } else {
+                    index += 1
+                }
+            }
+            return nil
+        }
+
+        func objectRange() -> Range<Int>? {
+            guard index < bytes.count, bytes[index] == 0x7B else { return nil }
+            let start = index
+            var depth = 0
+            var inString = false
+            var escaped = false
+            while index < bytes.count {
+                let byte = bytes[index]
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if byte == 0x5C {
+                        escaped = true
+                    } else if byte == 0x22 {
+                        inString = false
+                    }
+                } else if byte == 0x22 {
+                    inString = true
+                } else if byte == 0x7B {
+                    depth += 1
+                } else if byte == 0x7D {
+                    depth -= 1
+                    if depth == 0 {
+                        index += 1
+                        return start..<index
+                    }
+                }
+                index += 1
+            }
+            return nil
+        }
+
+        skipWhitespace()
+        guard index < bytes.count, bytes[index] == 0x7B else { return nil }
+        index += 1
+        while index < bytes.count {
+            skipWhitespace()
+            if bytes[index] == 0x7D { return nil }
+            guard let keyRange = skipJSONString() else { return nil }
+            let keyData = Data(bytes[keyRange])
+            guard let key = try? JSONSerialization.jsonObject(
+                with: keyData, options: .fragmentsAllowed
+            ) as? String else { return nil }
+            skipWhitespace()
+            guard index < bytes.count, bytes[index] == 0x3A else { return nil }
+            index += 1
+            skipWhitespace()
+
+            if key == name {
+                guard let valueRange = objectRange() else { return nil }
+                return valueRange.lowerBound..<valueRange.upperBound
+            }
+
+            // We only need to traverse top-level fields. JSONSerialization
+            // already validated this file before callers reach here, so the
+            // non-object values can be skipped by matching their next comma
+            // or closing brace outside quoted strings.
+            var inString = false
+            var escaped = false
+            var nestedDepth = 0
+            while index < bytes.count {
+                let byte = bytes[index]
+                if inString {
+                    if escaped { escaped = false }
+                    else if byte == 0x5C { escaped = true }
+                    else if byte == 0x22 { inString = false }
+                } else if byte == 0x22 {
+                    inString = true
+                } else if byte == 0x7B || byte == 0x5B {
+                    nestedDepth += 1
+                } else if byte == 0x7D || byte == 0x5D {
+                    if nestedDepth == 0 { break }
+                    nestedDepth -= 1
+                } else if byte == 0x2C && nestedDepth == 0 {
+                    break
+                }
+                index += 1
+            }
+            guard index < bytes.count else { return nil }
+            if bytes[index] == 0x2C {
+                index += 1
+            } else if bytes[index] == 0x7D {
+                return nil
+            } else {
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private func replaceOAuthObject(
+        inCredentialsFileFor accountName: String?,
+        with renewed: String
+    ) throws {
+        let fileURL = credentialsFileURL(forAccountNamed: accountName)
+        let original = try Data(contentsOf: fileURL)
+        let updated = try replaceOAuthObject(in: original, with: renewed)
+        let directory = fileURL.deletingLastPathComponent()
+        let temporaryURL = directory.appendingPathComponent(
+            ".credentials-\(UUID().uuidString).tmp"
+        )
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+
+        let descriptor = open(
+            temporaryURL.path,
+            O_WRONLY | O_CREAT | O_EXCL,
+            S_IRUSR | S_IWUSR
+        )
+        guard descriptor >= 0 else {
+            throw POSIXError(
+                POSIXErrorCode(rawValue: errno) ?? .EIO
+            )
+        }
+        guard close(descriptor) == 0 else {
+            throw POSIXError(
+                POSIXErrorCode(rawValue: errno) ?? .EIO
+            )
+        }
+        // `open` above creates this file as 0600 before any token bytes are
+        // written. Reopening an existing file preserves that safe mode.
+        try updated.write(to: temporaryURL)
+        guard rename(temporaryURL.path, fileURL.path) == 0 else {
+            throw POSIXError(
+                POSIXErrorCode(rawValue: errno) ?? .EIO
             )
         }
     }
