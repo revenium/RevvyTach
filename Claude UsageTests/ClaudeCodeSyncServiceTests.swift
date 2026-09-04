@@ -558,6 +558,85 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     }
 
     @MainActor
+    func testApplyProfileCredentialsDoesNotReplaceFresherKeychainLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let fileLogin = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 1_000
+        )
+        let snapshot = credentials(
+            accessToken: "stored", refreshToken: "stored-refresh", expiresAtMillis: 2_000
+        )
+        let keychainLogin = credentials(
+            accessToken: "keychain", refreshToken: "keychain-refresh", expiresAtMillis: 3_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(fileLogin, in: directory)
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { fileLogin },
+            keychainCredentialsReader: { _ in keychainLogin },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A fresher Keychain login must not be replaced: \(runner.invocations)"
+        )
+        XCTAssertTrue(logs.contains { message in
+            message.contains("stored CLI credential is at least as new")
+                && message.contains("Keychain login")
+        })
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsDeclinesWriteWhenKeychainTargetReadFails() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let fileLogin = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 1_000
+        )
+        let snapshot = credentials(
+            accessToken: "stored", refreshToken: "stored-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(fileLogin, in: directory)
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { fileLogin },
+            keychainCredentialsReader: { _ in
+                throw ClaudeCodeError.invalidJSON
+            },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A failed Keychain freshness read must decline the write: \(runner.invocations)"
+        )
+        XCTAssertTrue(logs.contains { message in
+            message.contains("Could not read this account's Keychain item")
+                && message.contains("leaving the Keychain unchanged")
+        })
+    }
+
+    @MainActor
     func testApplyProfileCredentialsDoesNotCopyFileLoginIntoKeychain() throws {
         let runner = RecordingSecurityRunner()
         let store = retain(makeIsolatedProfileStore())

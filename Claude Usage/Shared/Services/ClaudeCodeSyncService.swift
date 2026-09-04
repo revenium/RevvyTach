@@ -956,13 +956,14 @@ class ClaudeCodeSyncService {
                 forAccountNamed: accountName
             )
         } catch {
-            LoggingService.shared.log(
+            logCredentialDecision(
                 "Could not read this account's Keychain item to determine "
-                + "whether its login is already applied; continuing with the "
-                + "existing write behavior: "
-                + "\(error.localizedDescription)"
+                + "whether the stored CLI credential is at least as new; "
+                + "leaving the Keychain unchanged rather than risking a "
+                + "rollback: \(error.localizedDescription)",
+                warning: true
             )
-            keychainLogin = nil
+            return
         }
 
         if let keychainLogin,
@@ -970,6 +971,17 @@ class ClaudeCodeSyncService {
             logCredentialDecision(
                 "Claude Code's Keychain item already holds this login for "
                 + "\(Self.describeAccount(accountName)); nothing to apply"
+            )
+            return
+        }
+
+        if let keychainLogin,
+           !isAtLeastAsFresh(jsonData, as: keychainLogin) {
+            logCredentialDecision(
+                "Cannot establish that the stored CLI credential is at "
+                + "least as new as this account's Keychain login for "
+                + "\(Self.describeAccount(accountName)); leaving the "
+                + "Keychain login in place rather than risking a rollback"
             )
             return
         }
