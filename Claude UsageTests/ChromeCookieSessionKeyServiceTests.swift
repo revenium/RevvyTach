@@ -307,6 +307,60 @@ final class ChromeCookieSessionKeyServiceTests: XCTestCase {
         )
     }
 
+    /// A filesystem whose copy step misbehaves the way a running Chrome makes
+    /// it misbehave when it commits between the three copies one slot read
+    /// makes. The same commit shows up in two shapes, so both are expressible
+    /// here: the source moves under a copy that still succeeded (`tearLimit`
+    /// caps how many copies move it), or a file that passed its existence
+    /// check a moment earlier is unlinked before `copyItem` reaches it, so
+    /// the copy fails outright after leaving a partial image behind
+    /// (`failedCopies` counts how many of the first copies fail that way).
+    /// Both knobs are counted on the source database only; sidecars and
+    /// unrelated files copy normally. When the source merely moves, only its
+    /// timestamp does, so the copy already taken stays a valid database and a
+    /// clean retry can still succeed.
+    private func tearingFilesystem(
+        source: URL,
+        copies: ChromeCookieTestBox<Int>,
+        tearLimit: Int = .max,
+        failedCopies: Int = 0
+    ) -> ChromeCookieFilesystem {
+        let base = filesystem()
+        return ChromeCookieFilesystem(
+            metadata: base.metadata,
+            modificationDate: base.modificationDate,
+            createDirectory: base.createDirectory,
+            copyItem: { from, to in
+                guard from.path == source.path else {
+                    try base.copyItem(from, to)
+                    return
+                }
+                copies.mutate { $0 += 1 }
+                let index = copies.value
+                guard index > failedCopies else {
+                    // The partial image is what a retry would read if the
+                    // slot directory were not cleared between attempts.
+                    try Data("half a database".utf8).write(to: to)
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                try base.copyItem(from, to)
+                guard index <= tearLimit else { return }
+                try FileManager.default.setAttributes(
+                    [
+                        .modificationDate: Date(
+                            timeIntervalSince1970: 1_000_000 + Double(index)
+                        ),
+                    ],
+                    ofItemAtPath: from.path
+                )
+            },
+            makeUniqueTempDirectory: base.makeUniqueTempDirectory,
+            contentsOfDirectory: base.contentsOfDirectory,
+            removeItem: base.removeItem,
+            currentUserID: base.currentUserID
+        )
+    }
+
     private func makeReader(
         keychain: ChromeKeychainPassphraseSpy,
         filesystem: ChromeCookieFilesystem? = nil,
@@ -980,6 +1034,103 @@ final class ChromeCookieSessionKeyServiceTests: XCTestCase {
         )
     }
 
+    /// C7 / R4 — the host form is not a recency signal either. The filter
+    /// accepts `.claude.ai` and `claude.ai` as equally valid, so ranking the
+    /// exact form first is the mechanism by which a 90-day-old cookie for one
+    /// account beats the key Chrome wrote a minute ago for another.
+    func testANewlyIssuedBareHostCookieBeatsAnOlderExactHostCookie() throws {
+        let now = Date()
+        let nowMicroseconds = ChromeCookieTime.microseconds(from: now)
+        let nextYear = chromeMicroseconds(now, offsetSeconds: 365 * 86_400)
+        let stale = ChromeCookieRow(
+            hostKey: ".claude.ai",
+            expiresUTC: nextYear,
+            creationUTC: chromeMicroseconds(now, offsetSeconds: -90 * 86_400),
+            plaintextValue: "stale-exact-host"
+        )
+        let live = ChromeCookieRow(
+            hostKey: "claude.ai",
+            expiresUTC: nextYear,
+            creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+            plaintextValue: "live-bare-host"
+        )
+
+        XCTAssertEqual(
+            ChromeCookieSelectionPolicy.select(
+                [stale, live], nowChromeMicroseconds: nowMicroseconds
+            ),
+            live
+        )
+        XCTAssertEqual(
+            ChromeCookieSelectionPolicy.select(
+                [live, stale], nowChromeMicroseconds: nowMicroseconds
+            ),
+            live
+        )
+
+        // The same pair in one jar, through the real SQL and the real crypto.
+        try writeCookies([
+            .init(
+                expiresUTC: stale.expiresUTC,
+                creationUTC: stale.creationUTC,
+                encryptedValue: try encrypted(alternateSessionKey)
+            ),
+            .init(
+                hostKey: "claude.ai",
+                expiresUTC: live.expiresUTC,
+                creationUTC: live.creationUTC,
+                encryptedValue: try encrypted(
+                    sessionKey, hostKey: "claude.ai"
+                )
+            ),
+        ])
+
+        XCTAssertEqual(
+            try readOffMain(
+                makeReader(keychain: ChromeKeychainPassphraseSpy(), now: now)
+            ),
+            sessionKey
+        )
+    }
+
+    /// The cross-jar shape of the same defect: the stale exact-host row sits
+    /// in the legacy jar and the freshly issued bare-host row in the live one,
+    /// so a host-form-first ranking returns the wrong account's key.
+    func testANewlyIssuedBareHostCookieBeatsAnExactHostLeftoverInTheOtherJar()
+        throws {
+        let now = Date()
+        let nextYear = chromeMicroseconds(now, offsetSeconds: 365 * 86_400)
+
+        try writeCookies(
+            [.init(
+                hostKey: "claude.ai",
+                expiresUTC: nextYear,
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(
+                    sessionKey, hostKey: "claude.ai"
+                )
+            )],
+            slot: .network
+        )
+        try writeCookies(
+            [.init(
+                expiresUTC: nextYear,
+                creationUTC: chromeMicroseconds(
+                    now, offsetSeconds: -90 * 86_400
+                ),
+                encryptedValue: try encrypted(alternateSessionKey)
+            )],
+            slot: .legacy
+        )
+
+        XCTAssertEqual(
+            try readOffMain(
+                makeReader(keychain: ChromeKeychainPassphraseSpy(), now: now)
+            ),
+            sessionKey
+        )
+    }
+
     /// The comparator must be total, so a duplicate pair never depends on
     /// SQLite's row order or on sort stability.
     func testComparatorIsATotalOrder() {
@@ -1032,12 +1183,262 @@ final class ChromeCookieSessionKeyServiceTests: XCTestCase {
     /// F5 — when no slot yields a candidate, the first slot error is what the
     /// user hears about.
     func testTheFirstSlotErrorSurfacesWhenNoCandidateSurvives() throws {
+        // `Data.write(to:)` creates no intermediate directories, and nothing
+        // else here writes `Network/`.
+        try FileManager.default.createDirectory(
+            at: cookieDatabaseURL(.network).deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try Data("corrupt".utf8).write(to: cookieDatabaseURL(.network))
 
         expectReadError(
             .databaseUnreadable,
             makeReader(keychain: ChromeKeychainPassphraseSpy())
         )
+    }
+
+    /// The reverse of F5, and the direction that is dangerous rather than
+    /// merely annoying: a live jar that failed contributed no rows, so any
+    /// surviving row came from the legacy jar — frozen at migration and no
+    /// evidence of who is signed in now. The live jar's failure surfaces
+    /// instead of that row, and the Keychain is never asked for it.
+    func testAHealthyLegacyJarDoesNotRescueAFailedLiveJar() throws {
+        let now = Date()
+        let keychain = ChromeKeychainPassphraseSpy()
+        try writeCookies(
+            [.init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(sessionKey)
+            )],
+            slot: .legacy
+        )
+        // A live jar that is not a database at all.
+        try FileManager.default.createDirectory(
+            at: cookieDatabaseURL(.network).deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("corrupt".utf8).write(to: cookieDatabaseURL(.network))
+
+        expectReadError(
+            .databaseUnreadable, makeReader(keychain: keychain, now: now)
+        )
+        XCTAssertEqual(keychain.callCount, 0)
+    }
+
+    /// A profile that only ever had the pre-M96 jar is legitimate, and the
+    /// live-slot rule above must not break it.
+    func testAProfileWithOnlyTheLegacyJarStillReturnsItsKey() throws {
+        let now = Date()
+        try writeCookies(
+            [.init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(sessionKey)
+            )],
+            slot: .legacy
+        )
+
+        XCTAssertEqual(
+            try readOffMain(
+                makeReader(keychain: ChromeKeychainPassphraseSpy(), now: now)
+            ),
+            sessionKey
+        )
+    }
+
+    /// The same rule, reached through the path that used to slip past it. A
+    /// live jar can also leave the read by failing `isSafeFile`, and a slot
+    /// dropped that way runs nothing and records no failure — so it looked
+    /// exactly like a profile that only ever had a legacy jar, and the stale
+    /// legacy row was decrypted and adopted. A `Network/Cookies` that is a
+    /// symlink is both the clearest case and the one an attacker plants.
+    func testAnUnsafeLiveJarIsNotRescuedByTheLegacyJarEither() throws {
+        let now = Date()
+        try writeCookies(
+            [.init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(sessionKey)
+            )],
+            slot: .legacy
+        )
+        // The symlink points at a database of its own, so following the link
+        // would show up as a third, wrong key rather than as the legacy jar's.
+        let plantedDatabase = root.appendingPathComponent("planted.db")
+        try ChromeCookieTestDatabase.write(
+            [.init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -30),
+                encryptedValue: try encrypted(alternateSessionKey)
+            )],
+            to: plantedDatabase
+        )
+        let liveJar = cookieDatabaseURL(.network)
+        try FileManager.default.createDirectory(
+            at: liveJar.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: liveJar, withDestinationURL: plantedDatabase
+        )
+
+        let keychain = ChromeKeychainPassphraseSpy()
+        expectReadError(
+            .tempCopyFailed, makeReader(keychain: keychain, now: now)
+        )
+        XCTAssertEqual(keychain.callCount, 0)
+        for directory in createdTemporaryDirectories.value {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: directory.path),
+                "a temporary copy survived the read"
+            )
+        }
+
+        // The shapes `isSafeFile` refuses that are not symlinks behave the
+        // same way — here a live jar that belongs to another user.
+        try FileManager.default.removeItem(at: liveJar)
+        try ChromeCookieTestDatabase.write(
+            [.init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -30),
+                encryptedValue: try encrypted(alternateSessionKey)
+            )],
+            to: liveJar
+        )
+        let foreignOwner = ChromeProfileFileMetadata(
+            exists: true,
+            isRegularFile: true,
+            isDirectory: false,
+            isSymbolicLink: false,
+            ownerUserID: 999,
+            size: 4096
+        )
+        let foreignOwnerKeychain = ChromeKeychainPassphraseSpy()
+        expectReadError(
+            .tempCopyFailed,
+            makeReader(
+                keychain: foreignOwnerKeychain,
+                filesystem: filesystem(
+                    metadataOverrides: [liveJar.path: foreignOwner]
+                ),
+                now: now
+            )
+        )
+        XCTAssertEqual(foreignOwnerKeychain.callCount, 0)
+    }
+
+    /// The database and its sidecars are copied one at a time, so a Chrome
+    /// that commits in between leaves the trio describing different moments.
+    /// One retry absorbs a single commit; a source that never settles fails
+    /// closed rather than handing back a possibly torn credential.
+    func testAMovingSourceIsRetriedOnceAndThenFailsClosed() throws {
+        let now = Date()
+        try writeCookies([
+            .init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(sessionKey)
+            ),
+        ])
+        let source = cookieDatabaseURL(.network)
+
+        // Chrome commits after every copy: both attempts tear.
+        let neverSettles = ChromeCookieTestBox(0)
+        expectReadError(
+            .tempCopyFailed,
+            makeReader(
+                keychain: ChromeKeychainPassphraseSpy(),
+                filesystem: tearingFilesystem(
+                    source: source, copies: neverSettles
+                ),
+                now: now
+            )
+        )
+        XCTAssertEqual(
+            neverSettles.value, 2, "the slot copy must be retried exactly once"
+        )
+        for directory in createdTemporaryDirectories.value {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: directory.path),
+                "a torn copy survived the read"
+            )
+        }
+
+        // Chrome commits once, during the first copy. The retry is clean, so
+        // the read still succeeds.
+        let settlesAfterOneCommit = ChromeCookieTestBox(0)
+        XCTAssertEqual(
+            try readOffMain(
+                makeReader(
+                    keychain: ChromeKeychainPassphraseSpy(),
+                    filesystem: tearingFilesystem(
+                        source: source,
+                        copies: settlesAfterOneCommit,
+                        tearLimit: 1
+                    ),
+                    now: now
+                )
+            ),
+            sessionKey
+        )
+        XCTAssertEqual(settlesAfterOneCommit.value, 2)
+    }
+
+    /// The other half of the same Chrome commit: a file that passed its
+    /// existence check a moment earlier is unlinked before `copyItem` reaches
+    /// it, so the copy fails outright instead of the source moving. That must
+    /// be retried too — otherwise one ordinary commit is a hard read failure,
+    /// and through the live-slot rule a veto over a healthy legacy jar.
+    func testAFailedSlotCopyIsRetriedOnceAndThenFailsClosed() throws {
+        let now = Date()
+        try writeCookies([
+            .init(
+                creationUTC: chromeMicroseconds(now, offsetSeconds: -60),
+                encryptedValue: try encrypted(sessionKey)
+            ),
+        ])
+        let source = cookieDatabaseURL(.network)
+
+        // The first copy fails and leaves a partial image behind. The second
+        // starts from a cleared slot directory, so the read still succeeds —
+        // which it could not do if that partial image were still there.
+        let failsOnce = ChromeCookieTestBox(0)
+        XCTAssertEqual(
+            try readOffMain(
+                makeReader(
+                    keychain: ChromeKeychainPassphraseSpy(),
+                    filesystem: tearingFilesystem(
+                        source: source,
+                        copies: failsOnce,
+                        tearLimit: 0,
+                        failedCopies: 1
+                    ),
+                    now: now
+                )
+            ),
+            sessionKey
+        )
+        XCTAssertEqual(
+            failsOnce.value, 2, "a failed slot copy must be retried once"
+        )
+
+        // Every attempt fails: the read stays closed as `tempCopyFailed`.
+        let alwaysFails = ChromeCookieTestBox(0)
+        expectReadError(
+            .tempCopyFailed,
+            makeReader(
+                keychain: ChromeKeychainPassphraseSpy(),
+                filesystem: tearingFilesystem(
+                    source: source,
+                    copies: alwaysFails,
+                    tearLimit: 0,
+                    failedCopies: .max
+                ),
+                now: now
+            )
+        )
+        XCTAssertEqual(alwaysFails.value, 2)
+        for directory in createdTemporaryDirectories.value {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: directory.path),
+                "a failed copy survived the read"
+            )
+        }
     }
 
     // MARK: Launch-time sweep

@@ -324,6 +324,68 @@ final class SessionKeyAttemptTests: XCTestCase {
         ))
     }
 
+    /// A read that finished after the user launched a different profile must
+    /// not be adopted: its key belongs to the profile they moved on from,
+    /// while the screen and the save gate both name the new one.
+    func testReadIsAdoptedOnlyForTheProfileItWasScopedTo() {
+        let scoped = LaunchedChromeProfile(
+            label: "Work — Profile 3", directoryName: "Profile 3"
+        )
+
+        XCTAssertTrue(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: LaunchedChromeProfile(
+                label: "Work — Profile 3", directoryName: "Profile 3"
+            )
+        ))
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: LaunchedChromeProfile(
+                label: "Work — Profile 3", directoryName: "Default"
+            )
+        ))
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: LaunchedChromeProfile(
+                label: "Personal — Profile 3", directoryName: "Profile 3"
+            )
+        ))
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: nil
+        ))
+    }
+
+    /// The concrete race: read profile A, launch profile B mid-read, and A's
+    /// key is discarded rather than adopted under B's name. A failed launch of
+    /// B leaves nothing addressable, which is also not adoptable.
+    func testProfileSwitchDuringReadDiscardsTheInFlightResult() {
+        let profileA = ChromeProfile(name: "Work", directoryName: "Profile 3")
+        let profileB = ChromeProfile(name: "Personal", directoryName: "Default")
+
+        guard let scoped = ChromeLaunchBookkeeping.result(
+            didLaunch: true, profile: profileA
+        ) else {
+            return XCTFail("A successful launch must yield a profile")
+        }
+
+        let switched = ChromeLaunchBookkeeping.result(
+            didLaunch: true, profile: profileB
+        )
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: switched
+        ))
+
+        let failedSwitch = ChromeLaunchBookkeeping.result(
+            didLaunch: false, profile: profileB
+        )
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: failedSwitch
+        ))
+    }
+
     /// Every failure the user can hit maps to a fixed sentence. Nothing here
     /// may interpolate a value, a path, or an OSStatus.
     @MainActor

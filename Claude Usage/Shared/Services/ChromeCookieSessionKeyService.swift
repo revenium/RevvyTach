@@ -271,13 +271,21 @@ nonisolated enum ChromeCookieSelectionPolicy {
 
     /// A total order, so a duplicate pair never depends on SQLite row order:
     ///
-    /// 1. `.claude.ai` before `claude.ai`.
-    /// 2. Later `creation_utc` first. This deliberately outranks expiry.
-    ///    The single-store precedent ranks session cookies first, but two
-    ///    cookie databases can be merged here, and a stale jar's
-    ///    session-shaped leftover would then beat the live jar's current
-    ///    key. The most recently *issued* cookie is the live one; expiry is
-    ///    a liveness filter, already applied above, not a recency signal.
+    /// 1. Later `creation_utc` first. This deliberately outranks both the
+    ///    host form and expiry. The single-store precedent ranks session
+    ///    cookies first, but two cookie databases can be merged here, and a
+    ///    stale jar's session-shaped leftover would then beat the live jar's
+    ///    current key. The most recently *issued* cookie is the live one;
+    ///    expiry is a liveness filter, already applied above, not a recency
+    ///    signal.
+    /// 2. `.claude.ai` before `claude.ai`. This ranks below `creation_utc`
+    ///    for the same reason: the filter above accepts both host forms as
+    ///    equally valid, so the form a row happens to be stored under is
+    ///    cosmetic and says nothing about which sign-in is current. Ranked
+    ///    first it would hand back a 90-day-old `.claude.ai` row over the
+    ///    key Chrome wrote a minute ago under `claude.ai` — a
+    ///    wrong-but-plausible credential. It stays in the comparator because
+    ///    the order must remain total.
     /// 3. Session cookies (`expires_utc == 0`) before dated ones.
     /// 4. Later `expires_utc` first.
     /// 5. Encrypted rows before unencrypted ones.
@@ -286,13 +294,13 @@ nonisolated enum ChromeCookieSelectionPolicy {
         _ lhs: ChromeCookieRow,
         _ rhs: ChromeCookieRow
     ) -> Bool {
-        let lhsIsExactHost = lhs.hostKey == exactHostKey
-        let rhsIsExactHost = rhs.hostKey == exactHostKey
-        if lhsIsExactHost != rhsIsExactHost { return lhsIsExactHost }
-
         if lhs.creationUTC != rhs.creationUTC {
             return lhs.creationUTC > rhs.creationUTC
         }
+
+        let lhsIsExactHost = lhs.hostKey == exactHostKey
+        let rhsIsExactHost = rhs.hostKey == exactHostKey
+        if lhsIsExactHost != rhsIsExactHost { return lhsIsExactHost }
 
         let lhsIsSession = lhs.expiresUTC == 0
         let rhsIsSession = rhs.expiresUTC == 0
@@ -391,6 +399,12 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
     /// to something absurd fails closed instead of filling `$TMPDIR`.
     static let maximumCookieFileSize = 256 * 1024 * 1024
     static let sidecarSuffixes = ["-wal", "-shm"]
+    /// The jar Chrome writes today, `Network/Cookies`. A read that loses this
+    /// slot has lost the only live source of truth.
+    static let liveSlotName = "network"
+    /// The pre-M96 jar in the profile root. Present only on profiles Chrome
+    /// never migrated, and frozen at the moment of migration on those it did.
+    static let legacySlotName = "legacy"
 
     private let userDataDirectory: URL
     private let filesystem: ChromeCookieFilesystem
@@ -466,15 +480,13 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
             profileDirectoryName,
             isDirectory: true
         )
+        let liveCookieDatabase = profileDirectory
+            .appendingPathComponent("Network", isDirectory: true)
+            .appendingPathComponent("Cookies", isDirectory: false)
         let candidates = [
+            (slot: Self.liveSlotName, url: liveCookieDatabase),
             (
-                slot: "network",
-                url: profileDirectory
-                    .appendingPathComponent("Network", isDirectory: true)
-                    .appendingPathComponent("Cookies", isDirectory: false)
-            ),
-            (
-                slot: "legacy",
+                slot: Self.legacySlotName,
                 url: profileDirectory
                     .appendingPathComponent("Cookies", isDirectory: false)
             ),
@@ -482,6 +494,22 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
         guard !candidates.isEmpty else {
             throw ChromeCookieReadError.cookieDatabaseMissing
         }
+
+        // Step 1a. The filter above is the one way a slot can disappear
+        // without ever recording a failure. A live jar that exists but is a
+        // symlink, another user's file, or absurdly large is dropped here, so
+        // by step 4a it would be indistinguishable from a profile that only
+        // ever had a legacy jar — and the stale legacy row would be adopted,
+        // which is exactly the outcome step 4a exists to prevent. It is also
+        // the security-relevant shape: a symlink is what an attacker plants.
+        // Existence is therefore asked separately, through the same seam, and
+        // a live jar that exists but was refused counts as a live-slot
+        // failure. `tempCopyFailed` is what an unsafe *sidecar* already
+        // yields, and says the same thing: the file is there and this app
+        // declines to copy it.
+        let liveJarWasRefusedAsUnsafe =
+            !candidates.contains { $0.slot == Self.liveSlotName }
+                && filesystem.metadata(liveCookieDatabase).exists
 
         // Step 2. Create the private copy directory and arm its unlink before
         // anything below can throw.
@@ -493,12 +521,21 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
         }
         defer { filesystem.removeItem(temporaryDirectory) }
 
-        // Step 3. Copy and query each database. One unreadable slot must not
-        // veto a healthy one, so per-slot failures are collected and only
-        // surfaced when no candidate row survives.
+        // Step 3. Copy and query each database. A broken *legacy* jar must not
+        // veto a healthy live one, so per-slot failures are collected and only
+        // surfaced when no candidate row survives. The live slot's failure is
+        // tracked separately, because that direction is not symmetric — see
+        // step 4a.
         let nowChromeMicroseconds = ChromeCookieTime.microseconds(from: now())
         var rows: [ChromeCookieRow] = []
         var firstSlotError: ChromeCookieReadError?
+        var liveSlotError: ChromeCookieReadError?
+        if liveJarWasRefusedAsUnsafe {
+            // The live slot is the first candidate, so it is also the first
+            // slot error.
+            firstSlotError = .tempCopyFailed
+            liveSlotError = .tempCopyFailed
+        }
         for candidate in candidates {
             do {
                 rows += try readSlot(
@@ -509,6 +546,7 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
                 )
             } catch let error as ChromeCookieReadError {
                 if firstSlotError == nil { firstSlotError = error }
+                if candidate.slot == Self.liveSlotName { liveSlotError = error }
             }
         }
 
@@ -519,6 +557,18 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
             nowChromeMicroseconds: nowChromeMicroseconds
         ) else {
             throw firstSlotError ?? ChromeCookieReadError.sessionCookieMissing
+        }
+
+        // Step 4a. A live slot that was present but failed — refused as
+        // unsafe at step 1a, or unreadable at step 3 — contributed no rows,
+        // so anything that survived step 4 came from the legacy jar —
+        // frozen at migration and no evidence of who is signed in now.
+        // Returning it would be exactly the wrong-but-plausible credential
+        // this feature must never produce, so the live slot's failure is what
+        // the user hears about. A profile that has only a legacy jar never
+        // sets this and keeps working.
+        if let liveSlotError {
+            throw liveSlotError
         }
 
         // Step 5. Only now, and only for an encrypted row, ask macOS for
@@ -552,6 +602,23 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
         )
     }
 
+    /// The cheap identity of one source file, taken before and after the copy.
+    /// Chrome rewrites the database and its sidecars in place, so a changed
+    /// size, modification date or existence across the copy is the signal that
+    /// the trio may not describe one moment.
+    nonisolated private struct SourceFileIdentity: Equatable {
+        let exists: Bool
+        let size: Int?
+        let modificationDate: Date?
+    }
+
+    /// How many times a slot copy is attempted before the source is treated
+    /// as unreadable, whether the copy failed outright or the source moved
+    /// underneath it. One retry absorbs the ordinary case of a single Chrome
+    /// commit landing mid-copy; a source that keeps moving fails closed
+    /// rather than handing back a possibly torn credential.
+    private static let slotCopyAttempts = 2
+
     private func readSlot(
         slot: String,
         source: URL,
@@ -566,6 +633,55 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
             "Cookies",
             isDirectory: false
         )
+
+        // The database and its two sidecars are copied one at a time from a
+        // jar a running Chrome may commit to or checkpoint between the
+        // copies, which would leave the three files describing different
+        // moments. There is no snapshot primitive to reach for: the source
+        // lives inside Chrome's own live profile, which this app must never
+        // open, lock or write, and `immutable=1` on a file Chrome is actively
+        // writing is simply false. So the tear is detected instead — identity
+        // before, identity after, and a mismatch discards the copy.
+        //
+        // This also closes the sidecar asymmetry: "absent" was read as proof
+        // the database had been checkpointed, when it can equally mean Chrome
+        // checkpointed and deleted the WAL *after* the main image was copied.
+        //
+        // Both halves of that race are retried, because the same Chrome
+        // commit produces either one: a sidecar can pass its existence check
+        // and be unlinked before `copyItem` reaches it, which fails the copy
+        // outright rather than moving the source. Letting that abort on the
+        // first attempt would turn one ordinary commit into a hard failure —
+        // and, via step 4a, a veto over a healthy legacy jar. The slot
+        // directory is cleared between attempts, so a retry never reads a
+        // half-copied file the previous attempt left behind, and only the
+        // last attempt's failure is final. `readCookieRows` is deliberately
+        // outside the retry: a database that is genuinely unreadable is not a
+        // race, and its error must reach the caller unchanged.
+        for _ in 1...Self.slotCopyAttempts {
+            let before = sourceIdentities(of: source)
+            let copied: Bool
+            do {
+                try copySlot(
+                    source: source, into: slotDirectory, as: destination
+                )
+                copied = true
+            } catch {
+                copied = false
+            }
+            if copied, sourceIdentities(of: source) == before {
+                return try readCookieRows(destination, nowChromeMicroseconds)
+            }
+            filesystem.removeItem(slotDirectory)
+        }
+        throw ChromeCookieReadError.tempCopyFailed
+    }
+
+    private func copySlot(
+        source: URL,
+        into slotDirectory: URL,
+        as destination: URL
+    ) throws {
         do {
             try filesystem.createDirectory(slotDirectory)
             try filesystem.copyItem(source, destination)
@@ -592,8 +708,23 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
                 throw ChromeCookieReadError.tempCopyFailed
             }
         }
+    }
 
-        return try readCookieRows(destination, nowChromeMicroseconds)
+    /// The main database first, then each sidecar, through the injected seam
+    /// so the check stays testable and never reaches `FileManager` directly.
+    private func sourceIdentities(of source: URL) -> [SourceFileIdentity] {
+        ([source] + Self.sidecarSuffixes.map {
+            URL(fileURLWithPath: source.path + $0)
+        }).map { url in
+            let metadata = filesystem.metadata(url)
+            return SourceFileIdentity(
+                exists: metadata.exists,
+                size: metadata.size,
+                modificationDate: metadata.exists
+                    ? filesystem.modificationDate(url)
+                    : nil
+            )
+        }
     }
 
     private func isSafeFile(_ url: URL) -> Bool {
@@ -651,8 +782,8 @@ nonisolated struct ChromeCookieSessionKeyReader: Sendable {
           AND path = '/'
           AND is_secure = 1
           AND (expires_utc = 0 OR expires_utc > ?4)
-        ORDER BY (host_key = ?2) DESC,
-                 creation_utc DESC,
+        ORDER BY creation_utc DESC,
+                 (host_key = ?2) DESC,
                  (expires_utc = 0) DESC,
                  expires_utc DESC
         """

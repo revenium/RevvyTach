@@ -120,6 +120,25 @@ nonisolated struct LaunchedChromeProfile: Equatable, Sendable {
     let directoryName: String
 }
 
+nonisolated enum ChromeReadAdoptionPolicy {
+    /// A finished read may only be adopted for the profile it was scoped to.
+    ///
+    /// The read runs off the main actor while the wizard stays live, so the
+    /// user can launch a second profile before the first read returns. Adopting
+    /// it anyway would hand profile A's session key to a screen — and to the
+    /// save gate's confirmation — that names profile B: a wrong-but-plausible
+    /// credential, and a silent breach of the consent notice's promise that
+    /// only the profile just opened is used. A nil current profile means a
+    /// launch is in flight or the last one failed, so nothing is addressable.
+    static func permitsAdoption(
+        readProfile: LaunchedChromeProfile,
+        launchedProfile: LaunchedChromeProfile?
+    ) -> Bool {
+        guard let launchedProfile else { return false }
+        return launchedProfile == readProfile
+    }
+}
+
 nonisolated enum ChromeLaunchBookkeeping {
     /// The launched-profile state after one launch attempt. Every attempt
     /// clears the previous result first (the user must choose a profile
@@ -215,6 +234,10 @@ struct ChromeAssistedSessionKeyEntry: View {
                         }
                     }
                     .accessibilityIdentifier("chrome.profile_picker")
+                    // A read in flight is scoped to the launched profile, so
+                    // choosing another one mid-read only invites a result the
+                    // adoption policy will discard.
+                    .disabled(isReadingFromChrome)
                 }
 
                 Button(action: launchSelectedProfile) {
@@ -235,6 +258,7 @@ struct ChromeAssistedSessionKeyEntry: View {
                 .disabled(
                     selectedDirectoryName == nil
                         || isLaunching
+                        || isReadingFromChrome
                         || validationState == .validating
                 )
                 .accessibilityIdentifier("chrome.launch")
@@ -414,7 +438,7 @@ struct ChromeAssistedSessionKeyEntry: View {
         guard let pending = pendingRead else { return }
         readError = nil
         isReadingFromChrome = true
-        let directoryName = pending.directoryName
+        let scopedProfile = pending
 
         // The read blocks on the macOS password prompt, so it must not run on
         // the main thread — a frozen wizard at the moment the user is asked
@@ -428,19 +452,33 @@ struct ChromeAssistedSessionKeyEntry: View {
                     continuation.resume(
                         returning: Result {
                             try ChromeCookieSessionKeyReader().readSessionKey(
-                                profileDirectoryName: directoryName
+                                profileDirectoryName:
+                                    scopedProfile.directoryName
                             )
                         }
                     )
                 }
             }
-            finishChromeRead(outcome)
+            finishChromeRead(outcome, scopedTo: scopedProfile)
         }
     }
 
-    private func finishChromeRead(_ outcome: Result<String, Error>) {
+    private func finishChromeRead(
+        _ outcome: Result<String, Error>,
+        scopedTo scopedProfile: LaunchedChromeProfile
+    ) {
         isReadingFromChrome = false
         pendingRead = nil
+        // The user launched a different profile while this read was in flight,
+        // so the result belongs to a profile they have moved on from. Discard
+        // it without a message: nothing broke, and a failure notice here would
+        // describe a read the user is no longer waiting for.
+        guard ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scopedProfile,
+            launchedProfile: launchedProfile
+        ) else {
+            return
+        }
         switch outcome {
         case .success(let key):
             readError = nil
