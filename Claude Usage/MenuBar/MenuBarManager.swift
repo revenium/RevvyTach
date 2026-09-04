@@ -4285,35 +4285,31 @@ class MenuBarManager: NSObject, ObservableObject {
         }
     }
 
-    /// Finds the next profile with available session capacity, wrapping around
-    private func findNextAvailableProfile(after currentProfile: Profile) -> Profile? {
-        let profiles = profileManager.profiles
-        guard let currentIndex = profiles.firstIndex(where: { $0.id == currentProfile.id }) else { return nil }
-
-        let count = profiles.count
-        for offset in 1..<count {
-            let index = (currentIndex + offset) % count
-            let candidate = profiles[index]
-
-            // Must support this automation and have compatible usage data.
-            guard providerUIDependencies.capabilities(
-                for: candidate.providerID
-            ).supports(.automaticProfileSwitch),
-                  candidate.providerID == .claude,
-                  candidate.hasImmediatelyUsableCredentials else {
-                continue
-            }
-
-            // If no saved usage data, treat as available
-            guard let candidateUsage = candidate.claudeUsage else { return candidate }
-
-            // Must be below 100%
-            if candidateUsage.effectiveSessionPercentage < 100.0 {
-                return candidate
-            }
-        }
-
-        return nil
+    /// Finds the next profile the app may switch to, wrapping around.
+    ///
+    /// The rule lives in `ProfileSwitchEligibility` so the Next Profile hotkey
+    /// applies the identical one; `ProfileSwitchEligibilityTests` asserts both
+    /// call sites still return what it returns, because "one rule, two
+    /// surfaces" is exactly the thing that silently stops being true.
+    ///
+    /// The per-candidate `.automaticProfileSwitch` check that used to sit in
+    /// the loop is **implied, not dropped**: `ProviderUIOperations`
+    /// `.capabilities(for:)` switches on `ProviderID` alone, so two profiles
+    /// of one provider always answer identically; every candidate now shares
+    /// `currentProfile`'s provider; and the guard in `checkAutoSwitchIfNeeded`
+    /// already established that provider supports the automation. Worth
+    /// stating because the repo's closest analogue,
+    /// `AutoStartSessionService.isSupported(for:capabilities:)`, deliberately
+    /// keeps both halves — the precedent points the other way, and this is why
+    /// it does not apply here.
+    ///
+    /// Internal rather than private so `ProfileSwitchEligibilityTests` can
+    /// call it.
+    func findNextAvailableProfile(after currentProfile: Profile) -> Profile? {
+        ProfileSwitchEligibility.nextEligibleProfile(
+            after: currentProfile.id,
+            in: profileManager.profiles
+        )
     }
 
     // MARK: - Reset Detection for History Recording
@@ -4481,16 +4477,27 @@ class MenuBarManager: NSObject, ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func switchToNextProfile() {
-        let profiles = profileManager.profiles
-        guard profiles.count > 1,
-              let currentId = profileManager.activeProfile?.id,
-              let currentIndex = profiles.firstIndex(where: { $0.id == currentId }) else {
+    /// The Next Profile hotkey. Lands only on a profile that can serve a
+    /// request — not a tombstone, same provider, and the per-provider
+    /// readiness in `ProfileSwitchEligibility` — because activating one
+    /// rewrites `CLAUDE_CONFIG_DIR` or `CODEX_HOME` and the tmux environment.
+    /// Nothing qualifying means staying put, silently: the alternative is
+    /// moving someone onto an account they cannot use. The `profiles.count > 1`
+    /// guard this used to carry now lives inside the helper.
+    ///
+    /// Internal rather than private so `ProfileSwitchEligibilityTests` can
+    /// assert this surface and `findNextAvailableProfile(after:)` still agree.
+    func switchToNextProfile() {
+        guard let currentId = profileManager.activeProfile?.id,
+              let nextProfile = ProfileSwitchEligibility.nextEligibleProfile(
+                  after: currentId,
+                  in: profileManager.profiles
+              ) else {
+            LoggingService.shared.log(
+                "NextProfile: no eligible profile to switch to; staying put"
+            )
             return
         }
-
-        let nextIndex = (profiles.index(after: currentIndex)) % profiles.count
-        let nextProfile = profiles[nextIndex]
 
         Task {
             await profileManager.activateProfile(nextProfile.id)
