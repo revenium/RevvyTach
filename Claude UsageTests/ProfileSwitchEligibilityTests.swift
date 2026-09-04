@@ -440,6 +440,18 @@ final class ProfileSwitchEligibilityTests: HostedAppTestCase {
         XCTAssertEqual(next(after: a, in: [a, b])?.id, b.id)
     }
 
+    /// A weekly window whose reset time has passed is genuinely free, the
+    /// same way an expired session window is: the figure was received, it
+    /// has simply rolled over.
+    func testExpiredWeeklyWindowReadsAsRoom() {
+        let a = liveClaude("A", usage: healthy)
+        var expired = reading(session: 10, weekly: 100)
+        expired.weeklyResetTime = Date().addingTimeInterval(-60)
+        let b = liveClaude("B", usage: expired)
+
+        XCTAssertEqual(next(after: a, in: [a, b])?.id, b.id)
+    }
+
     /// One of every rejection reason in a single walk.
     func testNoEligibleProfileReturnsNil() throws {
         let a = liveClaude("A", usage: healthy)

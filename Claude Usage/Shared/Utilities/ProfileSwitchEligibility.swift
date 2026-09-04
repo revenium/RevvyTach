@@ -141,7 +141,16 @@ enum ProfileSwitchEligibility {
                   let weekly = usage.readableWeeklyPercentage else {
                 return false
             }
-            return max(session, weekly) < 100.0
+            // `readableWeeklyPercentage` is not reset-aware the way
+            // `readableSessionPercentage` (via `effectiveSessionPercentage`)
+            // is: it returns the stored figure even after
+            // `weeklyResetTime` has passed. A weekly window that already
+            // rolled over is genuinely free, not still exhausted, so treat
+            // an elapsed reset the same way the session branch does.
+            let effectiveWeekly = usage.weeklyResetTime < Date()
+                ? 0.0
+                : weekly
+            return max(session, effectiveWeekly) < 100.0
 
         case .codex(let configuration):
             // Activating an unlinked Codex profile clears `CODEX_HOME` for
