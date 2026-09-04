@@ -324,6 +324,12 @@ final class SessionKeyAttemptTests: XCTestCase {
         ))
     }
 
+    // The key strings below are placeholders, never key-shaped values: the
+    // policy compares them by equality and nothing in these tests renders
+    // one, so a decoy that looks like a credential would earn nothing.
+    private static let keyAtReadStart = "field-state-at-read-start"
+    private static let keyTypedMidRead = "field-state-typed-by-hand"
+
     /// A read that finished after the user launched a different profile must
     /// not be adopted: its key belongs to the profile they moved on from,
     /// while the screen and the save gate both name the new one.
@@ -336,29 +342,38 @@ final class SessionKeyAttemptTests: XCTestCase {
             readProfile: scoped,
             launchedProfile: LaunchedChromeProfile(
                 label: "Work — Profile 3", directoryName: "Profile 3"
-            )
+            ),
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
         ))
         XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scoped,
             launchedProfile: LaunchedChromeProfile(
                 label: "Work — Profile 3", directoryName: "Default"
-            )
+            ),
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
         ))
         XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scoped,
             launchedProfile: LaunchedChromeProfile(
                 label: "Personal — Profile 3", directoryName: "Profile 3"
-            )
+            ),
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
         ))
         XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scoped,
-            launchedProfile: nil
+            launchedProfile: nil,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
         ))
     }
 
     /// The concrete race: read profile A, launch profile B mid-read, and A's
     /// key is discarded rather than adopted under B's name. A failed launch of
-    /// B leaves nothing addressable, which is also not adoptable.
+    /// B leaves nothing addressable, which is also not adoptable. A wrong
+    /// profile stays wrong however still the key field is.
     func testProfileSwitchDuringReadDiscardsTheInFlightResult() {
         let profileA = ChromeProfile(name: "Work", directoryName: "Profile 3")
         let profileB = ChromeProfile(name: "Personal", directoryName: "Default")
@@ -374,7 +389,15 @@ final class SessionKeyAttemptTests: XCTestCase {
         )
         XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scoped,
-            launchedProfile: switched
+            launchedProfile: switched,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
+        ))
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: switched,
+            sessionKeyAtReadStart: "",
+            sessionKeyNow: ""
         ))
 
         let failedSwitch = ChromeLaunchBookkeeping.result(
@@ -382,7 +405,60 @@ final class SessionKeyAttemptTests: XCTestCase {
         )
         XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scoped,
-            launchedProfile: failedSwitch
+            launchedProfile: failedSwitch,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
+        ))
+    }
+
+    /// The other half of the same race, and the half the profile check cannot
+    /// see: the user types a key by hand while the read is in flight. The
+    /// profile never changed, so only the field comparison can stop the
+    /// finished read from silently overwriting what they just entered.
+    func testManualKeyEditDuringReadDiscardsTheInFlightResult() {
+        guard let scoped = ChromeLaunchBookkeeping.result(
+            didLaunch: true,
+            profile: ChromeProfile(name: "Work", directoryName: "Profile 3")
+        ) else {
+            return XCTFail("A successful launch must yield a profile")
+        }
+
+        // Untouched field, same profile: the ordinary success path.
+        XCTAssertTrue(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: scoped,
+            sessionKeyAtReadStart: "",
+            sessionKeyNow: ""
+        ))
+        XCTAssertTrue(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: scoped,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyAtReadStart
+        ))
+
+        // Typed into an empty field while waiting: discard the read.
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: scoped,
+            sessionKeyAtReadStart: "",
+            sessionKeyNow: Self.keyTypedMidRead
+        ))
+
+        // Replaced an existing entry while waiting: discard the read.
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: scoped,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: Self.keyTypedMidRead
+        ))
+
+        // Cleared the field while waiting: still an edit, still discarded.
+        XCTAssertFalse(ChromeReadAdoptionPolicy.permitsAdoption(
+            readProfile: scoped,
+            launchedProfile: scoped,
+            sessionKeyAtReadStart: Self.keyAtReadStart,
+            sessionKeyNow: ""
         ))
     }
 

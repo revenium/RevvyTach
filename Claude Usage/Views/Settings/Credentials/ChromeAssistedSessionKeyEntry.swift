@@ -121,21 +121,35 @@ nonisolated struct LaunchedChromeProfile: Equatable, Sendable {
 }
 
 nonisolated enum ChromeReadAdoptionPolicy {
-    /// A finished read may only be adopted for the profile it was scoped to.
+    /// A finished read may only be adopted for the profile it was scoped to,
+    /// and only if the key field has not moved underneath it.
     ///
-    /// The read runs off the main actor while the wizard stays live, so the
-    /// user can launch a second profile before the first read returns. Adopting
-    /// it anyway would hand profile A's session key to a screen — and to the
-    /// save gate's confirmation — that names profile B: a wrong-but-plausible
-    /// credential, and a silent breach of the consent notice's promise that
-    /// only the profile just opened is used. A nil current profile means a
-    /// launch is in flight or the last one failed, so nothing is addressable.
+    /// The read runs off the main actor while the wizard stays live, so two
+    /// things can change before it returns. The user can launch a second
+    /// profile: adopting anyway would hand profile A's session key to a screen
+    /// — and to the save gate's confirmation — that names profile B, a
+    /// wrong-but-plausible credential and a silent breach of the consent
+    /// notice's promise that only the profile just opened is used. Or the user
+    /// can type a key by hand while waiting: adopting then would overwrite,
+    /// without a word, the key they just entered — and the profile check
+    /// cannot see it, because the profile genuinely did not change. The field
+    /// is also disabled during a read, but that only stops the edit from
+    /// starting; this comparison is what decides whether a finished read is
+    /// allowed to land. A nil current profile means a launch is in flight or
+    /// the last one failed, so nothing is addressable.
+    ///
+    /// The keys are compared by value and nothing else: neither is rendered,
+    /// logged, hashed, or interpolated anywhere.
     static func permitsAdoption(
         readProfile: LaunchedChromeProfile,
-        launchedProfile: LaunchedChromeProfile?
+        launchedProfile: LaunchedChromeProfile?,
+        sessionKeyAtReadStart: String,
+        sessionKeyNow: String
     ) -> Bool {
-        guard let launchedProfile else { return false }
-        return launchedProfile == readProfile
+        guard let launchedProfile, launchedProfile == readProfile else {
+            return false
+        }
+        return sessionKeyNow == sessionKeyAtReadStart
     }
 }
 
@@ -384,6 +398,13 @@ struct ChromeAssistedSessionKeyEntry: View {
                         )
                 )
                 .accessibilityIdentifier("session_key.secure_field")
+                // A key typed while a read is in flight would be discarded by
+                // the adoption policy the moment the read lands, so let the
+                // user see the field is busy rather than type into it and
+                // watch the work go nowhere. The binding is untouched: when no
+                // read is running this is `false`, and a normal edit still
+                // reports through `onSessionKeyChanged()` exactly as before.
+                .disabled(isReadingFromChrome)
 
                 HStack {
                     Spacer()
@@ -439,6 +460,9 @@ struct ChromeAssistedSessionKeyEntry: View {
         readError = nil
         isReadingFromChrome = true
         let scopedProfile = pending
+        // Captured alongside the profile, and for the same reason: a result
+        // that arrives after the field has moved is not addressable either.
+        let scopedSessionKey = sessionKey
 
         // The read blocks on the macOS password prompt, so it must not run on
         // the main thread — a frozen wizard at the moment the user is asked
@@ -459,23 +483,31 @@ struct ChromeAssistedSessionKeyEntry: View {
                     )
                 }
             }
-            finishChromeRead(outcome, scopedTo: scopedProfile)
+            finishChromeRead(
+                outcome,
+                scopedTo: scopedProfile,
+                sessionKeyAtReadStart: scopedSessionKey
+            )
         }
     }
 
     private func finishChromeRead(
         _ outcome: Result<String, Error>,
-        scopedTo scopedProfile: LaunchedChromeProfile
+        scopedTo scopedProfile: LaunchedChromeProfile,
+        sessionKeyAtReadStart: String
     ) {
         isReadingFromChrome = false
         pendingRead = nil
-        // The user launched a different profile while this read was in flight,
-        // so the result belongs to a profile they have moved on from. Discard
-        // it without a message: nothing broke, and a failure notice here would
-        // describe a read the user is no longer waiting for.
+        // The user launched a different profile, or entered a key themselves,
+        // while this read was in flight — so the result belongs to a profile
+        // they have moved on from, or would overwrite a key they just typed.
+        // Discard it without a message: nothing broke, and a failure notice
+        // here would describe a read the user is no longer waiting for.
         guard ChromeReadAdoptionPolicy.permitsAdoption(
             readProfile: scopedProfile,
-            launchedProfile: launchedProfile
+            launchedProfile: launchedProfile,
+            sessionKeyAtReadStart: sessionKeyAtReadStart,
+            sessionKeyNow: sessionKey
         ) else {
             return
         }
