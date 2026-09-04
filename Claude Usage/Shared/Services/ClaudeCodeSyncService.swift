@@ -1432,6 +1432,7 @@ class ClaudeCodeSyncService {
         // `open` above creates this file as 0600 before any token bytes are
         // written. Reopening an existing file preserves that safe mode.
         try updated.write(to: temporaryURL)
+        guard try Data(contentsOf: fileURL) == original else { return false }
         guard rename(temporaryURL.path, fileURL.path) == 0 else {
             throw POSIXError(
                 POSIXErrorCode(rawValue: errno) ?? .EIO
