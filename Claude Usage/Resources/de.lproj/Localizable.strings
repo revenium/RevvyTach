@@ -1271,6 +1271,7 @@
 "chrome_assisted.choose_profile" = "Chrome-Profil auswählen";
 "chrome_assisted.launch" = "Ausgewähltes Chrome-Profil öffnen";
 "chrome_assisted.launch_failed" = "Chrome konnte nicht mit diesem Profil geöffnet werden. Wählen Sie ein Profil und versuchen Sie es erneut, oder verwenden Sie eine Alternative.";
+"chrome_assisted.launch_superseded" = "Dieser Einrichtungsversuch hat sich geändert, während Chrome geöffnet wurde, daher wurde dieser Start nicht verwendet. Wählen Sie ein Profil und öffnen Sie es erneut.";
 "chrome_assisted.verify_account" = "Chrome-Profil %@ wurde geöffnet. Prüfen Sie vor dem Einfügen eines Sitzungsschlüssels visuell das gewünschte Claude-Konto in Chrome.";
 "chrome_assisted.no_extraction" = "Beim Öffnen eines Profils wird nichts gelesen. Ein Sitzungsschlüssel wird nur gelesen, wenn Sie auf „Aus Chrome auslesen“ klicken und die macOS-Meldung bestätigen.";
 "chrome_assisted.embedded_fallback" = "Alternative: Melden Sie sich stattdessen im eingebetteten Browser an.";

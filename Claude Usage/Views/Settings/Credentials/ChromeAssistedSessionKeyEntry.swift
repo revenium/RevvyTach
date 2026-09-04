@@ -47,12 +47,20 @@ nonisolated enum SessionKeyAttemptPolicy {
         )
     }
 
+    /// Whether a finished launch may be applied. The reason a launch is
+    /// *rejected* decides whether the user hears about it, so the view asks
+    /// `ChromeLaunchOutcomePolicy` for the full disposition; this stays the
+    /// one-bit question, answered by the same rules.
     static func acceptsChromeLaunch(
         _ launch: ChromeLaunchAttempt,
         currentNonce: UUID,
         parentGenerationIsCurrent: Bool
     ) -> Bool {
-        launch.nonce == currentNonce && parentGenerationIsCurrent
+        ChromeLaunchOutcomePolicy.disposition(
+            launch,
+            currentNonce: currentNonce,
+            parentGenerationIsCurrent: parentGenerationIsCurrent
+        ) == .adopt
     }
 
     static func acceptsSetupCompletion(
@@ -115,9 +123,25 @@ nonisolated enum SessionKeyAttemptPolicy {
 /// at the profile from the attempt before it — so the read would have been
 /// scoped to a profile the user had not just opened, which is the promise the
 /// consent notice makes.
-nonisolated struct LaunchedChromeProfile: Equatable, Sendable {
+///
+/// `Identifiable` so the consent notice can be presented from this value
+/// itself. It used to be presented from a separate boolean set in the same
+/// frame as the value, and SwiftUI built the sheet's content from the state
+/// snapshot the presentation began with — so the profile was still `nil`, the
+/// `if let` around the content failed, and macOS presented an empty sheet: a
+/// small blank square with no title, no body, no Cancel and no Continue, over
+/// a dimmed window, with nothing left to press. The only way out was to force
+/// quit the app. Presenting from the value keeps the content non-optional, so
+/// the sheet can never render without its buttons.
+nonisolated struct LaunchedChromeProfile: Equatable, Sendable, Identifiable {
     let label: String
     let directoryName: String
+
+    /// Derived, never stored: a launch is identified by the profile it opened.
+    /// A stored identifier would have to be excluded from `Equatable`, and
+    /// that equality is what `ChromeReadAdoptionPolicy` uses to decide whether
+    /// a finished read belongs to the profile still on screen.
+    var id: String { "\(directoryName)\u{1F}\(label)" }
 }
 
 nonisolated enum ChromeReadAdoptionPolicy {
@@ -155,8 +179,8 @@ nonisolated enum ChromeReadAdoptionPolicy {
 
 nonisolated enum ChromeLaunchBookkeeping {
     /// The launched-profile state after one launch attempt. Every attempt
-    /// clears the previous result first (the user must choose a profile
-    /// again for each launch), so a failed attempt leaves nothing
+    /// clears the previous result before it starts and assigns this one
+    /// unconditionally when it finishes, so a failed attempt leaves nothing
     /// addressable — never the profile from the attempt before it.
     static func result(
         didLaunch: Bool,
@@ -167,6 +191,40 @@ nonisolated enum ChromeLaunchBookkeeping {
             label: profile.label,
             directoryName: profile.directoryName
         )
+    }
+}
+
+/// What to do with a browser launch that has just finished.
+///
+/// The completion used to collapse two unrelated situations into one silent
+/// `return`, and the second one cost a user a whole attempt: Chrome opened,
+/// the result was thrown away, **Read from Chrome** stayed grey, and nothing
+/// on screen said why. A launch is only ever dropped for one of two reasons,
+/// and they deserve opposite treatment.
+nonisolated enum ChromeLaunchOutcomePolicy {
+    enum Disposition: Equatable {
+        /// This launch is still the current one: apply its result.
+        case adopt
+        /// A newer launch has started. Stay silent and leave the busy
+        /// indicator alone: the newer launch owns the UI and its own result
+        /// is still coming.
+        case supersededByNewerLaunch
+        /// The setup attempt itself moved on while Chrome was opening — a key
+        /// edit, a cancelled embedded sign-in, or a profile change. The launch
+        /// is genuinely lost, so the user has to be told; otherwise both
+        /// buttons sit grey with no explanation.
+        case staleAttempt
+    }
+
+    static func disposition(
+        _ launch: ChromeLaunchAttempt,
+        currentNonce: UUID,
+        parentGenerationIsCurrent: Bool
+    ) -> Disposition {
+        guard launch.nonce == currentNonce else {
+            return .supersededByNewerLaunch
+        }
+        return parentGenerationIsCurrent ? .adopt : .staleAttempt
     }
 }
 
@@ -214,9 +272,12 @@ struct ChromeAssistedSessionKeyEntry: View {
     @State private var launchNonce = UUID()
     @State private var isReadingFromChrome = false
     @State private var readError: String?
-    @State private var showingChromeReadConsent = false
     /// Captured when the consent sheet opens, so neither the sheet's copy nor
     /// the background read can drift onto a different profile mid-flight.
+    ///
+    /// This is also what presents the sheet. There is deliberately no separate
+    /// "showing" boolean: a second piece of state set in the same frame is what
+    /// produced an empty, un-dismissable consent sheet.
     @State private var pendingRead: LaunchedChromeProfile?
 
     var body: some View {
@@ -339,14 +400,16 @@ struct ChromeAssistedSessionKeyEntry: View {
             .padding(12)
             .background(Color.accentColor.opacity(0.07))
             .cornerRadius(8)
-            .sheet(isPresented: $showingChromeReadConsent) {
-                if let pendingRead {
-                    ChromeReadConsentSheet(
-                        profileLabel: pendingRead.label,
-                        onContinue: continueChromeRead,
-                        onCancel: cancelChromeRead
-                    )
-                }
+            // Presented from the value itself, so the content is never
+            // optional and the sheet always renders its Cancel button. A
+            // sheet with nothing to press cannot be dismissed at all.
+            .sheet(item: $pendingRead, onDismiss: { pendingRead = nil }) {
+                pending in
+                ChromeReadConsentSheet(
+                    profileLabel: pending.label,
+                    onContinue: { continueChromeRead(pending) },
+                    onCancel: cancelChromeRead
+                )
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -445,18 +508,20 @@ struct ChromeAssistedSessionKeyEntry: View {
     private func beginChromeRead() {
         readError = nil
         guard let launchedProfile else { return }
+        // The single state change that presents the notice.
         pendingRead = launchedProfile
-        showingChromeReadConsent = true
     }
 
     private func cancelChromeRead() {
-        showingChromeReadConsent = false
         pendingRead = nil
     }
 
-    private func continueChromeRead() {
-        showingChromeReadConsent = false
-        guard let pending = pendingRead else { return }
+    /// Takes the profile the sheet was built from rather than re-reading
+    /// state: the sheet on screen named this profile, so this is the profile
+    /// the user consented to.
+    private func continueChromeRead(_ pending: LaunchedChromeProfile) {
+        // Clearing the pending read is what dismisses the notice.
+        pendingRead = nil
         readError = nil
         isReadingFromChrome = true
         let scopedProfile = pending
@@ -497,7 +562,6 @@ struct ChromeAssistedSessionKeyEntry: View {
         sessionKeyAtReadStart: String
     ) {
         isReadingFromChrome = false
-        pendingRead = nil
         // The user launched a different profile, or entered a key themselves,
         // while this read was in flight — so the result belongs to a profile
         // they have moved on from, or would overwrite a key they just typed.
@@ -546,8 +610,11 @@ struct ChromeAssistedSessionKeyEntry: View {
             return
         }
 
-        // A user must choose a profile again for every browser launch.
-        selectedDirectoryName = nil
+        // The picker keeps its choice. Emptying it after every launch made a
+        // working launch look like a failed one: the profile the user had just
+        // opened vanished from the picker and the Open button went grey. What
+        // actually has to be re-earned is `launchedProfile`, which is cleared
+        // here and re-assigned unconditionally when the launch finishes.
         launchError = nil
         readError = nil
         launchedProfile = nil
@@ -564,14 +631,27 @@ struct ChromeAssistedSessionKeyEntry: View {
                 discoverer: ChromeProfileDiscoverer()
             ).launch(profile: profile)
             await MainActor.run {
-                guard SessionKeyAttemptPolicy.acceptsChromeLaunch(
+                switch ChromeLaunchOutcomePolicy.disposition(
                     attempt,
                     currentNonce: launchNonce,
                     parentGenerationIsCurrent:
                         isLaunchCurrent(attempt.parentGeneration)
-                ) else {
-                    if attempt.nonce == launchNonce { isLaunching = false }
+                ) {
+                case .supersededByNewerLaunch:
+                    // A newer launch owns the busy indicator and will report
+                    // its own result. Saying anything here would describe a
+                    // launch the user has already replaced.
                     return
+                case .staleAttempt:
+                    // Chrome may well have opened, but this attempt is gone,
+                    // so nothing was linked to it. Never leave both buttons
+                    // grey with no explanation.
+                    isLaunching = false
+                    launchError =
+                        "chrome_assisted.launch_superseded".localized
+                    return
+                case .adopt:
+                    break
                 }
                 isLaunching = false
                 // Assigned unconditionally, so a failed attempt clears the

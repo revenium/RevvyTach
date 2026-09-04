@@ -1268,6 +1268,7 @@
 "chrome_assisted.choose_profile" = "选择 Chrome 配置文件";
 "chrome_assisted.launch" = "打开所选 Chrome 配置文件";
 "chrome_assisted.launch_failed" = "无法使用该配置文件打开 Chrome。请选择配置文件后重试，或使用备用方法。";
+"chrome_assisted.launch_superseded" = "打开 Chrome 期间此设置流程已变化，因此该次打开未被使用。请选择配置文件后重新打开。";
 "chrome_assisted.verify_account" = "已打开 Chrome 配置文件 %@。粘贴会话密钥前，请在 Chrome 中目视确认目标 Claude 帐户。";
 "chrome_assisted.no_extraction" = "打开配置文件不会读取任何内容。只有在你点按“从 Chrome 读取”并在 macOS 提示中允许后，才会读取会话密钥。";
 "chrome_assisted.embedded_fallback" = "备用方法：使用内嵌浏览器登录。";

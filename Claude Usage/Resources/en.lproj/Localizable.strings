@@ -1286,6 +1286,7 @@
 "chrome_assisted.choose_profile" = "Choose a Chrome profile";
 "chrome_assisted.launch" = "Open selected Chrome profile";
 "chrome_assisted.launch_failed" = "Chrome could not be opened with that profile. Choose a profile and try again, or use a fallback.";
+"chrome_assisted.launch_superseded" = "This setup attempt changed while Chrome was opening, so that launch was not used. Choose a profile and open it again.";
 "chrome_assisted.verify_account" = "Chrome profile %@ opened. Visually verify the intended Claude account in Chrome before pasting a session key.";
 "chrome_assisted.no_extraction" = "Opening a profile never reads anything. A session key is only read if you press Read from Chrome and approve the macOS prompt.";
 "chrome_assisted.embedded_fallback" = "Fallback: sign in using the embedded browser instead.";

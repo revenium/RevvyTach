@@ -1271,6 +1271,7 @@
 "chrome_assisted.choose_profile" = "Chrome プロファイルを選択";
 "chrome_assisted.launch" = "選択した Chrome プロファイルを開く";
 "chrome_assisted.launch_failed" = "このプロファイルで Chrome を開けませんでした。プロファイルを選び直すか、別の方法を使用してください。";
+"chrome_assisted.launch_superseded" = "Chrome を開いている間にこの設定操作が変わったため、その起動は使用されませんでした。プロファイルを選んでもう一度開いてください。";
 "chrome_assisted.verify_account" = "Chrome プロファイル %@ を開きました。セッションキーを貼り付ける前に、Chrome で目的の Claude アカウントを目視で確認してください。";
 "chrome_assisted.no_extraction" = "プロファイルを開くだけでは何も読み取りません。セッションキーは、「Chrome から読み取る」を押して macOS の画面で許可した場合にのみ読み取られます。";
 "chrome_assisted.embedded_fallback" = "代替手段：埋め込みブラウザでサインインします。";

@@ -1271,6 +1271,7 @@
 "chrome_assisted.choose_profile" = "Scegli un profilo Chrome";
 "chrome_assisted.launch" = "Apri il profilo Chrome selezionato";
 "chrome_assisted.launch_failed" = "Impossibile aprire Chrome con quel profilo. Scegli un profilo e riprova, oppure usa un’alternativa.";
+"chrome_assisted.launch_superseded" = "Questo tentativo di configurazione è cambiato mentre Chrome si apriva, quindi quell’apertura non è stata usata. Scegli un profilo e aprilo di nuovo.";
 "chrome_assisted.verify_account" = "Il profilo Chrome %@ è aperto. Verifica visivamente l’account Claude desiderato in Chrome prima di incollare una chiave di sessione.";
 "chrome_assisted.no_extraction" = "Aprire un profilo non legge nulla. Una chiave di sessione viene letta solo se premi «Leggi da Chrome» e approvi la richiesta di macOS.";
 "chrome_assisted.embedded_fallback" = "Alternativa: accedi dal browser incorporato.";

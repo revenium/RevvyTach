@@ -50,6 +50,107 @@ final class SessionKeyAttemptTests: XCTestCase {
         ))
     }
 
+    /// A rejected launch used to disappear without a word. The two reasons a
+    /// launch is rejected want opposite treatment, so the disposition — not
+    /// just the yes/no — is what the view acts on.
+    func testRejectedLaunchDistinguishesANewerLaunchFromALostAttempt() {
+        let generation = UUID()
+        let launch = ChromeLaunchAttempt(
+            nonce: UUID(),
+            parentGeneration: generation
+        )
+
+        XCTAssertEqual(
+            ChromeLaunchOutcomePolicy.disposition(
+                launch,
+                currentNonce: launch.nonce,
+                parentGenerationIsCurrent: true
+            ),
+            .adopt
+        )
+        // A newer launch owns the UI and will report its own result, so this
+        // one stays silent.
+        XCTAssertEqual(
+            ChromeLaunchOutcomePolicy.disposition(
+                launch,
+                currentNonce: UUID(),
+                parentGenerationIsCurrent: true
+            ),
+            .supersededByNewerLaunch
+        )
+        // No newer launch is coming, so nothing else will ever explain why
+        // Read from Chrome stayed grey. The user has to be told.
+        XCTAssertEqual(
+            ChromeLaunchOutcomePolicy.disposition(
+                launch,
+                currentNonce: launch.nonce,
+                parentGenerationIsCurrent: false
+            ),
+            .staleAttempt
+        )
+        // A superseded launch is reported as superseded even when the attempt
+        // has also moved on: the newer launch is still the one that speaks.
+        XCTAssertEqual(
+            ChromeLaunchOutcomePolicy.disposition(
+                launch,
+                currentNonce: UUID(),
+                parentGenerationIsCurrent: false
+            ),
+            .supersededByNewerLaunch
+        )
+    }
+
+    /// The one-bit question and the disposition cannot drift apart.
+    func testAcceptsChromeLaunchAgreesWithTheDisposition() {
+        let generation = UUID()
+        let launch = ChromeLaunchAttempt(
+            nonce: UUID(),
+            parentGeneration: generation
+        )
+
+        for currentNonce in [launch.nonce, UUID()] {
+            for parentIsCurrent in [true, false] {
+                let accepts = SessionKeyAttemptPolicy.acceptsChromeLaunch(
+                    launch,
+                    currentNonce: currentNonce,
+                    parentGenerationIsCurrent: parentIsCurrent
+                )
+                let disposition = ChromeLaunchOutcomePolicy.disposition(
+                    launch,
+                    currentNonce: currentNonce,
+                    parentGenerationIsCurrent: parentIsCurrent
+                )
+                XCTAssertEqual(accepts, disposition == .adopt)
+            }
+        }
+    }
+
+    /// The consent notice is presented from the launched profile itself, so
+    /// that value has to carry a stable identity — and adding one must not
+    /// disturb the equality the adoption policy compares.
+    func testLaunchedProfileIdentityTracksTheProfileWithoutBreakingEquality() {
+        let work = LaunchedChromeProfile(
+            label: "Work — Profile 3", directoryName: "Profile 3"
+        )
+        let sameWork = LaunchedChromeProfile(
+            label: "Work — Profile 3", directoryName: "Profile 3"
+        )
+        let personal = LaunchedChromeProfile(
+            label: "Personal — Default", directoryName: "Default"
+        )
+
+        XCTAssertEqual(work, sameWork)
+        XCTAssertEqual(work.id, sameWork.id)
+        XCTAssertNotEqual(work, personal)
+        XCTAssertNotEqual(work.id, personal.id)
+        // Two profiles whose label and directory merely concatenate to the
+        // same string are still distinct.
+        XCTAssertNotEqual(
+            LaunchedChromeProfile(label: "b", directoryName: "a").id,
+            LaunchedChromeProfile(label: "", directoryName: "ab").id
+        )
+    }
+
     func testFirstRunCompletionAcceptsOnlyTheCreatedActiveClaudeProfile() {
         let generation = UUID()
         let createdProfileID = UUID()
