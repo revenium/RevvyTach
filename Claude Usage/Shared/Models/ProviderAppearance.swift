@@ -758,6 +758,70 @@ enum ProviderMenuPresentationBuilder {
         )
     }
 
+    /// Presentations for the windows of a profile's leading limit group,
+    /// regardless of which metrics the user configured for the menu bar.
+    ///
+    /// `presentation(profile:snapshot:now:isActive:)` returns
+    /// `configuration.resolvedMetrics(catalog:)` — what the *icon* is set to
+    /// show, which for a default Claude profile is the session window alone
+    /// (`MetricIconConfig.weekDefault` ships disabled). A surface that must
+    /// state a profile's whole position, rather than mirror its icon, needs
+    /// the catalog directly — and must not rebuild used/remaining formatting
+    /// for itself, so it still goes through `metricPresentation`.
+    ///
+    /// "Leading limit group" rather than "first two catalog entries": it
+    /// drops Claude's API Credits window (a billing figure in the `API`
+    /// group, not a subscription window) without naming Claude, and it stops
+    /// a provider whose first group has one window from pairing it with an
+    /// identically named window from the next group. Two at most, matching
+    /// the pair `StatusBarUIManager.compactPercentageMetrics` already packs
+    /// into a single status item.
+    ///
+    /// `showRemaining` is a parameter rather than something read off the
+    /// profile, because which polarity setting governs depends on the
+    /// caller's surface: `MenuBarIconConfiguration.showRemainingPercentage`
+    /// governs single-profile mode, and the global
+    /// `MultiProfileDisplayConfig.showRemainingPercentage` governs
+    /// multi-profile mode (the same re-pointing `metric(_:applying:)`
+    /// performs for the non-Claude multi-profile status items).
+    ///
+    /// `now` governs freshness and staleness only. Session-window expiry
+    /// inside `ClaudeUsage.effectiveSessionPercentage` compares against
+    /// `Date()` at call time, so this is not deterministic against a fixed
+    /// "as of" instant, and a fixture must put its session reset in the
+    /// real future.
+    static func leadingWindowPresentations(
+        profile: Profile,
+        snapshot: PresentationSnapshot?,
+        showRemaining: Bool,
+        now: Date
+    ) -> [ProviderMetricPresentation] {
+        let validSnapshot = snapshot.flatMap {
+            snapshotMatches(profile: profile, snapshot: $0)
+                ? $0
+                : nil
+        }
+        let catalog = catalog(profile: profile, snapshot: validSnapshot)
+        guard let leadingGroup =
+            catalog.first?.id.usageWindowComponents?.groupID
+        else {
+            return []
+        }
+        let state = displayState(snapshot: validSnapshot, now: now)
+        return catalog
+            .filter { $0.id.usageWindowComponents?.groupID == leadingGroup }
+            .prefix(2)
+            .map {
+                metricPresentation(
+                    descriptor: $0,
+                    state: state,
+                    showRemaining: showRemaining,
+                    snapshot: validSnapshot,
+                    now: now
+                )
+            }
+    }
+
     static func isStillCurrent(
         _ target: ProviderStatusItemIdentity,
         profiles: [Profile]
@@ -823,8 +887,14 @@ enum ProviderMenuPresentationBuilder {
                 ),
                 resetAt: usage?.sessionResetTime,
                 duration: Constants.sessionWindow,
+                // `readable…`, not `effective…`: a response that omitted the
+                // 5-hour window lands in the model as a plain `0`, and a
+                // descriptor carrying that zero is a confident number nobody
+                // ever received. `isUsable` deliberately stays
+                // `usage != nil`, so which metrics `resolvedMetrics` selects
+                // — and therefore which status items exist — is unchanged.
                 usedPercentage: sanitize(
-                    usage?.effectiveSessionPercentage
+                    usage?.readableSessionPercentage
                 ),
                 isUsable: usage != nil,
                 unavailableReason: usage == nil
@@ -847,7 +917,8 @@ enum ProviderMenuPresentationBuilder {
                 ),
                 resetAt: usage?.weeklyResetTime,
                 duration: Constants.weeklyWindow,
-                usedPercentage: sanitize(usage?.weeklyPercentage),
+                // Same distinction as the session window above.
+                usedPercentage: sanitize(usage?.readableWeeklyPercentage),
                 isUsable: usage != nil,
                 unavailableReason: usage == nil
                     ? ProviderUILocalization.text(

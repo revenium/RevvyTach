@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The "+N" menu bar list now ranks your hidden accounts by how much room
+  they have left, and shows both windows for each.** Selecting more profiles
+  than fit in the menu bar collapses the extras behind a "+N" item. That list
+  used to show one percentage per account, ordered by nothing in particular —
+  so the one place several accounts appear together as numbers answered
+  neither "which account has room" nor "how much room". Each row now reads
+  like "Session 42% · Week 78%", and the account with the most room comes
+  first. An account whose usage could not be read sorts last and shows a dash
+  rather than a reassuring 0%.
+
+  The ranking is by usage, so it stays the same whether you have the app set
+  to show used or remaining percentages. Two related fixes came with it: that
+  list now follows the used/remaining setting from Manage Profiles like every
+  menu bar icon does, instead of a per-profile setting that only applies when
+  you have one profile; and a window the app was never given a figure for no
+  longer renders as 0%.
+
+  Your menu bar item order is untouched — only the list inside the "+N"
+  popover is ranked.
+
 ## [4.2.0] - 2026-08-29
 
 ### Added
