@@ -83,10 +83,16 @@ import UsageCore
 /// replaced, or on an unavailable volume) sitting earlier in the wrap order
 /// would otherwise be chosen over a genuinely usable one later in the list,
 /// and only discovered stale after activation had already committed to it.
-/// `defaultCodexHomeAvailable` re-runs the exact physical path and
-/// filesystem-identity check `CodexProviderFactory` performs before handing a
-/// home to the Codex CLI, so eligibility and activation cannot disagree about
-/// what "usable" means.
+/// `defaultCodexHomeAvailable` mirrors `CodexSwitchService.switchToHome` —
+/// the code `ProfileActivationCodexEffects.live` actually runs to point the
+/// terminal at a profile's `CODEX_HOME` — not `CodexProviderFactory`, which
+/// answers a different question (can a usage-fetching client be built) and
+/// intentionally distrusts a legacy, identity-less link until the user
+/// relinks it. Activation itself never demanded that: it re-canonicalizes
+/// the path and only compares filesystem identity when one was actually
+/// recorded, so a legacy path-only link switches fine as long as the
+/// directory is still there. Rejecting it here, even though activation would
+/// have accepted it, is a regression this helper must not introduce.
 ///
 /// Nothing here ranks candidates by headroom. The nearest eligible profile
 /// after the current one wins, wrapping around, exactly as the list has always
@@ -135,10 +141,10 @@ enum ProfileSwitchEligibility {
     /// can be tested without standing up an ordered list.
     ///
     /// `codexHomeAvailable` defaults to `defaultCodexHomeAvailable`, which
-    /// reuses `CodexProviderFactory.isHomeAvailable(_:)` — the same physical
-    /// path + filesystem identity check activation performs before handing a
-    /// linked home to the Codex CLI. Injectable so tests can stand up a
-    /// stale-vs-live pair without touching the real filesystem.
+    /// mirrors the re-canonicalize-and-compare-identity-if-known check
+    /// `CodexSwitchService.switchToHome` performs at activation. Injectable
+    /// so tests can stand up a stale-vs-live pair without touching the real
+    /// filesystem.
     static func isEligible(
         _ candidate: Profile,
         switchingFrom active: Profile,
@@ -190,14 +196,27 @@ enum ProfileSwitchEligibility {
         }
     }
 
-    /// Revalidates a linked Codex home's physical path and filesystem
-    /// identity, exactly as `CodexProviderFactory.capture(linkedHome:)` does
-    /// immediately before activation. Reused rather than reimplemented so
-    /// eligibility and activation can never quietly disagree about what
-    /// "usable" means.
+    /// Revalidates a linked Codex home exactly as `CodexSwitchService
+    /// .switchToHome` does — the code that actually runs when a profile
+    /// carrying this link is activated — rather than
+    /// `CodexProviderFactory.isHomeAvailable`, which additionally requires a
+    /// stored filesystem identity and so rejects a legacy path-only link
+    /// activation has always accepted.
+    ///
+    /// Re-canonicalizing is the "does this path still exist and is it still
+    /// a directory" check; identity is compared only when the link actually
+    /// recorded one, matching `switchToHome`'s own reasoning for why a
+    /// missing identity must not be treated as a mismatch.
     private static func defaultCodexHomeAvailable(
         _ linkedHome: CanonicalCodexHome
     ) -> Bool {
-        CodexProviderFactory().isHomeAvailable(linkedHome)
+        guard let recanonicalized = try? CodexHomeCanonicalizer()
+            .canonicalize(linkedHome.path) else {
+            return false
+        }
+        guard let verifiedIdentity = linkedHome.filesystemIdentity else {
+            return true
+        }
+        return verifiedIdentity == recanonicalized.filesystemIdentity
     }
 }

@@ -322,6 +322,56 @@ final class ProfileSwitchEligibilityTests: HostedAppTestCase {
         XCTAssertNil(next(after: a, in: [a, b]) { _ in false })
     }
 
+    /// `canonicalHome` (used by `linkedCodex` everywhere above) decodes a
+    /// path-only payload, so every fixture in this file is already the
+    /// legacy, identity-less shape — but every call through `next(after:in:)`
+    /// stubs `codexHomeAvailable` to "always true", so none of them actually
+    /// exercise `defaultCodexHomeAvailable`, the check production runs. These
+    /// two go through it directly, against a real directory, the same way
+    /// `CodexSwitchServiceTests.testSwitchToHomeAcceptsLegacyPathOnlyHome`
+    /// proves activation accepts a legacy link: a missing stored identity
+    /// must not be treated as a mismatch.
+    func testLegacyPathOnlyCodexHomeIsEligibleWhenDirectoryStillExists() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "codex-eligibility-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: tempDir,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let a = try linkedCodex("A", home: "/Users/example/codex-a")
+        let b = try linkedCodex("B", home: tempDir.path)
+        XCTAssertNil(b.providerConfiguration.codexConfiguration?.linkedHome?
+            .filesystemIdentity)
+
+        XCTAssertTrue(
+            ProfileSwitchEligibility.isEligible(b, switchingFrom: a)
+        )
+    }
+
+    func testLegacyPathOnlyCodexHomeIsIneligibleWhenDirectoryIsGone() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "codex-eligibility-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: tempDir,
+            withIntermediateDirectories: true
+        )
+        let a = try linkedCodex("A", home: "/Users/example/codex-a")
+        let b = try linkedCodex("B", home: tempDir.path)
+        try FileManager.default.removeItem(at: tempDir)
+
+        XCTAssertFalse(
+            ProfileSwitchEligibility.isEligible(b, switchingFrom: a)
+        )
+    }
+
     // MARK: - Claude credentials and sign-in
 
     func testDeadSignInIsSkipped() {
