@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Read your Claude session key straight out of Chrome.** Setting up a Claude
+  account used to mean opening DevTools, finding the `sessionKey` cookie by
+  hand, and pasting a long string across. Once you have opened your account in
+  a Chrome profile, **Read from Chrome** does that step for you.
+
+  It stays off until you press it, and pressing it only opens a notice that
+  says what happens next. macOS asks for your login password, and approving
+  that hands RevvyTach Chrome's own master key — the key that unlocks every
+  cookie and every saved password in Chrome. RevvyTach makes a short-lived
+  private copy of that one profile's cookies, reads the claude.ai session key
+  out of the copy, and deletes the copy right away. Nothing else is read and
+  nothing else is kept, and every failure falls back to pasting the key
+  yourself. Click Allow rather than Always Allow: Allow is a one-time grant,
+  and you can withdraw it later in Keychain Access under Chrome Safe Storage.
+
 ### Changed
 
 - **The "+N" menu bar list now ranks your hidden accounts by how much room
