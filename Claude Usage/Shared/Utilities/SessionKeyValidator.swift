@@ -8,7 +8,7 @@
 import Foundation
 
 /// Error types for session key validation failures
-enum SessionKeyValidationError: LocalizedError {
+nonisolated enum SessionKeyValidationError: LocalizedError {
     case empty
     case tooShort(minLength: Int, actualLength: Int)
     case tooLong(maxLength: Int, actualLength: Int)
@@ -56,12 +56,18 @@ enum SessionKeyValidationError: LocalizedError {
 }
 
 /// Professional session key validator with comprehensive security checks
-struct SessionKeyValidator {
+///
+/// `nonisolated` on purpose: this is a stateless value type, and the
+/// Chrome cookie reader shape-checks a decrypted value from a synchronous
+/// nonisolated context that cannot hop to the main actor. Without it, the
+/// project-wide `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` default would
+/// make `validate` main-actor-isolated and run it off the main thread.
+nonisolated struct SessionKeyValidator {
 
     // MARK: - Configuration
 
     /// Validation configuration
-    struct Configuration {
+    nonisolated struct Configuration {
         let requiredPrefix: String
         let minLength: Int
         let maxLength: Int

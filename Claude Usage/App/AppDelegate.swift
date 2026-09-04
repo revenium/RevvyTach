@@ -88,6 +88,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return
 #endif
 
+        // A crash between the Read-from-Chrome temp copy and its `defer`
+        // unlink would strand a full copy of a Chrome profile's cookie jar in
+        // $TMPDIR until reboot. Runs after the hosted-unit-test and UI-testing
+        // guards above, so neither test mode touches the real $TMPDIR, and
+        // detached so a large temporary directory cannot slow launch.
+        Task.detached(priority: .utility) {
+            ChromeCookieTempCopySweeper.sweep()
+        }
+
         // Adopt data written under the app's pre-rename identity before
         // anything below reads UserDefaults or Application Support — the
         // status-item position sanitizer and profile migration both consume

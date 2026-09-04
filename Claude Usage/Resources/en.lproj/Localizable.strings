@@ -1280,14 +1280,15 @@
 // Launch splash
 "launch.splash.running" = "Running in the menu bar";
 "chrome_assisted.recommended" = "Recommended: open your Claude account in Chrome";
-"chrome_assisted.description" = "Choose a Chrome profile to open Claude, then manually paste and validate your session key here.";
+"chrome_assisted.description" = "Choose a Chrome profile and open Claude. Then either press Read from Chrome, or paste the session key by hand below.";
 "chrome_assisted.no_profiles" = "No eligible Chrome profiles were found. You can still enter a session key manually.";
 "chrome_assisted.profile_picker" = "Chrome profile";
 "chrome_assisted.choose_profile" = "Choose a Chrome profile";
 "chrome_assisted.launch" = "Open selected Chrome profile";
 "chrome_assisted.launch_failed" = "Chrome could not be opened with that profile. Choose a profile and try again, or use a fallback.";
+"chrome_assisted.launch_superseded" = "This setup attempt changed while Chrome was opening, so that launch was not used. Choose a profile and open it again.";
 "chrome_assisted.verify_account" = "Chrome profile %@ opened. Visually verify the intended Claude account in Chrome before pasting a session key.";
-"chrome_assisted.no_extraction" = "Selecting a browser profile does not extract or verify a session key.";
+"chrome_assisted.no_extraction" = "Opening a profile never reads anything. A session key is only read if you press Read from Chrome and approve the macOS prompt.";
 "chrome_assisted.embedded_fallback" = "Fallback: sign in using the embedded browser instead.";
 "chrome_assisted.validation_success" = "Session key validated. Found %ld organization(s).";
 "chrome_assisted.no_organizations" = "The session key is valid, but no organizations were found. Choose a different account or key.";
@@ -1295,6 +1296,17 @@
 "chrome_assisted.profile_changed" = "The active Claude profile changed. Start this setup attempt again.";
 "chrome_assisted.confirm_context" = "I confirmed that Chrome profile %@ is the context I intend to use for RevvyTach profile %@. This is not API-verified.";
 "chrome_assisted.new_claude_profile" = "new Claude profile";
+"chrome_assisted.read_button" = "Read from Chrome";
+"chrome_assisted.reading" = "Reading…";
+"chrome_assisted.read_consent_title" = "Read your session key from Chrome?";
+"chrome_assisted.read_consent_body" = "macOS is about to ask for your login password. Approving it hands RevvyTach Chrome's own master key — the same key that unlocks every cookie and every saved password in Chrome. macOS does not limit that key to one cookie. Only RevvyTach's own code does.\n\nRevvyTach makes a short-lived private copy of this Chrome profile's cookies — all of them, not just one — reads the claude.ai session key out of the copy, and deletes the copy right away. It reads nothing else and keeps nothing else.\n\nmacOS asks twice, and both prompts name RevvyTach and Chrome Safe Storage. That is macOS confirming one grant in two steps, not RevvyTach reading twice. Click Allow on both — a one-time grant, so macOS asks again the next time you read. Do not click Always Allow: that grant never expires, and it keeps working even after you delete RevvyTach.\n\nYou can undo it at any time. Open Keychain Access, find Chrome Safe Storage in your login keychain, open its Access Control tab, and remove RevvyTach.";
+"chrome_assisted.read_consent_continue" = "Continue";
+"chrome_assisted.read_scope_note" = "Only the Chrome profile you just opened is used: %@";
+"chrome_assisted.read_failed_generic" = "Couldn't read the session key from Chrome. Please copy it manually from DevTools and paste it below.";
+"chrome_assisted.read_failed_denied" = "Keychain access was denied, so nothing was read. Click Allow on the macOS prompt to use this, or paste the session key manually below.";
+"chrome_assisted.read_failed_locked" = "Chrome's cookie database is busy right now. Quit Chrome and try again, or paste the session key manually below.";
+"chrome_assisted.read_failed_missing" = "No usable claude.ai session key was found in that Chrome profile — it may be missing or expired. Sign in to claude.ai in Chrome, or paste the key manually below.";
+"chrome_assisted.read_failed_version" = "Chrome changed how it stores cookies, so this version of RevvyTach can't read them. Reading from Chrome is off until RevvyTach is updated. Please paste the session key manually below.";
 "personal.session_key_validated" = "Session key validated";
 "menubar.overage_balance" = "Credit Balance";
 "menubar.overage_balance_organization" = "Credit Balance · Organization";

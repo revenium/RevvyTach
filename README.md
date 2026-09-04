@@ -107,7 +107,7 @@ Pick whichever of these you already have:
 | | How | Notes |
 |---|---|---|
 | **Claude Code** | Nothing to do — if the CLI is installed and logged in, the app finds it | Easiest |
-| **Chrome-assisted manual key** | Settings → Claude.AI → choose a Chrome profile | Opens that profile at Claude for visual account verification; you paste and validate the key manually. RevvyTach reads only Chrome profile labels/directories, never cookies. |
+| **Chrome-assisted key** | Settings → Claude.AI → choose a Chrome profile | Opens that profile at Claude for visual account verification; you paste and validate the key manually, or press the optional **Read from Chrome** button, which reads the one `claude.ai` session-key cookie after a macOS password prompt you approve. Opening a profile itself reads only Chrome profile labels/directories. |
 | **Browser sign-in** | Settings → Claude.AI → **Sign in to Claude.ai** | Embedded-browser fallback; the session key is extracted and stored for you |
 | **Manual key** | Session-key field in the same Chrome-assisted panel | Paste the `sessionKey` cookie from claude.ai, test, pick your org |
 

@@ -226,11 +226,13 @@ struct EnterKeyStep: View {
                 onChromeProfileLaunched: { label in
                     wizardState.launchedChromeProfileLabel = label
                     wizardState.hasConfirmedChromeContext = false
-                }
+                },
+                onSessionKeyReadFromChrome: adoptSessionKeyReadFromChrome
             )
 
             // Fallback: embedded sign-in remains available for users who
-            // prefer it. Browser-assisted setup above never reads a cookie.
+            // prefer it. Browser-assisted setup above reads the claude.ai
+            // session key only through the explicit Read from Chrome button.
             VStack(alignment: .leading, spacing: 8) {
                 Text("chrome_assisted.embedded_fallback".localized)
                     .font(.system(size: 12))
@@ -396,6 +398,20 @@ struct EnterKeyStep: View {
         retireAttempt(clearKey: false)
     }
 
+    /// Same contract as the setup wizard's adoption path: keep the launched
+    /// Chrome profile label, so the account-confirmation checkbox keeps
+    /// gating Save, but re-arm the confirmation itself because the key just
+    /// changed.
+    private func adoptSessionKeyReadFromChrome(_ key: String) {
+        wizardState.sessionKey = key
+        retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            rearmChromeConfirmation: true
+        )
+        testConnection()
+    }
+
     private func retireAttemptForKeyEdit() {
         retireAttempt(
             clearKey: false,
@@ -405,7 +421,8 @@ struct EnterKeyStep: View {
 
     private func retireAttempt(
         clearKey: Bool,
-        clearChromeContext: Bool = true
+        clearChromeContext: Bool = true,
+        rearmChromeConfirmation: Bool = false
     ) {
         wizardState.attempt.invalidate()
         wizardState.validationState = .idle
@@ -413,6 +430,8 @@ struct EnterKeyStep: View {
         wizardState.selectedOrgId = nil
         if clearChromeContext {
             wizardState.launchedChromeProfileLabel = nil
+            wizardState.hasConfirmedChromeContext = false
+        } else if rearmChromeConfirmation {
             wizardState.hasConfirmedChromeContext = false
         }
         if clearKey { wizardState.sessionKey = "" }

@@ -47,7 +47,7 @@ When I hit a Claude or Codex limit, I can see at a glance which of my accounts s
 - No telemetry, analytics, crash reporting, cloud sync, or third-party services.
 - Never reads/copies/logs `CODEX_HOME/auth.json` or any Codex token; never bundles the Codex CLI.
 - Never edits shell rc files, `settings.json`, or Codex files; the snippet is copy-only.
-- Today: never reads Chrome cookies/login DBs; Chrome-assisted setup reads profile labels only. **Not a permanent non-goal.** The owner would welcome reading the claude.ai session key from Chrome with explicit, clearly disclosed user permission, because it would make setup far easier. The dream loop may propose it; any brief must cover the consent flow, what is read and when, and the changes to `docs/data-and-privacy.md`.
+- Chrome-assisted setup reads only profile labels when opening a profile. It reads the claude.ai session-key cookie only via the optional, default-off **Read from Chrome** button, under a consent notice and a macOS password prompt the user approves, scoped to the opened profile; the app never reads login databases or saved passwords. Login DBs, saved passwords, history, and account identifiers remain non-goals. See `docs/data-and-privacy.md`.
 - Read-only: cannot send messages, spend credits, or redeem Codex reset credits.
 - No OpenAI Platform billing; no Codex API-key/Bedrock accounts.
 - Removed on purpose: header account dropdown (3.1.0); Claude Code statusline integration (3.2.0 — the platform does it natively).
@@ -65,11 +65,11 @@ Ranked by how directly they void the promise. **(U)** = triggered by an upstream
 6. **Waste and crashes.** History 97% unreadable, 20 MB+ (3.3.5/6); refresh multiplying after remote reconnect (3.3.2); popover crash on resize (4.0.7).
 7. **Notification noise.** "Session reset" firing when nothing reset — Claude re-anchors the window to the first message (3.2.1 U).
 
-The upstream class recurs and users cannot fix it: token rotation, 401-vs-403 meaning, empty-vs-zero fields, `overage_*` behaviour, Codex app-server protocol shape, Chrome `Local State` format.
+The upstream class recurs and users cannot fix it: token rotation, 401-vs-403 meaning, empty-vs-zero fields, `overage_*` behaviour, Codex app-server protocol shape, Chrome `Local State` format, Chrome cookie-DB schema / OSCrypt version tag.
 
 ## Constraints and risks for new features
 
-- **Undocumented upstream surfaces:** `claude.ai/api/organizations/*` (usage, `overage_spend_limit`, `overage_credit_grant`), `api.anthropic.com/api/oauth/{usage,profile}`, `platform.claude.com/v1/oauth/token` with Claude Code's client ID, Claude Code's Keychain item + `.credentials.json` (read via `/usr/bin/security` because the ACL trusts that binary), Codex app-server JSONL methods. Any can change in a CLI release. New fields must degrade to "unavailable," never zero.
+- **Undocumented upstream surfaces:** `claude.ai/api/organizations/*` (usage, `overage_spend_limit`, `overage_credit_grant`), `api.anthropic.com/api/oauth/{usage,profile}`, `platform.claude.com/v1/oauth/token` with Claude Code's client ID, Claude Code's Keychain item + `.credentials.json` (read via `/usr/bin/security` because the ACL trusts that binary), Codex app-server JSONL methods, Chrome's cookie-database schema (the `cookies` table's `is_secure`/`expires_utc`/`encrypted_value` columns and the schema-24 domain-hash prefix) and the OSCrypt version tag (`v10` on macOS today). Any can change in a CLI release. New fields must degrade to "unavailable," never zero. RevvyTach accepts only `v10` and fails closed: a Chrome change turns **Read from Chrome** off and says so in the message, rather than guessing at a key.
 - **Platform:** macOS 14+, universal binary; shipped builds use the *login* Keychain (data-protection path withdrawn in 3.3.1); Carbon hotkeys; Accessibility re-prompts when the app path changes.
 - **Distribution:** Developer ID + notarization + stapling of app *and* DMG, Revenium Ed25519 Sparkle key, Homebrew cask token **expires 2027-08-03**, monotonically increasing build number, legacy `Claude Usage.app` copy must stay in the DMG for 3.x updaters. Release needs the credential-holding workstation.
 - **Localization:** 9 locales × 1,127 keys; `validate_localizations.sh` is a hard gate, plus fit tests (Japanese clipped in 4.0.8). Every UI string costs nine translations.

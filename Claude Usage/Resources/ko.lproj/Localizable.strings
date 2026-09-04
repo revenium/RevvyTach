@@ -1241,14 +1241,15 @@
 // Launch splash
 "launch.splash.running" = "메뉴 막대에서 실행 중";
 "chrome_assisted.recommended" = "권장: Chrome에서 Claude 계정 열기";
-"chrome_assisted.description" = "Chrome 프로필을 선택해 Claude를 연 다음, 여기에서 세션 키를 직접 붙여넣고 확인하세요.";
+"chrome_assisted.description" = "Chrome 프로필을 선택해 Claude를 여세요. 그런 다음 “Chrome에서 읽기”를 누르거나, 아래에 세션 키를 직접 붙여넣으세요.";
 "chrome_assisted.no_profiles" = "사용 가능한 Chrome 프로필을 찾지 못했습니다. 세션 키는 계속 직접 입력할 수 있습니다.";
 "chrome_assisted.profile_picker" = "Chrome 프로필";
 "chrome_assisted.choose_profile" = "Chrome 프로필 선택";
 "chrome_assisted.launch" = "선택한 Chrome 프로필 열기";
 "chrome_assisted.launch_failed" = "해당 프로필로 Chrome을 열 수 없습니다. 프로필을 선택해 다시 시도하거나 다른 방법을 사용하세요.";
+"chrome_assisted.launch_superseded" = "Chrome이 열리는 동안 이 설정 시도가 바뀌어 해당 실행은 사용되지 않았습니다. 프로필을 선택해 다시 여세요.";
 "chrome_assisted.verify_account" = "Chrome 프로필 %@을(를) 열었습니다. 세션 키를 붙여넣기 전에 Chrome에서 원하는 Claude 계정을 직접 확인하세요.";
-"chrome_assisted.no_extraction" = "브라우저 프로필을 선택해도 세션 키를 추출하거나 확인하지 않습니다.";
+"chrome_assisted.no_extraction" = "프로필을 여는 것만으로는 아무것도 읽지 않습니다. 세션 키는 “Chrome에서 읽기”를 누르고 macOS 창에서 허용해야만 읽습니다.";
 "chrome_assisted.embedded_fallback" = "대안: 내장 브라우저로 로그인하세요.";
 "chrome_assisted.validation_success" = "세션 키가 확인되었습니다. %ld개의 조직을 찾았습니다.";
 "chrome_assisted.no_organizations" = "세션 키는 유효하지만 조직을 찾지 못했습니다. 다른 계정이나 키를 선택하세요.";
@@ -1256,6 +1257,17 @@
 "chrome_assisted.profile_changed" = "활성 Claude 프로필이 변경되었습니다. 이 설정을 다시 시작하세요.";
 "chrome_assisted.confirm_context" = "Chrome 프로필 %@이(가) RevvyTach 프로필 %@에 사용할 컨텍스트임을 확인했습니다. 이는 API로 검증되지 않았습니다.";
 "chrome_assisted.new_claude_profile" = "새 Claude 프로필";
+"chrome_assisted.read_button" = "Chrome에서 읽기";
+"chrome_assisted.reading" = "읽는 중…";
+"chrome_assisted.read_consent_title" = "Chrome에서 세션 키를 읽을까요?";
+"chrome_assisted.read_consent_body" = "잠시 후 macOS가 로그인 암호를 요청합니다. 허용하면 RevvyTach는 Chrome의 마스터 키 자체를 받습니다. Chrome에 저장된 모든 쿠키와 모든 비밀번호를 여는 바로 그 키입니다. macOS는 이 키를 쿠키 하나로 제한하지 않습니다. 제한하는 것은 RevvyTach 자체의 코드뿐입니다.\n\nRevvyTach는 이 Chrome 프로필의 쿠키를 하나도 빠짐없이 잠시 복사해, 그 복사본에서 claude.ai 세션 키만 읽고 복사본을 즉시 삭제합니다. 그 밖에는 아무것도 읽지 않고 아무것도 보관하지 않습니다.\n\nmacOS는 두 번 묻습니다. 두 창 모두 RevvyTach와 “Chrome Safe Storage”를 표시합니다. 이는 macOS가 하나의 허가를 두 단계로 확인하는 것이며, RevvyTach가 두 번 읽는 것이 아닙니다. 두 번 모두 “허용”을 클릭하세요. 이는 한 번만 유효한 허가이며, 다음에 읽을 때 macOS가 다시 묻습니다. “항상 허용”은 클릭하지 마세요. 그 허가는 만료되지 않으며 RevvyTach를 삭제한 뒤에도 계속 유효합니다.\n\n언제든 취소할 수 있습니다. “키체인 접근”을 열고 로그인 키체인에서 “Chrome Safe Storage”를 찾은 다음, “접근 제어” 탭을 열어 RevvyTach를 제거하세요.";
+"chrome_assisted.read_consent_continue" = "계속";
+"chrome_assisted.read_scope_note" = "방금 연 Chrome 프로필만 사용합니다: %@";
+"chrome_assisted.read_failed_generic" = "Chrome에서 세션 키를 읽지 못했습니다. DevTools에서 직접 복사해 아래에 붙여 넣으세요.";
+"chrome_assisted.read_failed_denied" = "키체인 접근이 거부되어 아무것도 읽지 않았습니다. macOS 창에서 “허용”을 클릭하거나 아래에 세션 키를 직접 붙여 넣으세요.";
+"chrome_assisted.read_failed_locked" = "Chrome의 쿠키 데이터베이스가 사용 중입니다. Chrome을 종료하고 다시 시도하거나, 아래에 세션 키를 직접 붙여 넣으세요.";
+"chrome_assisted.read_failed_missing" = "해당 Chrome 프로필에서 사용할 수 있는 claude.ai 세션 키를 찾지 못했습니다. 없거나 만료되었을 수 있습니다. Chrome에서 claude.ai에 로그인하거나 아래에 키를 직접 붙여 넣으세요.";
+"chrome_assisted.read_failed_version" = "Chrome가 쿠키를 저장하는 방식을 바꾸어 이 버전의 RevvyTach로는 읽을 수 없습니다. RevvyTach를 업데이트할 때까지 Chrome에서 읽기는 꺼져 있습니다. 아래에 세션 키를 직접 붙여 넣으세요.";
 "personal.session_key_validated" = "세션 키가 확인되었습니다";
 "menubar.overage_balance" = "크레딧 잔액";
 "menubar.overage_balance_organization" = "크레딧 잔액 · 조직";
