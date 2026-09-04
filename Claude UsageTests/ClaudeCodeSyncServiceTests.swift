@@ -55,14 +55,30 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     private func makeService(
         runner: RecordingSecurityRunner,
         profileStore: ProfileStore,
-        systemCredentialsReader: (() throws -> String?)? = nil
+        systemCredentialsReader: (() throws -> String?)? = nil,
+        keychainCredentialsReader: ((String?) throws -> String?)? = nil,
+        credentialsFileDirectory: ((String?) -> URL)? = nil,
+        credentialLogSink: ((String) -> Void)? = nil
     ) -> ClaudeCodeSyncService {
         _ = retain(runner)
+        // Apply tests provide a system-reader seam and must not fall through
+        // to the machine Keychain for the new direct-item ownership check.
+        // Rotation tests leave that seam nil so their scripted runner remains
+        // the owner of the Keychain interaction.
+        let itemReader = keychainCredentialsReader
+            ?? (systemCredentialsReader == nil ? nil : { _ in nil })
+        let fileDirectory = credentialsFileDirectory ?? { _ in
+            FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        }
         return retain(
             ClaudeCodeSyncService(
                 profileStore: profileStore,
                 systemCredentialsReader: systemCredentialsReader,
-                securityRunner: runner
+                keychainCredentialsReader: itemReader,
+                securityRunner: runner,
+                credentialsFileDirectory: fileDirectory,
+                credentialLogSink: credentialLogSink
             )
         )
     }
@@ -516,6 +532,199 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         XCTAssertEqual(runner.verbs, ["add-generic-password"])
     }
 
+    @MainActor
+    func testApplyProfileCredentialsSkipsIdenticalKeychainLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let snapshot = credentials(
+            accessToken: "same", refreshToken: "same-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { snapshot },
+            keychainCredentialsReader: { _ in snapshot },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(runner.invocations.isEmpty)
+        XCTAssertTrue(logs.contains { $0.contains("Keychain item already holds this login") })
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsDoesNotReplaceFresherKeychainLogin() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let fileLogin = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 1_000
+        )
+        let snapshot = credentials(
+            accessToken: "stored", refreshToken: "stored-refresh", expiresAtMillis: 2_000
+        )
+        let keychainLogin = credentials(
+            accessToken: "keychain", refreshToken: "keychain-refresh", expiresAtMillis: 3_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(fileLogin, in: directory)
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { fileLogin },
+            keychainCredentialsReader: { _ in keychainLogin },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A fresher Keychain login must not be replaced: \(runner.invocations)"
+        )
+        XCTAssertTrue(logs.contains { message in
+            message.contains("stored CLI credential is at least as new")
+                && message.contains("Keychain login")
+        })
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsDeclinesWriteWhenKeychainTargetReadFails() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let fileLogin = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 1_000
+        )
+        let snapshot = credentials(
+            accessToken: "stored", refreshToken: "stored-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(fileLogin, in: directory)
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { fileLogin },
+            keychainCredentialsReader: { _ in
+                throw ClaudeCodeError.invalidJSON
+            },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "A failed Keychain freshness read must decline the write: \(runner.invocations)"
+        )
+        XCTAssertTrue(logs.contains { message in
+            message.contains("Could not read this account's Keychain item")
+                && message.contains("leaving the Keychain unchanged")
+        })
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsDoesNotCopyFileLoginIntoKeychain() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let snapshot = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(snapshot, in: directory)
+        var logs: [String] = []
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { snapshot },
+            keychainCredentialsReader: { _ in nil },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: { logs.append($0) }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(runner.invocations.isEmpty)
+        XCTAssertTrue(logs.contains { $0.contains("This login lives in Claude Code's credentials file") })
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsDoesNotCopyPartialFileLoginIntoKeychain() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let snapshot = credentials(
+            accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(
+            #"{"claudeAiOauth":{"refreshToken":"file-refresh","expiresAt":1000}}"#,
+            in: directory
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { snapshot },
+            keychainCredentialsReader: { _ in nil },
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertTrue(runner.invocations.isEmpty)
+    }
+
+    @MainActor
+    func testApplyProfileCredentialsWritesWhenFileIsDifferentAndKeychainIsOlder() throws {
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let snapshot = credentials(
+            accessToken: "stored", refreshToken: "stored-refresh", expiresAtMillis: 2_000
+        )
+        let profileId = try seedProfileForApply(
+            cliCredentialsJSON: snapshot, in: store
+        )
+        let directory = try makeTemporaryCredentialsDirectory()
+        try writeCredentialsFile(
+            credentials(
+                accessToken: "file", refreshToken: "file-refresh", expiresAtMillis: 3_000
+            ),
+            in: directory
+        )
+        let olderKeychain = credentials(
+            accessToken: "keychain", refreshToken: "keychain-refresh", expiresAtMillis: 1_000
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: store,
+            systemCredentialsReader: { olderKeychain },
+            keychainCredentialsReader: { _ in olderKeychain },
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        try service.applyProfileCredentials(profileId)
+
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
+    }
+
     // MARK: - A rotation must not invalidate Claude Code's own login
 
     /// Anthropic rotates the refresh token on every use, so the moment this
@@ -573,6 +782,227 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     }
 
     private let rotationRenewed = #"{"claudeAiOauth":{"accessToken":"renewed","refreshToken":"rotated","expiresAt":2000.0}}"#
+
+    @MainActor
+    private func makeTemporaryCredentialsDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        return directory
+    }
+
+    private func credentialsFile(in directory: URL) -> URL {
+        directory.appendingPathComponent(".credentials.json")
+    }
+
+    private func writeCredentialsFile(_ contents: String, in directory: URL) throws {
+        let fileURL = credentialsFile(in: directory)
+        try contents.data(using: .utf8)?.write(to: fileURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: fileURL.path
+        )
+    }
+
+    private func fileMode(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
+    }
+
+    @MainActor
+    private func makeFileRotationService(
+        runner: RecordingSecurityRunner,
+        store: ProfileStore,
+        directory: URL,
+        keychainLogin: String?,
+        logs: ((String) -> Void)? = nil
+    ) -> ClaudeCodeSyncService {
+        makeService(
+            runner: runner,
+            profileStore: store,
+            keychainCredentialsReader: { _ in keychainLogin },
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: logs
+        )
+    }
+
+    // MARK: - File-backed Claude Code login rotation
+
+    @MainActor
+    func testRotatedTokenInCredentialsFileIsRewrittenWithoutTouchingKeychain() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let mcpOAuth = #""mcpOAuth" : { "nested" : { "value" : "keep these exact bytes" } }"#
+        let fileContents = #"{ \#(mcpOAuth), "claudeAiOauth" : { "accessToken" : "old", "refreshToken" : "shared", "expiresAt" : 1000 }, "unchanged" : true }"#
+        try writeCredentialsFile(fileContents, in: directory)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        var logs: [String] = []
+        let service = makeFileRotationService(
+            runner: runner,
+            store: store,
+            directory: directory,
+            keychainLogin: nil,
+            logs: { logs.append($0) }
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        let updated = try String(contentsOf: credentialsFile(in: directory))
+        XCTAssertTrue(updated.contains(mcpOAuth), "mcpOAuth must retain its original bytes")
+        XCTAssertTrue(updated.contains(#""refreshToken":"rotated""#))
+        XCTAssertEqual(try fileMode(at: credentialsFile(in: directory)), 0o600)
+        XCTAssertTrue(runner.invocations.isEmpty, "The file-only login must not write a Keychain item")
+        XCTAssertTrue(logs.contains { $0.contains("Mirrored the rotated token back into Claude Code's credentials file") })
+    }
+
+    /// Ownership of a refresh-token family cannot require an access token:
+    /// even a partial file login holds a spent refresh token that must be
+    /// repaired in place rather than copied into a second store.
+    @MainActor
+    func testFileLoginWithNoAccessTokenStillReceivesRotatedRefreshToken() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        try writeCredentialsFile(
+            #"{"mcpOAuth":{"untouched":"yes"},"claudeAiOauth":{"refreshToken":"shared","expiresAt":1000}}"#,
+            in: directory
+        )
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let service = makeFileRotationService(
+            runner: runner, store: store, directory: directory, keychainLogin: nil
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        let updated = try String(contentsOf: credentialsFile(in: directory))
+        XCTAssertTrue(updated.contains(#""refreshToken":"rotated""#))
+        XCTAssertTrue(updated.contains(#""mcpOAuth":{"untouched":"yes"}"#))
+        XCTAssertTrue(runner.invocations.isEmpty)
+    }
+
+    @MainActor
+    func testInvalidCredentialsFileLogsWarningAndIsNotRewritten() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let invalid = "{not json"
+        try writeCredentialsFile(invalid, in: directory)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        var logs: [String] = []
+        let service = makeFileRotationService(
+            runner: runner,
+            store: store,
+            directory: directory,
+            keychainLogin: nil,
+            logs: { logs.append($0) }
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed,
+            for: profileId,
+            rotatedFrom: credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        )
+
+        XCTAssertEqual(try String(contentsOf: credentialsFile(in: directory)), invalid)
+        XCTAssertTrue(logs.contains { $0.contains("Could not parse Claude Code's credentials file") })
+    }
+
+    @MainActor
+    func testRotatedTokenInBothStoresUpdatesBoth() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        try writeCredentialsFile(spent, in: directory)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let service = makeFileRotationService(
+            runner: runner, store: store, directory: directory, keychainLogin: spent
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
+        XCTAssertTrue(try String(contentsOf: credentialsFile(in: directory)).contains("rotated"))
+    }
+
+    @MainActor
+    func testFileWithDifferentRefreshTokenIsLeftUntouchedWhenKeychainMatches() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let different = credentials(refreshToken: "different", expiresAtMillis: 1_000)
+        try writeCredentialsFile(different, in: directory)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let service = makeFileRotationService(
+            runner: runner, store: store, directory: directory, keychainLogin: spent
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
+        XCTAssertEqual(try String(contentsOf: credentialsFile(in: directory)), different)
+    }
+
+    @MainActor
+    func testRotationDoesNotCreateMissingCredentialsFile() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        let service = makeFileRotationService(
+            runner: runner, store: store, directory: directory, keychainLogin: nil
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: credentialsFile(in: directory).path))
+        XCTAssertTrue(runner.invocations.isEmpty)
+    }
+
+    @MainActor
+    func testRotationDoesNotRollBackNewerCredentialsFile() throws {
+        let directory = try makeTemporaryCredentialsDirectory()
+        let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
+        let newer = credentials(refreshToken: "shared", expiresAtMillis: 3_000)
+        try writeCredentialsFile(newer, in: directory)
+        let runner = RecordingSecurityRunner()
+        let store = retain(makeIsolatedProfileStore())
+        let profileId = try seedProfileForRotation(in: store)
+        var logs: [String] = []
+        let service = makeFileRotationService(
+            runner: runner,
+            store: store,
+            directory: directory,
+            keychainLogin: nil,
+            logs: { logs.append($0) }
+        )
+
+        try service.saveRefreshedCredentials(
+            rotationRenewed, for: profileId, rotatedFrom: spent
+        )
+
+        XCTAssertEqual(try String(contentsOf: credentialsFile(in: directory)), newer)
+        XCTAssertTrue(logs.contains { $0.contains("credentials file") && $0.contains("at least as new") })
+    }
 
     /// The fix. The app spent the refresh token Claude Code was relying on,
     /// so the rotated one has to be written back into Claude Code's own
