@@ -9,7 +9,8 @@ import AppKit
 import XCTest
 @testable import Claude_Usage
 
-/// Measures the header's new meta rows in every shipped locale.
+/// Measures the header's new meta rows — and, since the overflow list grew a
+/// composed windows line, that row too — in every shipped locale.
 ///
 /// Measured, not counted. A previous pass on this popover predicted two
 /// truncations by counting characters and six of the nine locales truncated,
@@ -83,6 +84,44 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
                 .font: NSFont.systemFont(ofSize: size, weight: weight)
             ]
         ).height
+    }
+
+    /// Width the overflow list's rows actually get: the popover width, less
+    /// the outer inset on each side, less the row button's own 8pt
+    /// horizontal padding on each side. On its own line the composed windows
+    /// text gets all of it.
+    private static let overflowRowContentWidth =
+        PopoverDesign.width - 2 * PopoverDesign.outerInset - 2 * 8
+
+    /// `PopoverDesign.valueFont` is SF Rounded, which is not the same width
+    /// as SF Text at the same size — measuring the wrong face would pass a
+    /// row that clips.
+    private func roundedFont(
+        ofSize size: CGFloat,
+        weight: NSFont.Weight
+    ) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.rounded)
+        else {
+            return base
+        }
+        return NSFont(descriptor: descriptor, size: size) ?? base
+    }
+
+    private func overflowWindowsLine(_ locale: String) throws -> String {
+        // 100% is the widest figure either window can render, in either
+        // polarity: a remaining-mode profile at 0% used shows 100% too.
+        let session = try string("appearance.metric.name.session", locale)
+        let week = try string("appearance.metric.name.week", locale)
+        return "\(session) 100% · \(week) 100%"
+    }
+
+    private func overflowWindowsWidth(_ line: String) -> CGFloat {
+        (line as NSString).size(
+            withAttributes: [
+                .font: roundedFont(ofSize: 13, weight: .semibold)
+            ]
+        ).width
     }
 
     /// Every health verdict the account row can carry.
@@ -372,5 +411,57 @@ final class PopoverHeaderLocalizationFitTests: XCTestCase {
                 )
             }
         }
+    }
+
+    // MARK: - Overflow profile list rows
+    //
+    // Both cases below are regression guards, not evidence that the overflow
+    // list ranks or renders correctly — they measure localized strings
+    // against layout constants and would pass against a list that did
+    // neither. `StatusBarOverflowTests` carries the behavioural assertions.
+
+    func testOverflowRowWindowsFitInEveryLocale() throws {
+        for locale in Self.locales {
+            let line = try overflowWindowsLine(locale)
+            let measured = overflowWindowsWidth(line)
+            XCTAssertLessThanOrEqual(
+                measured,
+                Self.overflowRowContentWidth,
+                "\(locale) truncates \"\(line)\" — \(Int(measured))pt in "
+                    + "\(Int(Self.overflowRowContentWidth))pt"
+            )
+        }
+    }
+
+    /// Pins the two-line row. Put the profile name and both windows back on
+    /// one line and the windows text gets the row width less an email-shaped
+    /// name and the 8pt gap — a budget 8 of the 9 shipped locales overflow,
+    /// Italian by 68pt and zh-Hans by a fifteenth of a point.
+    ///
+    /// Counted across every locale rather than asserted on one, so dropping
+    /// or adding a locale changes the count instead of failing for a reason
+    /// that has nothing to do with layout.
+    func testOverflowRowCannotShareOneLineWithTheProfileName() throws {
+        let nameWidth = width(
+            "work@example.com",
+            size: 13,
+            weight: .medium
+        )
+        let singleLineBudget =
+            Self.overflowRowContentWidth - 8 - nameWidth
+        var overflowing: [String] = []
+        for locale in Self.locales {
+            let line = try overflowWindowsLine(locale)
+            if overflowWindowsWidth(line) > singleLineBudget {
+                overflowing.append(locale)
+            }
+        }
+        XCTAssertGreaterThanOrEqual(
+            overflowing.count,
+            Self.locales.count - 1,
+            "Only \(overflowing) exceed the \(Int(singleLineBudget))pt "
+                + "single-line budget — re-measure every locale before "
+                + "collapsing the row back to one line."
+        )
     }
 }

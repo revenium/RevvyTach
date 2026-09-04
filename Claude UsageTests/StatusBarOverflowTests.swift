@@ -216,24 +216,234 @@ final class StatusBarOverflowTests: HostedAppTestCase {
 
     // MARK: - MenuBarManager.overflowProfileRows (pure logic)
 
-    func testOverflowProfileRowsMatchOrderAndPercentage() {
-        let profiles = makeProfiles(2)
-        var withUsage = ClaudeUsage.empty
-        withUsage.sessionPercentage = 42
-        withUsage.sessionResetTime = Date().addingTimeInterval(3_600)
-        var claudeProfile = profiles[0]
-        claudeProfile.claudeUsage = withUsage
+    /// A Claude profile whose two subscription windows read exactly what the
+    /// caller asks for. `nil` means the window was never reported — the
+    /// availability flag stays false, which is the difference between "we
+    /// read zero" and "we read nothing".
+    ///
+    /// The session reset is deliberately in the real future:
+    /// `effectiveSessionPercentage` checks window expiry against `Date()` at
+    /// call time, not against the `now` these functions are given, so an
+    /// expired fixture would silently read 0 however it was configured.
+    private func claudeProfile(
+        named name: String,
+        session: Double?,
+        week: Double?
+    ) -> Profile {
+        var usage = ClaudeUsage.empty
+        usage.sessionResetTime = Date().addingTimeInterval(3_600)
+        usage.weeklyResetTime = Date().addingTimeInterval(72 * 3_600)
+        if let session {
+            usage.sessionPercentage = session
+            usage.sessionPercentageAvailable = true
+        }
+        if let week {
+            usage.weeklyPercentage = week
+            usage.weeklyPercentageAvailable = true
+        }
+        var profile = Profile(name: name)
+        profile.claudeUsage = usage
+        return profile
+    }
 
-        let rows = MenuBarManager.overflowProfileRows(
-            profileIDs: [profiles[1].id, profiles[0].id],
-            profiles: [claudeProfile, profiles[1]],
+    private func overflowRows(
+        _ profiles: [Profile],
+        showRemaining: Bool = false
+    ) -> [OverflowProfileRow] {
+        MenuBarManager.overflowProfileRows(
+            profileIDs: profiles.map(\.id),
+            profiles: profiles,
             snapshots: [:],
-            activeProfileID: nil
+            showRemaining: showRemaining
+        )
+    }
+
+    /// The list is ranked by headroom, not by which profiles happened to
+    /// fall off the end of the menu bar. Replaces the previous
+    /// `testOverflowProfileRowsMatchOrderAndPercentage`, which asserted the
+    /// positional order this ticket abolishes — and which, despite its name,
+    /// never asserted a percentage: its fixture set `sessionPercentage`
+    /// without `sessionPercentageAvailable`, so the 42 it wrote was a figure
+    /// the app was never told.
+    func testOverflowProfileRowsSortFreestFirstNotInSelectionOrder() {
+        let rows = overflowRows([
+            claudeProfile(named: "Charlie", session: 90, week: 10),
+            claudeProfile(named: "Alpha", session: 10, week: 80),
+            claudeProfile(named: "Bravo", session: 30, week: 20)
+        ])
+
+        // Keys are the tighter window: 30, 80, 90.
+        XCTAssertEqual(rows.map(\.name), ["Bravo", "Alpha", "Charlie"])
+    }
+
+    func testOverflowProfileRowsPutUnmeasuredProfilesLast() {
+        let unread = Profile(name: "Zulu")
+        let rows = overflowRows([
+            unread,
+            claudeProfile(named: "Yankee", session: 95, week: 95)
+        ])
+
+        XCTAssertEqual(rows.map(\.name), ["Yankee", "Zulu"])
+        XCTAssertEqual(rows[1].valueText, "—")
+    }
+
+    /// A profile that fetched and received nothing must never be ranked as
+    /// the freest account. Before this change `claudeCatalog` handed the
+    /// list a confident `0`, which rendered "0%" and would have sorted
+    /// straight to the top.
+    func testOverflowProfileRowsNeverRenderAnUnreadWindowAsZeroPercent() {
+        var fetchedNothing = Profile(name: "Xray")
+        fetchedNothing.claudeUsage = .empty
+
+        let rows = overflowRows([
+            fetchedNothing,
+            claudeProfile(named: "Whiskey", session: 50, week: 50)
+        ])
+
+        XCTAssertEqual(rows.map(\.name), ["Whiskey", "Xray"])
+        XCTAssertEqual(rows[1].valueText, "—")
+        XCTAssertFalse(rows[1].valueText.contains("0%"))
+        XCTAssertEqual(rows[1].accessibilityValueText, "no usage data")
+    }
+
+    /// Polarity flips what the row displays; it must never flip the order.
+    /// Alpha shows the larger number and still ranks first, because it has
+    /// used less.
+    func testOverflowProfileRowsSortByUsedWhenTheListDisplaysRemaining() {
+        let rows = overflowRows(
+            [
+                claudeProfile(named: "Bravo", session: 20, week: 20),
+                claudeProfile(named: "Alpha", session: 10, week: 10)
+            ],
+            showRemaining: true
         )
 
-        XCTAssertEqual(rows.map(\.id), [profiles[1].id, profiles[0].id])
-        XCTAssertEqual(rows[0].name, profiles[1].name)
-        XCTAssertEqual(rows[1].name, claudeProfile.name)
+        XCTAssertEqual(rows.map(\.name), ["Alpha", "Bravo"])
+        XCTAssertEqual(rows[0].windows[0].percentageText, "90%")
+        XCTAssertEqual(rows[1].windows[0].percentageText, "80%")
+    }
+
+    /// The overflow item exists only in multi-profile mode, where the global
+    /// `MultiProfileDisplayConfig.showRemainingPercentage` governs every
+    /// other visible percentage. The caller supplies it; this list never
+    /// reaches for the per-profile icon setting, which would leave it the
+    /// only surface disagreeing with the icons beside it.
+    func testOverflowProfileRowsTakeThePolarityTheCallerGives() {
+        // Alpha's own icon setting says "remaining" and Bravo's says "used",
+        // and neither is allowed to matter: both calls below must come back
+        // in the caller's polarity, so a revert to the per-profile flag
+        // fails in both directions rather than only one.
+        var alpha = claudeProfile(named: "Alpha", session: 10, week: 10)
+        alpha.iconConfig.showRemainingPercentage = true
+        let bravo = claudeProfile(named: "Bravo", session: 20, week: 20)
+
+        let used = overflowRows([alpha, bravo], showRemaining: false)
+        let remaining = overflowRows([alpha, bravo], showRemaining: true)
+
+        XCTAssertEqual(used[0].windows[0].percentageText, "10%")
+        XCTAssertEqual(used[1].windows[0].percentageText, "20%")
+        XCTAssertEqual(remaining[0].windows[0].percentageText, "90%")
+        XCTAssertEqual(remaining[1].windows[0].percentageText, "80%")
+        XCTAssertEqual(used.map(\.name), ["Alpha", "Bravo"])
+        XCTAssertEqual(remaining.map(\.name), ["Alpha", "Bravo"])
+    }
+
+    /// Both windows appear even though the default menu bar icon shows only
+    /// the session window — the list states the profile's position, it does
+    /// not mirror the icon.
+    func testOverflowProfileRowsRenderBothSessionAndWeek() {
+        let profile = claudeProfile(named: "Alpha", session: 42, week: 78)
+        XCTAssertEqual(profile.iconConfig, MenuBarIconConfiguration.default)
+
+        let rows = overflowRows([profile])
+
+        XCTAssertEqual(rows[0].windows.count, 2)
+        XCTAssertEqual(rows[0].windows.map(\.name), ["Session", "Week"])
+        XCTAssertEqual(
+            rows[0].windows.map(\.percentageText),
+            ["42%", "78%"]
+        )
+        XCTAssertEqual(rows[0].valueText, "Session 42% · Week 78%")
+    }
+
+    /// API Credits is a billing figure in a different limit group, not a
+    /// third subscription window: it must not appear in the row and must not
+    /// influence the ranking.
+    func testOverflowProfileRowsExcludeApiCreditsFromTheSubscriptionWindows()
+    {
+        var withCredits = claudeProfile(
+            named: "Alpha",
+            session: 60,
+            week: 70
+        )
+        // 1% of credits spent — far "freer" than either usage window, so a
+        // row that let Credits in would rank Alpha first.
+        withCredits.apiUsage = APIUsage(
+            currentSpendCents: 100,
+            resetsAt: Date().addingTimeInterval(72 * 3_600),
+            prepaidCreditsCents: 9_900,
+            currency: "USD",
+            apiTokenCostCents: nil,
+            apiCostByModel: nil,
+            costBySource: nil,
+            dailyCostCents: nil
+        )
+
+        let rows = overflowRows([
+            withCredits,
+            claudeProfile(named: "Bravo", session: 65, week: 65)
+        ])
+
+        XCTAssertEqual(rows[0].windows.map(\.name), ["Session", "Week"])
+        // Alpha keys on 70 (its weekly window), not on the 1% of credits.
+        XCTAssertEqual(rows.map(\.name), ["Bravo", "Alpha"])
+    }
+
+    /// Finder-style name ordering, the same comparison
+    /// `ProviderMenuPresentationBuilder.presentations` already uses: case
+    /// insensitive and numeric aware, so "Profile 2" precedes "Profile 10".
+    func testOverflowProfileRowsBreakTiesByLocalizedNameNotPosition() {
+        let rows = overflowRows([
+            claudeProfile(named: "Profile 10", session: 50, week: 50),
+            claudeProfile(named: "Profile 2", session: 50, week: 50),
+            claudeProfile(named: "profile 1", session: 50, week: 50)
+        ])
+
+        XCTAssertEqual(
+            rows.map(\.name),
+            ["profile 1", "Profile 2", "Profile 10"]
+        )
+    }
+
+    func testOverflowProfileRowAccessibilityNamesBothWindowsAndSaysNoReading()
+    {
+        let rows = overflowRows([
+            claudeProfile(named: "Alpha", session: 42, week: 78),
+            Profile(name: "Zulu")
+        ])
+
+        XCTAssertEqual(
+            rows[0].accessibilityValueText,
+            "Session, 42% used, Week, 78% used"
+        )
+        XCTAssertEqual(rows[1].accessibilityValueText, "no usage data")
+    }
+
+    /// A profile with one window read still shows both, with a dash naming
+    /// the one that is missing, and ranks on the window it does have. Only a
+    /// profile with no reading at all drops to the bottom.
+    func testOverflowProfileRowsShowADashForAWindowThatWasNotRead() {
+        let rows = overflowRows([
+            claudeProfile(named: "Papa", session: 90, week: 90),
+            claudeProfile(named: "Quebec", session: 40, week: nil)
+        ])
+
+        XCTAssertEqual(rows.map(\.name), ["Quebec", "Papa"])
+        XCTAssertEqual(rows[0].valueText, "Session 40% · Week —")
+        XCTAssertEqual(
+            rows[0].accessibilityValueText,
+            "Session, 40% used, Week, no usage data"
+        )
     }
 
     func testOverflowProfileRowsSkipsUnknownProfileIDs() {
@@ -243,7 +453,7 @@ final class StatusBarOverflowTests: HostedAppTestCase {
             profileIDs: [profiles[0].id, missingID],
             profiles: profiles,
             snapshots: [:],
-            activeProfileID: nil
+            showRemaining: false
         )
         XCTAssertEqual(rows.map(\.id), [profiles[0].id])
     }
