@@ -1265,7 +1265,7 @@
 // Launch splash
 "launch.splash.running" = "メニューバーで実行中";
 "chrome_assisted.recommended" = "推奨：Chrome で Claude アカウントを開く";
-"chrome_assisted.description" = "Chrome プロファイルを選んで Claude を開き、ここでセッションキーを手動で貼り付けて検証します。";
+"chrome_assisted.description" = "使いたい Chrome プロファイルで Claude を開き、「Chrome から読み取る」を押すか、下にセッションキーを手動で貼り付けてください。";
 "chrome_assisted.no_profiles" = "利用可能な Chrome プロファイルが見つかりませんでした。セッションキーは手動で入力できます。";
 "chrome_assisted.profile_picker" = "Chrome プロファイル";
 "chrome_assisted.choose_profile" = "Chrome プロファイルを選択";

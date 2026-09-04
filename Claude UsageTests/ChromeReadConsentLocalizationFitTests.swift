@@ -35,6 +35,12 @@ final class ChromeReadConsentLocalizationFitTests: XCTestCase {
     private static let buttonChrome: CGFloat = 24
     private static let iconAllowance: CGFloat = 18
 
+    /// Three wrapped lines of 12pt system text. Every locale's card sentence
+    /// currently takes two, so this leaves one line of headroom and still
+    /// fails a translation that has grown into a wall of text in a card the
+    /// user is meant to skim.
+    private static let cardSentenceHeightBudget: CGFloat = 45
+
     private static let newKeys = [
         "chrome_assisted.read_button",
         "chrome_assisted.reading",
@@ -47,6 +53,7 @@ final class ChromeReadConsentLocalizationFitTests: XCTestCase {
         "chrome_assisted.read_failed_locked",
         "chrome_assisted.read_failed_missing",
         "chrome_assisted.read_failed_version",
+        "chrome_assisted.launch_superseded",
     ]
 
     private func resourceBundle(for locale: String) throws -> Bundle {
@@ -170,6 +177,47 @@ final class ChromeReadConsentLocalizationFitTests: XCTestCase {
                     "\(locale) truncates \(key) \"\(label)\" — "
                         + "\(Int(measured))pt in "
                         + "\(Int(Self.cardContentWidth))pt"
+                )
+            }
+        }
+    }
+
+    /// The card's opening sentence used to promise only a manual paste, which
+    /// stopped being true the moment Read from Chrome shipped. Naming the
+    /// button is the assertion, because a translator who reworks this sentence
+    /// without it has quietly hidden the feature again.
+    func testCardDescriptionNamesTheReadButtonInEveryLocale() throws {
+        for locale in Self.locales {
+            let description = try string(
+                "chrome_assisted.description", locale
+            )
+            let readButton = try string(
+                "chrome_assisted.read_button", locale
+            )
+            XCTAssertTrue(
+                description.contains(readButton),
+                "\(locale)'s card description \"\(description)\" never "
+                    + "mentions \"\(readButton)\", so the panel still reads "
+                    + "as if pasting a key by hand were the only route"
+            )
+        }
+    }
+
+    func testCardSentencesStayShortEnoughToSkimInEveryLocale() throws {
+        for key in [
+            "chrome_assisted.description",
+            "chrome_assisted.launch_superseded",
+        ] {
+            for locale in Self.locales {
+                let sentence = try string(key, locale)
+                let measured = height(
+                    sentence, size: 12, wrapWidth: Self.cardContentWidth
+                )
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    Self.cardSentenceHeightBudget,
+                    "\(locale)'s \(key) needs \(Int(measured))pt in a "
+                        + "\(Int(Self.cardSentenceHeightBudget))pt budget"
                 )
             }
         }

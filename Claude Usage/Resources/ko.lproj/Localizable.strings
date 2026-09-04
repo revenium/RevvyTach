@@ -1241,7 +1241,7 @@
 // Launch splash
 "launch.splash.running" = "메뉴 막대에서 실행 중";
 "chrome_assisted.recommended" = "권장: Chrome에서 Claude 계정 열기";
-"chrome_assisted.description" = "Chrome 프로필을 선택해 Claude를 연 다음, 여기에서 세션 키를 직접 붙여넣고 확인하세요.";
+"chrome_assisted.description" = "원하는 Chrome 프로필에서 Claude를 연 다음 “Chrome에서 읽기”를 누르거나 아래에 세션 키를 직접 붙여넣으세요.";
 "chrome_assisted.no_profiles" = "사용 가능한 Chrome 프로필을 찾지 못했습니다. 세션 키는 계속 직접 입력할 수 있습니다.";
 "chrome_assisted.profile_picker" = "Chrome 프로필";
 "chrome_assisted.choose_profile" = "Chrome 프로필 선택";

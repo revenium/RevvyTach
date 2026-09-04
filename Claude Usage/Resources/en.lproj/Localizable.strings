@@ -1280,7 +1280,7 @@
 // Launch splash
 "launch.splash.running" = "Running in the menu bar";
 "chrome_assisted.recommended" = "Recommended: open your Claude account in Chrome";
-"chrome_assisted.description" = "Choose a Chrome profile to open Claude, then manually paste and validate your session key here.";
+"chrome_assisted.description" = "Open Claude in the Chrome profile you want, then either press Read from Chrome or paste your session key in below.";
 "chrome_assisted.no_profiles" = "No eligible Chrome profiles were found. You can still enter a session key manually.";
 "chrome_assisted.profile_picker" = "Chrome profile";
 "chrome_assisted.choose_profile" = "Choose a Chrome profile";

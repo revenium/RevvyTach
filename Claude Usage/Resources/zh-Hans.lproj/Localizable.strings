@@ -1262,7 +1262,7 @@
 // Launch splash
 "launch.splash.running" = "正在菜单栏中运行";
 "chrome_assisted.recommended" = "推荐：在 Chrome 中打开您的 Claude 帐户";
-"chrome_assisted.description" = "选择一个 Chrome 配置文件以打开 Claude，然后在此处手动粘贴并验证您的会话密钥。";
+"chrome_assisted.description" = "在你想使用的 Chrome 配置文件中打开 Claude，然后点按“从 Chrome 读取”，或在下方手动粘贴会话密钥。";
 "chrome_assisted.no_profiles" = "未找到符合条件的 Chrome 配置文件。您仍可手动输入会话密钥。";
 "chrome_assisted.profile_picker" = "Chrome 配置文件";
 "chrome_assisted.choose_profile" = "选择 Chrome 配置文件";
