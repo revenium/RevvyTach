@@ -621,6 +621,8 @@
 "wizard.org_kind.api_only" = "APIのみ · Claudeサブスクリプションなし";
 "wizard.org_kind.unknown" = "不明";
 "wizard.no_claude_organizations" = "このアカウントには、追跡できるClaudeサブスクリプションを持つ組織がありません。";
+"wizard.api_only_hidden.one" = "APIのみの組織を1件非表示にしました — 追跡できるClaudeの使用量はありません。";
+"wizard.api_only_hidden.other" = "APIのみの組織を%ld件非表示にしました — 追跡できるClaudeの使用量はありません。";
 "wizard.review_config" = "設定を確認";
 "wizard.confirm_settings" = "保存する前に設定を確認してください";
 "wizard.key_will_update" = "セッションキーが更新されます";

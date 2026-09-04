@@ -604,6 +604,8 @@
 "wizard.org_kind.api_only" = "Solo API · sin suscripción a Claude";
 "wizard.org_kind.unknown" = "Desconocido";
 "wizard.no_claude_organizations" = "Esta cuenta no tiene organizaciones con una suscripción a Claude para monitorizar.";
+"wizard.api_only_hidden.one" = "1 organización solo API oculta — no tiene uso de Claude que monitorizar.";
+"wizard.api_only_hidden.other" = "%ld organizaciones solo API ocultas — no tienen uso de Claude que monitorizar.";
 "wizard.review_config" = "Revisar Configuración";
 "wizard.confirm_settings" = "Confirma tu configuración antes de guardar";
 "wizard.key_will_update" = "La clave de sesión será actualizada";

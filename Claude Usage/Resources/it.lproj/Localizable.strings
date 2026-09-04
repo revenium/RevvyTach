@@ -619,6 +619,8 @@
 "wizard.org_kind.api_only" = "Solo API · nessun abbonamento Claude";
 "wizard.org_kind.unknown" = "Sconosciuto";
 "wizard.no_claude_organizations" = "Questo account non ha organizzazioni con un abbonamento Claude da monitorare.";
+"wizard.api_only_hidden.one" = "1 organizzazione solo API nascosta — non ha utilizzo di Claude da monitorare.";
+"wizard.api_only_hidden.other" = "%ld organizzazioni solo API nascoste — non hanno utilizzo di Claude da monitorare.";
 "wizard.review_config" = "Rivedi Configurazione";
 "wizard.confirm_settings" = "Conferma le tue impostazioni prima di salvare";
 "wizard.key_will_update" = "La chiave di sessione verrà aggiornata";

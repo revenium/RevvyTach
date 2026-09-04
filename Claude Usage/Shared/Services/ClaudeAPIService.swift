@@ -573,6 +573,23 @@ class ClaudeAPIService: APIServiceProtocol {
                         LoggingService.shared.logInfo("  [\(index)] \(org.name) (ID: \(org.uuid))")
                     }
 
+                    // The organization pickers leave out every organization
+                    // without the "chat" capability and tell the user those are
+                    // API-only. `capabilities` decodes to [] when the field is
+                    // absent, so an organization the server described
+                    // incompletely would be left out under the wrong
+                    // explanation. That has never been observed; log it loudly
+                    // if it ever happens, because the picker cannot.
+                    for org in ClaudeOrganizationClassifier
+                        .unclassifiableOrganizations(organizations) {
+                        LoggingService.shared.logWarning(
+                            "Organization \(org.name) (ID: \(org.uuid)) reports neither "
+                            + "\"chat\" nor \"api\" capability (capabilities: "
+                            + "\(org.capabilities)). It will be hidden from the organization "
+                            + "picker and described there as API-only, which may be wrong."
+                        )
+                    }
+
                     return organizations
                 } catch {
                     let appError = AppError(

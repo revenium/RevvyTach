@@ -50,6 +50,11 @@ enum ClaudeOrganizationClassifier {
     /// usage to exist against it. Console/API-only organizations lack it.
     static let chatCapability = "chat"
 
+    /// The capability a console/API organization carries. Only used to tell a
+    /// genuine console organization apart from one whose capabilities the
+    /// server did not report at all.
+    static let apiCapability = "api"
+
     /// - Returns: `true` personal, `false` shared, `nil` indeterminate.
     ///
     /// Both `nil` and `false` must be treated as organization-wide by callers:
@@ -138,14 +143,83 @@ enum ClaudeOrganizationClassifier {
     // Both organization pickers (the setup wizard and the credentials pane)
     // call these, so the two cannot drift apart.
 
-    /// Chat-capable organizations first, each group keeping the server's own
-    /// order. Nothing is hidden: an unusable organization stays visible, and
-    /// its descriptor explains why it cannot be chosen.
-    static func pickerOrder(
+    /// The organizations a picker may draw: chat-capable only, in the server's
+    /// own order.
+    ///
+    /// Console/API-only organizations are left out rather than dimmed. They can
+    /// never be chosen and carry no Claude subscription usage for this app to
+    /// track, so a disabled row was only ever an obstacle — on a live
+    /// five-organization account the two dead rows pushed the real choices, and
+    /// the Back/Next bar, off the bottom of a fixed-size sheet.
+    ///
+    /// A caller that draws this list must also draw `hiddenAPIOnlyNotice(for:)`,
+    /// or an account holder sees a workspace missing from the picker with no
+    /// explanation.
+    static func pickerRows(
         _ organizations: [ClaudeAPIService.AccountInfo]
     ) -> [ClaudeAPIService.AccountInfo] {
         organizations.filter { isChatCapable($0) }
-            + organizations.filter { !isChatCapable($0) }
+    }
+
+    /// How many organizations `pickerRows` left out, for the footnote that
+    /// explains the gap.
+    static func hiddenAPIOnlyCount(
+        _ organizations: [ClaudeAPIService.AccountInfo]
+    ) -> Int {
+        organizations.filter { !isChatCapable($0) }.count
+    }
+
+    /// The footnote a picker shows beside `pickerRows`, or `nil` when nothing
+    /// was left out and there is nothing to explain.
+    ///
+    /// Takes the same array `pickerRows` takes, so the sentence and the list can
+    /// never be built from different inputs.
+    static func hiddenAPIOnlyNotice(
+        for organizations: [ClaudeAPIService.AccountInfo]
+    ) -> String? {
+        hiddenAPIOnlyNotice(count: hiddenAPIOnlyCount(organizations))
+    }
+
+    /// The footnote for a known count. Exposed separately so the
+    /// singular/plural choice can be tested without building organizations.
+    ///
+    /// Two keys rather than one: "1 API-only organizations hidden" is wrong in
+    /// English and worse in German. This app ships no `.stringsdict`, so the
+    /// choice is made here, by `count == 1`, rather than by CLDR plural
+    /// categories. Every one of the nine shipped locales (de en es fr it ja ko
+    /// pt zh-Hans) has at most a one/other distinction, so two forms are enough;
+    /// a language with a paucal or few form would need a `.stringsdict` instead.
+    static func hiddenAPIOnlyNotice(count: Int) -> String? {
+        guard count > 0 else { return nil }
+        if count == 1 {
+            return ProviderUILocalization.text(
+                "wizard.api_only_hidden.one",
+                fallback: "1 API-only organization hidden — it has no Claude usage to track."
+            )
+        }
+        return String(
+            format: ProviderUILocalization.text(
+                "wizard.api_only_hidden.other",
+                fallback: "%ld API-only organizations hidden — they have no Claude usage to track."
+            ),
+            count
+        )
+    }
+
+    /// Organizations the pickers leave out that are not positively marked
+    /// `"api"` — the shape the server has never actually returned.
+    ///
+    /// `capabilities` decodes as `decodeIfPresent(…) ?? []`, so an organization
+    /// returned without the field at all reads as not chat-capable and is left
+    /// out under a footnote calling it API-only. That would be the wrong
+    /// sentence about a real Claude workspace, so the case is logged where the
+    /// list is first received rather than left silent.
+    static func unclassifiableOrganizations(
+        _ organizations: [ClaudeAPIService.AccountInfo]
+    ) -> [ClaudeAPIService.AccountInfo] {
+        organizations.filter {
+            !isChatCapable($0) && !$0.capabilities.contains(apiCapability)
+        }
     }
 
     /// The organization a picker should start on: the first one that can

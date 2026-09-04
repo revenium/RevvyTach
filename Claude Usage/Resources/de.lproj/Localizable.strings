@@ -621,6 +621,8 @@
 "wizard.org_kind.api_only" = "Nur API · kein Claude-Abonnement";
 "wizard.org_kind.unknown" = "Unbekannt";
 "wizard.no_claude_organizations" = "Dieses Konto hat keine Organisationen mit einem Claude-Abonnement, die verfolgt werden können.";
+"wizard.api_only_hidden.one" = "1 Nur-API-Organisation ausgeblendet — ohne verfolgbare Claude-Nutzung.";
+"wizard.api_only_hidden.other" = "%ld Nur-API-Organisationen ausgeblendet — ohne verfolgbare Claude-Nutzung.";
 "wizard.review_config" = "Konfiguration Überprüfen";
 "wizard.confirm_settings" = "Bestätigen Sie Ihre Einstellungen vor dem Speichern";
 "wizard.key_will_update" = "Sitzungsschlüssel wird aktualisiert";

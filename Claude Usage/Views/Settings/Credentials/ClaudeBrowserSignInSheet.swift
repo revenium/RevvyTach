@@ -131,6 +131,17 @@ struct ClaudeBrowserSignInSheet: View {
                                             .font(DesignTokens.Typography.body)
                                             .fontWeight(.medium)
                                             .foregroundColor(.primary)
+                                            // The connector rectangles below
+                                            // are greedy, so without this the
+                                            // step title loses the width
+                                            // contest and wraps to two lines,
+                                            // costing the step below it 10pt of
+                                            // room. Longer titles now shorten
+                                            // the connectors instead.
+                                            .fixedSize(
+                                                horizontal: true,
+                                                vertical: false
+                                            )
                                     }
                                 }
 
@@ -441,10 +452,19 @@ struct EnterKeyStep: View {
 struct SelectOrgStep: View {
     @Binding var wizardState: WizardState
 
-    /// Chat-capable organizations first, server order preserved within each
-    /// group. Shared with the setup wizard's picker so the two cannot drift.
+    /// Only the organizations that can carry Claude usage, in server order.
+    /// Console/API-only ones are left out and counted, not dimmed. Shared with
+    /// the setup wizard's picker so the two cannot drift.
     private var organizations: [ClaudeAPIService.AccountInfo] {
-        ClaudeOrganizationClassifier.pickerOrder(wizardState.testedOrganizations)
+        ClaudeOrganizationClassifier.pickerRows(wizardState.testedOrganizations)
+    }
+
+    /// The sentence accounting for the rows above that were left out, or `nil`
+    /// when none were.
+    private var hiddenAPIOnlyNotice: String? {
+        ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(
+            for: wizardState.testedOrganizations
+        )
     }
 
     private var hasSelectableOrganization: Bool {
@@ -463,16 +483,20 @@ struct SelectOrgStep: View {
                     .foregroundColor(.secondary)
             }
 
-            // Balanced organization list. Chat-capable organizations come
-            // first; console/API ones stay visible with an explanation rather
-            // than disappearing, but cannot be chosen.
+            // Stated before the list, not after it: the note explains a gap in
+            // what follows, and in the wizard's taller list an explanation
+            // placed underneath falls below the fold exactly when there are
+            // enough organizations to need it.
+            if let hiddenAPIOnlyNotice {
+                APIOnlyHiddenFootnote(message: hiddenAPIOnlyNotice)
+            }
+
+            // Only organizations that can carry Claude usage. Console/API-only
+            // ones are left out and accounted for by the note above.
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(organizations, id: \.uuid) { org in
-                    let isSelectable = ClaudeOrganizationClassifier
-                        .isChatCapable(org)
                     let isSelected = wizardState.selectedOrgId == org.uuid
                     Button(action: {
-                        guard isSelectable else { return }
                         withAnimation(.easeInOut(duration: 0.2)) {
                             wizardState.selectedOrgId = org.uuid
                         }
@@ -538,8 +562,6 @@ struct SelectOrgStep: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(!isSelectable)
-                    .opacity(isSelectable ? 1 : 0.5)
                     .accessibilityIdentifier("wizard.org_row.\(org.uuid)")
                 }
             }
