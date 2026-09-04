@@ -183,4 +183,177 @@ final class SessionKeyAttemptTests: XCTestCase {
             chromeContextConfirmed: true
         ))
     }
+
+    // MARK: - Chrome read: the confirmation gate and the scope guard
+
+    // `@MainActor` on these four: `SetupWizardState` and
+    // `ChromeAssistedSessionKeyEntry` are main-actor-isolated by the app
+    // target's default actor isolation, and the unit-test target sets no
+    // such default.
+
+    /// A key read from Chrome must not silently satisfy the step-4 "this is
+    /// the account I meant" checkbox. The label survives so the checkbox
+    /// keeps rendering; the confirmation itself is cleared, because a
+    /// confirmation earned for a previous key is not consent for this one.
+    @MainActor
+    func testChromeReadKeepsTheChromeConfirmationGateArmed() {
+        let profileID = UUID()
+        var state = SetupWizardState()
+        state.launchedChromeProfileLabel = "Work — Profile 3"
+        state.hasConfirmedChromeContext = true
+        state.claudeSetupTarget = .existing(profileID)
+        state.targetProfileName = "Work"
+        state.sessionKey = "sk-ant-sid01-EXISTING-0000000000000000"
+        let before = state.attempt.generation
+
+        state.retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            clearTarget: false,
+            rearmChromeConfirmation: true
+        )
+
+        XCTAssertEqual(state.launchedChromeProfileLabel, "Work — Profile 3")
+        XCTAssertEqual(state.claudeSetupTarget, .existing(profileID))
+        XCTAssertEqual(state.targetProfileName, "Work")
+        XCTAssertEqual(state.sessionKey, "sk-ant-sid01-EXISTING-0000000000000000")
+        XCTAssertFalse(state.hasConfirmedChromeContext)
+        XCTAssertNotEqual(state.attempt.generation, before)
+
+        // Save stays blocked until the user ticks the box again.
+        XCTAssertFalse(SessionKeyAttemptPolicy.permitsSave(
+            validationSucceeded: true,
+            isSessionOnlyRetry: false,
+            selectedOrganizationID: "org-1",
+            chromeProfileLabel: state.launchedChromeProfileLabel,
+            chromeContextConfirmed: state.hasConfirmedChromeContext
+        ))
+        state.hasConfirmedChromeContext = true
+        XCTAssertTrue(SessionKeyAttemptPolicy.permitsSave(
+            validationSucceeded: true,
+            isSessionOnlyRetry: false,
+            selectedOrganizationID: "org-1",
+            chromeProfileLabel: state.launchedChromeProfileLabel,
+            chromeContextConfirmed: state.hasConfirmedChromeContext
+        ))
+    }
+
+    /// The same transition with its default arguments still clears the Chrome
+    /// context, so moving it onto `SetupWizardState` changed nothing for the
+    /// callers that were already there.
+    @MainActor
+    func testDefaultRetirementStillClearsTheChromeContext() {
+        var state = SetupWizardState()
+        state.launchedChromeProfileLabel = "Work — Profile 3"
+        state.hasConfirmedChromeContext = true
+        state.claudeSetupTarget = .existing(UUID())
+        state.targetProfileName = "Work"
+        state.sessionKey = "sk-ant-sid01-EXISTING-0000000000000000"
+        state.selectedOrgId = "org-1"
+
+        state.retireAttempt(clearKey: true)
+
+        XCTAssertNil(state.launchedChromeProfileLabel)
+        XCTAssertFalse(state.hasConfirmedChromeContext)
+        XCTAssertNil(state.claudeSetupTarget)
+        XCTAssertNil(state.targetProfileName)
+        XCTAssertNil(state.selectedOrgId)
+        XCTAssertEqual(state.sessionKey, "")
+    }
+
+    /// Launch profile A, then fail to launch profile B: nothing is
+    /// addressable afterwards. The read must never target the profile from
+    /// the attempt before the one the user just made.
+    func testFailedLaunchLeavesNoAddressableChromeProfile() {
+        let profileA = ChromeProfile(name: "Work", directoryName: "Profile 3")
+        let profileB = ChromeProfile(name: "Personal", directoryName: "Default")
+
+        let launched = ChromeLaunchBookkeeping.result(
+            didLaunch: true, profile: profileA
+        )
+        XCTAssertEqual(launched?.directoryName, "Profile 3")
+        XCTAssertEqual(launched?.label, "Work — Profile 3")
+
+        let afterFailure = ChromeLaunchBookkeeping.result(
+            didLaunch: false, profile: profileB
+        )
+        XCTAssertNil(afterFailure)
+        XCTAssertFalse(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: afterFailure,
+            isLaunching: false,
+            isReading: false,
+            isValidating: false
+        ))
+    }
+
+    /// The default-off contract.
+    func testReadIsUnavailableUntilAProfileLaunches() {
+        let launched = LaunchedChromeProfile(
+            label: "Work — Profile 3", directoryName: "Profile 3"
+        )
+
+        XCTAssertFalse(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: nil,
+            isLaunching: false,
+            isReading: false,
+            isValidating: false
+        ))
+        XCTAssertFalse(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: launched,
+            isLaunching: true,
+            isReading: false,
+            isValidating: false
+        ))
+        XCTAssertFalse(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: launched,
+            isLaunching: false,
+            isReading: true,
+            isValidating: false
+        ))
+        XCTAssertFalse(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: launched,
+            isLaunching: false,
+            isReading: false,
+            isValidating: true
+        ))
+        XCTAssertTrue(ChromeReadAvailabilityPolicy.permitsRead(
+            launchedProfile: launched,
+            isLaunching: false,
+            isReading: false,
+            isValidating: false
+        ))
+    }
+
+    /// Every failure the user can hit maps to a fixed sentence. Nothing here
+    /// may interpolate a value, a path, or an OSStatus.
+    @MainActor
+    func testChromeReadFailuresMapToFixedLocalizedSentences() {
+        let cases: [(ChromeCookieReadError, String)] = [
+            (.keychainAccessDenied, "chrome_assisted.read_failed_denied"),
+            (.databaseLocked, "chrome_assisted.read_failed_locked"),
+            (.sessionCookieMissing, "chrome_assisted.read_failed_missing"),
+            (.keychainItemMissing, "chrome_assisted.read_failed_missing"),
+            (.unknownEncryptionVersion, "chrome_assisted.read_failed_version"),
+            (.cookieDatabaseMissing, "chrome_assisted.read_failed_generic"),
+            (.databaseUnreadable, "chrome_assisted.read_failed_generic"),
+            (.decryptFailed, "chrome_assisted.read_failed_generic"),
+            (.tempCopyFailed, "chrome_assisted.read_failed_generic"),
+            (.invalidProfile, "chrome_assisted.read_failed_generic"),
+            (.keychainReadFailed(-25300), "chrome_assisted.read_failed_generic"),
+        ]
+
+        for (error, key) in cases {
+            let message = ChromeAssistedSessionKeyEntry.message(for: error)
+            XCTAssertEqual(message, key.localized, "\(error)")
+            XCTAssertNotEqual(message, key, "\(key) has no translation")
+            XCTAssertFalse(message.contains("25300"))
+        }
+
+        // A non-ChromeCookieReadError still degrades to manual paste rather
+        // than showing its own text.
+        struct Surprise: Error { let detail = "sk-ant-should-never-render" }
+        let message = ChromeAssistedSessionKeyEntry.message(for: Surprise())
+        XCTAssertEqual(message, "chrome_assisted.read_failed_generic".localized)
+        XCTAssertFalse(message.contains("sk-ant"))
+    }
 }
