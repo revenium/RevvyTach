@@ -410,13 +410,13 @@ final class ExtraUsageScopeTests: XCTestCase {
     /// for.
     func testPickerRowsCountsWhatItHid() {
         XCTAssertEqual(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyCount(liveOrganizations),
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(liveOrganizations),
             2
         )
         XCTAssertEqual(
             ClaudeOrganizationClassifier.pickerRows(liveOrganizations).count
                 + ClaudeOrganizationClassifier
-                    .hiddenAPIOnlyCount(liveOrganizations),
+                    .hiddenOrganizationCount(liveOrganizations),
             liveOrganizations.count
         )
     }
@@ -431,14 +431,14 @@ final class ExtraUsageScopeTests: XCTestCase {
             ClaudeOrganizationClassifier.pickerRows(consoleOnly).isEmpty
         )
         XCTAssertEqual(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyCount(consoleOnly),
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(consoleOnly),
             2
         )
         XCTAssertFalse(
             ClaudeOrganizationClassifier.hasSelectableOrganization(consoleOnly)
         )
         XCTAssertNotNil(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(for: consoleOnly)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(for: consoleOnly)
         )
     }
 
@@ -447,36 +447,36 @@ final class ExtraUsageScopeTests: XCTestCase {
         let chatOnly = Array(liveOrganizations.suffix(3))
 
         XCTAssertEqual(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyCount(chatOnly),
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(chatOnly),
             0
         )
         XCTAssertNil(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(for: chatOnly)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(for: chatOnly)
         )
-        XCTAssertNil(ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(count: 0))
+        XCTAssertNil(ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 0))
     }
 
     /// The array-taking entry point is the one both pickers call, so the
     /// sentence and the list can never be built from different inputs.
     func testHiddenNoticeForAListAgreesWithItsOwnCount() {
         XCTAssertEqual(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(
                 for: liveOrganizations
             ),
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(count: 2)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 2)
         )
     }
 
-    /// "1 API-only organizations hidden" is wrong in English and worse in
+    /// "1 organizations hidden" is wrong in English and worse in
     /// German, so the two forms must differ. Asserted without naming either
     /// sentence, so the test does not depend on the machine's language — the
     /// English wording is pinned separately against the `en` catalog.
     func testHiddenNoticeUsesADifferentFormForOne() throws {
         let one = try XCTUnwrap(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(count: 1)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 1)
         )
         let many = try XCTUnwrap(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(count: 2)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 2)
         )
 
         XCTAssertNotEqual(one, many)
@@ -491,7 +491,7 @@ final class ExtraUsageScopeTests: XCTestCase {
     /// is also the literal a broken format string might leave behind.
     func testHiddenNoticeSubstitutesTheCountItWasGiven() throws {
         let twelve = try XCTUnwrap(
-            ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(count: 12)
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 12)
         )
 
         XCTAssertTrue(
@@ -632,7 +632,7 @@ final class ExtraUsageScopeTests: XCTestCase {
     /// workspace is missing from the picker, so pin its English wording rather
     /// than only the key lookup. Read from the `en` catalog directly so the
     /// test says the same thing on a machine set to another language.
-    func testEnglishCatalogCarriesTheHiddenApiOnlyFootnote() throws {
+    func testEnglishCatalogCarriesTheHiddenOrganizationsFootnote() throws {
         let path = try XCTUnwrap(
             Bundle.main.path(forResource: "en", ofType: "lproj")
         )
@@ -640,19 +640,19 @@ final class ExtraUsageScopeTests: XCTestCase {
 
         XCTAssertEqual(
             english.localizedString(
-                forKey: "wizard.api_only_hidden.one",
+                forKey: "wizard.organizations_hidden.one",
                 value: nil,
                 table: nil
             ),
-            "1 API-only organization hidden — it has no Claude usage to track."
+            "1 organization hidden — it has no Claude subscription to track."
         )
         XCTAssertEqual(
             english.localizedString(
-                forKey: "wizard.api_only_hidden.other",
+                forKey: "wizard.organizations_hidden.other",
                 value: nil,
                 table: nil
             ),
-            "%ld API-only organizations hidden — they have no Claude usage to track."
+            "%ld organizations hidden — they have no Claude subscription to track."
         )
     }
 

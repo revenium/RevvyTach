@@ -152,9 +152,9 @@ enum ClaudeOrganizationClassifier {
     /// five-organization account the two dead rows pushed the real choices, and
     /// the Back/Next bar, off the bottom of a fixed-size sheet.
     ///
-    /// A caller that draws this list must also draw `hiddenAPIOnlyNotice(for:)`,
-    /// or an account holder sees a workspace missing from the picker with no
-    /// explanation.
+    /// A caller that draws this list must also draw
+    /// `hiddenOrganizationsNotice(for:)`, or an account holder sees a
+    /// workspace missing from the picker with no explanation.
     static func pickerRows(
         _ organizations: [ClaudeAPIService.AccountInfo]
     ) -> [ClaudeAPIService.AccountInfo] {
@@ -163,7 +163,7 @@ enum ClaudeOrganizationClassifier {
 
     /// How many organizations `pickerRows` left out, for the footnote that
     /// explains the gap.
-    static func hiddenAPIOnlyCount(
+    static func hiddenOrganizationCount(
         _ organizations: [ClaudeAPIService.AccountInfo]
     ) -> Int {
         organizations.filter { !isChatCapable($0) }.count
@@ -174,33 +174,41 @@ enum ClaudeOrganizationClassifier {
     ///
     /// Takes the same array `pickerRows` takes, so the sentence and the list can
     /// never be built from different inputs.
-    static func hiddenAPIOnlyNotice(
+    static func hiddenOrganizationsNotice(
         for organizations: [ClaudeAPIService.AccountInfo]
     ) -> String? {
-        hiddenAPIOnlyNotice(count: hiddenAPIOnlyCount(organizations))
+        hiddenOrganizationsNotice(count: hiddenOrganizationCount(organizations))
     }
 
     /// The footnote for a known count. Exposed separately so the
     /// singular/plural choice can be tested without building organizations.
     ///
-    /// Two keys rather than one: "1 API-only organizations hidden" is wrong in
-    /// English and worse in German. This app ships no `.stringsdict`, so the
-    /// choice is made here, by `count == 1`, rather than by CLDR plural
-    /// categories. Every one of the nine shipped locales (de en es fr it ja ko
-    /// pt zh-Hans) has at most a one/other distinction, so two forms are enough;
-    /// a language with a paucal or few form would need a `.stringsdict` instead.
-    static func hiddenAPIOnlyNotice(count: Int) -> String? {
+    /// Two keys rather than one: "1 organizations hidden" is wrong in English
+    /// and worse in German. This app ships no `.stringsdict`, so the choice is
+    /// made here, by `count == 1`, rather than by CLDR plural categories.
+    /// Every one of the nine shipped locales (de en es fr it ja ko pt
+    /// zh-Hans) has at most a one/other distinction, so two forms are enough;
+    /// a language with a paucal or few form would need a `.stringsdict`
+    /// instead.
+    ///
+    /// The sentence says "no Claude subscription to track" rather than
+    /// naming the hidden organizations API-only: a genuine console/API
+    /// organization and one the server described incompletely (see
+    /// `unclassifiableOrganizations`) both land in this count, and only the
+    /// former is actually API-only. Saying "no Claude subscription" is true
+    /// of both.
+    static func hiddenOrganizationsNotice(count: Int) -> String? {
         guard count > 0 else { return nil }
         if count == 1 {
             return ProviderUILocalization.text(
-                "wizard.api_only_hidden.one",
-                fallback: "1 API-only organization hidden — it has no Claude usage to track."
+                "wizard.organizations_hidden.one",
+                fallback: "1 organization hidden — it has no Claude subscription to track."
             )
         }
         return String(
             format: ProviderUILocalization.text(
-                "wizard.api_only_hidden.other",
-                fallback: "%ld API-only organizations hidden — they have no Claude usage to track."
+                "wizard.organizations_hidden.other",
+                fallback: "%ld organizations hidden — they have no Claude subscription to track."
             ),
             count
         )
@@ -211,9 +219,11 @@ enum ClaudeOrganizationClassifier {
     ///
     /// `capabilities` decodes as `decodeIfPresent(…) ?? []`, so an organization
     /// returned without the field at all reads as not chat-capable and is left
-    /// out under a footnote calling it API-only. That would be the wrong
-    /// sentence about a real Claude workspace, so the case is logged where the
-    /// list is first received rather than left silent.
+    /// out under the same "no Claude subscription" footnote as a genuine
+    /// console/API organization, even though this app cannot actually tell
+    /// the two apart from this response. That is still an organization the
+    /// account holder never sees, so the case is logged where the list is
+    /// first received rather than left silent.
     static func unclassifiableOrganizations(
         _ organizations: [ClaudeAPIService.AccountInfo]
     ) -> [ClaudeAPIService.AccountInfo] {

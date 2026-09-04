@@ -1242,8 +1242,8 @@ struct SelectOrgStepSetup: View {
 
     /// The sentence accounting for the rows that were left out, or `nil` when
     /// none were.
-    private var hiddenAPIOnlyNotice: String? {
-        ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(
+    private var hiddenOrganizationsNotice: String? {
+        ClaudeOrganizationClassifier.hiddenOrganizationsNotice(
             for: wizardState.testedOrganizations
         )
     }
@@ -1274,8 +1274,8 @@ struct SelectOrgStepSetup: View {
                     // Stated before the list, not after it: this list scrolls,
                     // and an explanation placed underneath falls below the fold
                     // exactly when there are enough organizations to need it.
-                    if let hiddenAPIOnlyNotice {
-                        APIOnlyHiddenFootnote(message: hiddenAPIOnlyNotice)
+                    if let hiddenOrganizationsNotice {
+                        HiddenOrganizationsFootnote(message: hiddenOrganizationsNotice)
                     }
 
                     // Organization list with radio buttons. Only organizations
@@ -2179,7 +2179,7 @@ struct WizardStatusBox: View {
 /// line inside each row — and not anything that reads as a warning.
 ///
 /// Used by both organization pickers, so the two cannot drift apart.
-struct APIOnlyHiddenFootnote: View {
+struct HiddenOrganizationsFootnote: View {
     let message: String
 
     var body: some View {

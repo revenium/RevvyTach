@@ -9,7 +9,7 @@ import AppKit
 import XCTest
 @testable import Claude_Usage
 
-/// Measures the organization picker's "N API-only organizations hidden"
+/// Measures the organization picker's "N organizations hidden"
 /// footnote in every shipped locale.
 ///
 /// Measured, not counted. An earlier pass on this app's popover predicted two
@@ -47,7 +47,7 @@ final class OrganizationPickerFootnoteFitTests: XCTestCase {
     private static let setupWizardBudget: CGFloat =
         580 - 64 - glyphWidth - glyphSpacing
 
-    /// The font `APIOnlyHiddenFootnote` draws the sentence at.
+    /// The font `HiddenOrganizationsFootnote` draws the sentence at.
     private static let fontSize: CGFloat = 11
 
     /// Two digits, so the plural is measured at a width a real account could
@@ -85,11 +85,11 @@ final class OrganizationPickerFootnoteFitTests: XCTestCase {
         ).width
     }
 
-    func testHiddenApiOnlyFootnoteFitsOneLineInEveryLocale() throws {
+    func testHiddenOrganizationsFootnoteFitsOneLineInEveryLocale() throws {
         for locale in Self.locales {
-            let singular = try string("wizard.api_only_hidden.one", locale)
+            let singular = try string("wizard.organizations_hidden.one", locale)
             let plural = String(
-                format: try string("wizard.api_only_hidden.other", locale),
+                format: try string("wizard.organizations_hidden.other", locale),
                 Self.worstCaseCount
             )
 
@@ -117,10 +117,10 @@ final class OrganizationPickerFootnoteFitTests: XCTestCase {
     /// at all would either drop the count or crash the format call. The
     /// localization validator catches a signature mismatch against `en`; this
     /// catches the result actually being usable.
-    func testHiddenApiOnlyPluralCarriesItsCountInEveryLocale() throws {
+    func testHiddenOrganizationsPluralCarriesItsCountInEveryLocale() throws {
         for locale in Self.locales {
             let plural = String(
-                format: try string("wizard.api_only_hidden.other", locale),
+                format: try string("wizard.organizations_hidden.other", locale),
                 Self.worstCaseCount
             )
 
@@ -133,7 +133,7 @@ final class OrganizationPickerFootnoteFitTests: XCTestCase {
                 "\(locale) plural leaves a placeholder unsubstituted: \(plural)"
             )
 
-            let singular = try string("wizard.api_only_hidden.one", locale)
+            let singular = try string("wizard.organizations_hidden.one", locale)
             XCTAssertFalse(
                 singular.contains("%"),
                 "\(locale) singular must bake the 1 into the sentence and take "

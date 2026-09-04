@@ -461,8 +461,8 @@ struct SelectOrgStep: View {
 
     /// The sentence accounting for the rows above that were left out, or `nil`
     /// when none were.
-    private var hiddenAPIOnlyNotice: String? {
-        ClaudeOrganizationClassifier.hiddenAPIOnlyNotice(
+    private var hiddenOrganizationsNotice: String? {
+        ClaudeOrganizationClassifier.hiddenOrganizationsNotice(
             for: wizardState.testedOrganizations
         )
     }
@@ -487,8 +487,8 @@ struct SelectOrgStep: View {
             // what follows, and in the wizard's taller list an explanation
             // placed underneath falls below the fold exactly when there are
             // enough organizations to need it.
-            if let hiddenAPIOnlyNotice {
-                APIOnlyHiddenFootnote(message: hiddenAPIOnlyNotice)
+            if let hiddenOrganizationsNotice {
+                HiddenOrganizationsFootnote(message: hiddenOrganizationsNotice)
             }
 
             // Only organizations that can carry Claude usage. Console/API-only

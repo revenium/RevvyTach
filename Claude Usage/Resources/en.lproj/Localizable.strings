@@ -626,8 +626,8 @@
 "wizard.org_kind.api_only" = "API only · no Claude subscription";
 "wizard.org_kind.unknown" = "Unknown";
 "wizard.no_claude_organizations" = "This account has no organizations with a Claude subscription to track.";
-"wizard.api_only_hidden.one" = "1 API-only organization hidden — it has no Claude usage to track.";
-"wizard.api_only_hidden.other" = "%ld API-only organizations hidden — they have no Claude usage to track.";
+"wizard.organizations_hidden.one" = "1 organization hidden — it has no Claude subscription to track.";
+"wizard.organizations_hidden.other" = "%ld organizations hidden — they have no Claude subscription to track.";
 "wizard.review_config" = "Review Configuration";
 "wizard.confirm_settings" = "Confirm your settings before saving";
 "wizard.key_will_update" = "Session key will be updated";

@@ -613,8 +613,8 @@
 "wizard.org_kind.api_only" = "仅 API · 无 Claude 订阅";
 "wizard.org_kind.unknown" = "未知";
 "wizard.no_claude_organizations" = "此账户没有可跟踪的 Claude 订阅组织。";
-"wizard.api_only_hidden.one" = "已隐藏 1 个仅 API 组织 — 没有可跟踪的 Claude 用量。";
-"wizard.api_only_hidden.other" = "已隐藏 %ld 个仅 API 组织 — 没有可跟踪的 Claude 用量。";
+"wizard.organizations_hidden.one" = "已隐藏 1 个组织 — 没有可跟踪的 Claude 订阅。";
+"wizard.organizations_hidden.other" = "已隐藏 %ld 个组织 — 没有可跟踪的 Claude 订阅。";
 "wizard.review_config" = "审查配置";
 "wizard.confirm_settings" = "保存前确认您的设置";
 "wizard.key_will_update" = "会话密钥将被更新";
