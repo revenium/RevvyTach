@@ -1282,11 +1282,19 @@ struct EnterKeyStepSetup: View {
 struct SelectOrgStepSetup: View {
     @Binding var wizardState: SetupWizardState
 
-    /// Chat-capable organizations first, server order preserved within each
-    /// group. Shared with the credentials pane's picker so the two cannot
-    /// drift.
+    /// Only the organizations that can carry Claude usage, in server order.
+    /// Console/API-only ones are left out and counted, not dimmed. Shared with
+    /// the credentials pane's picker so the two cannot drift.
     private var organizations: [ClaudeAPIService.AccountInfo] {
-        ClaudeOrganizationClassifier.pickerOrder(wizardState.testedOrganizations)
+        ClaudeOrganizationClassifier.pickerRows(wizardState.testedOrganizations)
+    }
+
+    /// The sentence accounting for the rows that were left out, or `nil` when
+    /// none were.
+    private var hiddenOrganizationsNotice: String? {
+        ClaudeOrganizationClassifier.hiddenOrganizationsNotice(
+            for: wizardState.testedOrganizations
+        )
     }
 
     private var hasSelectableOrganization: Bool {
@@ -1312,13 +1320,18 @@ struct SelectOrgStepSetup: View {
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
-                    // Organization list with radio buttons. Chat-capable
-                    // organizations come first; console/API ones stay visible
-                    // with an explanation but cannot be chosen.
+                    // Stated before the list, not after it: this list scrolls,
+                    // and an explanation placed underneath falls below the fold
+                    // exactly when there are enough organizations to need it.
+                    if let hiddenOrganizationsNotice {
+                        HiddenOrganizationsFootnote(message: hiddenOrganizationsNotice)
+                    }
+
+                    // Organization list with radio buttons. Only organizations
+                    // that can carry Claude usage; console/API-only ones are
+                    // left out and accounted for by the note above.
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(organizations, id: \.uuid) { org in
-                            let isSelectable = ClaudeOrganizationClassifier
-                                .isChatCapable(org)
                             let isSelected = wizardState.selectedOrgId == org.uuid
                             HStack(spacing: 12) {
                                 Image(systemName: isSelected ? "circle.fill" : "circle")
@@ -1351,10 +1364,8 @@ struct SelectOrgStepSetup: View {
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
                             )
-                            .opacity(isSelectable ? 1 : 0.5)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                guard isSelectable else { return }
                                 wizardState.selectedOrgId = org.uuid
                             }
                             .accessibilityIdentifier("wizard.org_row.\(org.uuid)")
@@ -2206,6 +2217,35 @@ struct WizardStatusBox: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(type.color.opacity(0.1))
         )
+    }
+}
+
+/// Explains a gap in the organization picker: rows the picker deliberately did
+/// not draw.
+///
+/// Quiet by design. A hidden console organization is normal rather than a
+/// fault, so this is 11pt secondary text — the same weight as the descriptor
+/// line inside each row — and not anything that reads as a warning.
+///
+/// Used by both organization pickers, so the two cannot drift apart.
+struct HiddenOrganizationsFootnote: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "eye.slash")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                // The longest translations sit close to the width of the
+                // narrower picker; wrap rather than truncate if one ever
+                // outgrows it.
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

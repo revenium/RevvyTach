@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The organization picker no longer lists console/API organizations you
+  cannot choose.** Signing in with a claude.ai account showed every
+  organization the account belongs to, including console/API ones that have no
+  Claude subscription behind them. Those rows were greyed out and unclickable,
+  but they still took up space — on an account with five organizations the two
+  dead rows pushed the real choices, and the Back and Next buttons, off the
+  bottom of the sheet, so you had to scroll to find them.
+
+  They are now left out, with a one-line note above the list saying how many
+  were hidden and why, so a workspace missing from the picker is explained
+  rather than mysterious. The same applies to the organization step of
+  first-run setup. Three organizations plus the note plus Back and Next now
+  fit without scrolling in all nine languages; a fourth still scrolls.
+
+  A step title in the same sheet was also losing a width contest with the
+  decorative line beside it and wrapping onto a second row, which is fixed.
+
 - **The "+N" menu bar list now ranks your hidden accounts by how much room
   they have left, and shows both windows for each.** Selecting more profiles
   than fit in the menu bar collapses the extras behind a "+N" item. That list

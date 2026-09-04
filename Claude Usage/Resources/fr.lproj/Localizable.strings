@@ -601,6 +601,8 @@
 "wizard.org_kind.api_only" = "API uniquement · aucun abonnement Claude";
 "wizard.org_kind.unknown" = "Inconnu";
 "wizard.no_claude_organizations" = "Ce compte n'a aucune organisation avec un abonnement Claude à suivre.";
+"wizard.organizations_hidden.one" = "1 organisation masquée — aucun abonnement Claude à suivre.";
+"wizard.organizations_hidden.other" = "%ld organisations masquées — aucun abonnement Claude à suivre.";
 "wizard.review_config" = "Vérifier la Configuration";
 "wizard.confirm_settings" = "Confirmez vos paramètres avant d'enregistrer";
 "wizard.key_will_update" = "La clé de session sera mise à jour";

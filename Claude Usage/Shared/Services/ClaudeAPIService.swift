@@ -573,6 +573,26 @@ class ClaudeAPIService: APIServiceProtocol {
                         LoggingService.shared.logInfo("  [\(index)] \(org.name) (ID: \(org.uuid))")
                     }
 
+                    // The organization pickers leave out every organization
+                    // without the "chat" capability and tell the user those
+                    // have no Claude subscription to track. `capabilities`
+                    // decodes to [] when the field is absent, so an
+                    // organization the server described incompletely would be
+                    // left out under that same explanation even though it may
+                    // be a real Claude workspace. That has never been
+                    // observed; log it loudly if it ever happens, because the
+                    // picker cannot.
+                    for org in ClaudeOrganizationClassifier
+                        .unclassifiableOrganizations(organizations) {
+                        LoggingService.shared.logWarning(
+                            "Organization \(org.name) (ID: \(org.uuid)) reports neither "
+                            + "\"chat\" nor \"api\" capability (capabilities: "
+                            + "\(org.capabilities)). It will be hidden from the organization "
+                            + "picker and counted as having no Claude subscription, which may "
+                            + "be wrong."
+                        )
+                    }
+
                     return organizations
                 } catch {
                     let appError = AppError(

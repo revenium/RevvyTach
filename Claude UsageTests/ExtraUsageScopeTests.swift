@@ -383,20 +383,164 @@ final class ExtraUsageScopeTests: XCTestCase {
         )
     }
 
-    /// Usable organizations first, server order kept inside each group, and
-    /// nothing dropped: an unusable row stays visible so the account holder
-    /// can see why it cannot be chosen.
-    func testPickerOrderPutsChatOrganizationsFirstAndKeepsServerOrder() {
+    /// Only the organizations that can carry usage are drawn, in server order.
+    /// The two console rows were dimmed and unclickable, and on this very
+    /// account they pushed the real choices and the Back/Next bar off the
+    /// bottom of the sheet.
+    func testPickerRowsHidesApiOnlyOrganizationsAndKeepsServerOrder() {
         XCTAssertEqual(
-            ClaudeOrganizationClassifier.pickerOrder(liveOrganizations)
+            ClaudeOrganizationClassifier.pickerRows(liveOrganizations)
                 .map(\.uuid),
             [
                 "ef142542-c027-47d7-9b93-80f8415554a9",
                 "665a6475-2eb6-4da8-8379-d5529d283568",
-                "9d473653-df6e-4313-9a9c-2128ab10ad0a",
-                "c8f80080-51bc-46fb-b04f-69eabd48e1ec",
-                "a3bd5eb8-7a36-4125-b309-e1cbc95fde5e"
+                "9d473653-df6e-4313-9a9c-2128ab10ad0a"
             ]
+        )
+        // The reachable replacement for the per-row `.disabled` modifier the
+        // pickers no longer carry: every row drawn is one that can be chosen.
+        XCTAssertTrue(
+            ClaudeOrganizationClassifier.pickerRows(liveOrganizations)
+                .allSatisfy(ClaudeOrganizationClassifier.isChatCapable)
+        )
+    }
+
+    /// A workspace that silently disappears from the picker is the failure
+    /// this footnote exists to prevent, so nothing may go missing unaccounted
+    /// for.
+    func testPickerRowsCountsWhatItHid() {
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(liveOrganizations),
+            2
+        )
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.pickerRows(liveOrganizations).count
+                + ClaudeOrganizationClassifier
+                    .hiddenOrganizationCount(liveOrganizations),
+            liveOrganizations.count
+        )
+    }
+
+    /// An account can hold nothing but console organizations. The list is then
+    /// empty, so both the explanation and the count have to show — the
+    /// explanation says there is nothing to pick, the count says why.
+    func testConsoleOnlyAccountShowsBothTheEmptyStateAndTheHiddenCount() {
+        let consoleOnly = Array(liveOrganizations.prefix(2))
+
+        XCTAssertTrue(
+            ClaudeOrganizationClassifier.pickerRows(consoleOnly).isEmpty
+        )
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(consoleOnly),
+            2
+        )
+        XCTAssertFalse(
+            ClaudeOrganizationClassifier.hasSelectableOrganization(consoleOnly)
+        )
+        XCTAssertNotNil(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(for: consoleOnly)
+        )
+    }
+
+    /// Nothing hidden means no footnote at all, not a footnote reading "0".
+    func testNothingIsHiddenWhenEveryOrganizationCanCarryUsage() {
+        let chatOnly = Array(liveOrganizations.suffix(3))
+
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.hiddenOrganizationCount(chatOnly),
+            0
+        )
+        XCTAssertNil(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(for: chatOnly)
+        )
+        XCTAssertNil(ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 0))
+    }
+
+    /// The array-taking entry point is the one both pickers call, so the
+    /// sentence and the list can never be built from different inputs.
+    func testHiddenNoticeForAListAgreesWithItsOwnCount() {
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(
+                for: liveOrganizations
+            ),
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 2)
+        )
+    }
+
+    /// "1 organizations hidden" is wrong in English and worse in
+    /// German, so the two forms must differ. Asserted without naming either
+    /// sentence, so the test does not depend on the machine's language — the
+    /// English wording is pinned separately against the `en` catalog.
+    func testHiddenNoticeUsesADifferentFormForOne() throws {
+        let one = try XCTUnwrap(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 1)
+        )
+        let many = try XCTUnwrap(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 2)
+        )
+
+        XCTAssertNotEqual(one, many)
+        XCTAssertFalse(
+            one.contains("%"),
+            "the singular form bakes the 1 into the sentence and takes no "
+                + "placeholder: \(one)"
+        )
+    }
+
+    /// A count of two can hide a `%ld`/`%d` or argument mistake, because "2"
+    /// is also the literal a broken format string might leave behind.
+    func testHiddenNoticeSubstitutesTheCountItWasGiven() throws {
+        let twelve = try XCTUnwrap(
+            ClaudeOrganizationClassifier.hiddenOrganizationsNotice(count: 12)
+        )
+
+        XCTAssertTrue(
+            twelve.contains("12"),
+            "the plural form must carry its count: \(twelve)"
+        )
+        XCTAssertFalse(
+            twelve.contains("%"),
+            "an unsubstituted placeholder means the format argument is wrong: "
+                + "\(twelve)"
+        )
+    }
+
+    /// Auto-selection still runs against the raw list, so this is what stops
+    /// it drifting away from the first row the user actually sees.
+    func testAutoSelectLandsOnTheFirstVisibleRow() {
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.defaultSelection(liveOrganizations),
+            ClaudeOrganizationClassifier.pickerRows(liveOrganizations)
+                .first?.uuid
+        )
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier.defaultSelection(liveOrganizations),
+            "ef142542-c027-47d7-9b93-80f8415554a9"
+        )
+    }
+
+    /// `capabilities` decodes to `[]` when the server omits the field, so an
+    /// organization described incompletely would be hidden under a footnote
+    /// calling it API-only. Nothing in the picker can catch that, so the
+    /// shape is named here and logged where the list is received.
+    func testAnOrganizationWithNoCapabilitiesIsFlaggedAsUnclassifiable() {
+        let mystery = ClaudeAPIService.AccountInfo(
+            uuid: "00000000-0000-0000-0000-000000000000",
+            name: "Server said nothing",
+            capabilities: []
+        )
+
+        XCTAssertEqual(
+            ClaudeOrganizationClassifier
+                .unclassifiableOrganizations(liveOrganizations + [mystery])
+                .map(\.uuid),
+            ["00000000-0000-0000-0000-000000000000"],
+            "a genuine console organization reports \"api\" and is not a mystery"
+        )
+        XCTAssertTrue(
+            ClaudeOrganizationClassifier
+                .unclassifiableOrganizations(liveOrganizations)
+                .isEmpty
         )
     }
 
@@ -481,6 +625,34 @@ final class ExtraUsageScopeTests: XCTestCase {
                 table: nil
             ) == "wizard.no_claude_organizations",
             "the no-subscription explanation must be translated, not a raw key"
+        )
+    }
+
+    /// The footnote is the only thing telling an account holder why a
+    /// workspace is missing from the picker, so pin its English wording rather
+    /// than only the key lookup. Read from the `en` catalog directly so the
+    /// test says the same thing on a machine set to another language.
+    func testEnglishCatalogCarriesTheHiddenOrganizationsFootnote() throws {
+        let path = try XCTUnwrap(
+            Bundle.main.path(forResource: "en", ofType: "lproj")
+        )
+        let english = try XCTUnwrap(Bundle(path: path))
+
+        XCTAssertEqual(
+            english.localizedString(
+                forKey: "wizard.organizations_hidden.one",
+                value: nil,
+                table: nil
+            ),
+            "1 organization hidden — it has no Claude subscription to track."
+        )
+        XCTAssertEqual(
+            english.localizedString(
+                forKey: "wizard.organizations_hidden.other",
+                value: nil,
+                table: nil
+            ),
+            "%ld organizations hidden — they have no Claude subscription to track."
         )
     }
 
