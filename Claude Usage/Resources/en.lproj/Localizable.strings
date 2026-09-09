@@ -1405,3 +1405,18 @@
 "menubar.accessibility.state.setup_incomplete" = "Setup incomplete: sign in with Claude Code or the browser";
 "personal.connected_not_saved" = "Connected — not saved";
 "personal.retry_save" = "Retry Save";
+
+/* Menu bar health strip */
+"multiprofile.layout.title" = "Menu bar layout";
+"multiprofile.layout.per_profile" = "One item per account";
+"multiprofile.layout.health_strip" = "Health strip";
+"multiprofile.layout.description" = "Health strip draws one small bar per account in a single menu bar item.";
+"multiprofile.layout.icon_style_hint" = "Icon style applies to Codex accounts while Health strip is on.";
+"multiprofile.healthstrip.numbers_title" = "Show numbers for accounts above";
+"multiprofile.healthstrip.numbers_never" = "Never";
+"multiprofile.healthstrip.numbers_suffix" = "% used";
+"multiprofile.healthstrip.numbers_hint" = "An account at or above this level also shows its numbers in the menu bar.";
+"menubar.healthstrip.accessibility_label" = "%@ Claude accounts";
+"menubar.healthstrip.header" = "Claude Accounts";
+"menubar.healthstrip.footer.refresh_all" = "Refresh All";
+"menubar.healthstrip.row.active_badge" = "Active";

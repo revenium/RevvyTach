@@ -143,6 +143,32 @@ struct HealthStripAccountsView: View {
     private static let headerHeight: CGFloat = 16
     private static let footerHeight: CGFloat = 30
 
+    /// Size of one action icon button, the space between them, and the
+    /// width the whole cluster takes out of a row.
+    ///
+    /// Not private: the localization fit test subtracts this from the row's
+    /// content budget, because the name and numbers columns get whatever is
+    /// left after the three buttons, not the whole row.
+    ///
+    /// Sized by that measurement rather than by taste. Italian's
+    /// "Sessione 100% · Settimana 100%" needs 207.8pt at the real font, out
+    /// of the row's 272pt, so the cluster cannot exceed about 64pt without
+    /// clipping the very numbers the list exists to show. Three 18pt buttons
+    /// with 1pt between them and a 4pt gap come to 60pt.
+    static let actionButtonSize: CGFloat = 18
+    static let actionSpacing: CGFloat = 1
+    static let actionColumnWidth: CGFloat =
+        actionButtonSize * 3 + actionSpacing * 2 + 4
+
+    /// Width the name and numbers columns actually get: the popover width,
+    /// less the outer inset on each side, less the row's own 8pt horizontal
+    /// padding on each side, less the action cluster.
+    static let rowTextWidth: CGFloat =
+        PopoverDesign.width
+            - 2 * PopoverDesign.outerInset
+            - 2 * 8
+            - actionColumnWidth
+
     /// The popover's content height for a given number of accounts.
     ///
     /// Computed here and assigned to `NSPopover.contentSize` outright.
@@ -238,13 +264,6 @@ private struct HealthStripAccountRowView: View {
     let onRefresh: () -> Void
     @State private var isHovering = false
 
-    /// Width the three action buttons and their spacing occupy, so the
-    /// localization fit test can subtract it from the row's budget.
-    static let actionButtonSize: CGFloat = 22
-    static let actionSpacing: CGFloat = 2
-    static let actionColumnWidth: CGFloat =
-        actionButtonSize * 3 + actionSpacing * 2 + 8
-
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onOpen) {
@@ -285,7 +304,7 @@ private struct HealthStripAccountRowView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(openLabel)
 
-            HStack(spacing: HealthStripAccountRowView.actionSpacing) {
+            HStack(spacing: HealthStripAccountsView.actionSpacing) {
                 if row.canActivate {
                     actionButton(
                         systemName: "checkmark.circle",
@@ -311,7 +330,7 @@ private struct HealthStripAccountRowView: View {
                 )
             }
             .frame(
-                width: HealthStripAccountRowView.actionColumnWidth,
+                width: HealthStripAccountsView.actionColumnWidth,
                 alignment: .trailing
             )
         }
@@ -351,8 +370,8 @@ private struct HealthStripAccountRowView: View {
             Image(systemName: systemName)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(
-                    width: HealthStripAccountRowView.actionButtonSize,
-                    height: HealthStripAccountRowView.actionButtonSize
+                    width: HealthStripAccountsView.actionButtonSize,
+                    height: HealthStripAccountsView.actionButtonSize
                 )
                 .contentShape(Rectangle())
         }

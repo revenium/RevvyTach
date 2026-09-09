@@ -1390,3 +1390,18 @@
 "menubar.accessibility.state.setup_incomplete" = "Einrichtung unvollständig: mit Claude Code oder im Browser anmelden";
 "personal.connected_not_saved" = "Verbunden — nicht gespeichert";
 "personal.retry_save" = "Erneut speichern";
+
+/* Menu bar health strip */
+"multiprofile.layout.title" = "Menüleisten-Layout";
+"multiprofile.layout.per_profile" = "Ein Symbol pro Konto";
+"multiprofile.layout.health_strip" = "Zustandsleiste";
+"multiprofile.layout.description" = "Die Zustandsleiste zeichnet einen kleinen Balken pro Konto in einem einzigen Menüleisten-Symbol.";
+"multiprofile.layout.icon_style_hint" = "Bei aktivierter Zustandsleiste gilt der Icon-Stil nur für Codex-Konten.";
+"multiprofile.healthstrip.numbers_title" = "Zahlen anzeigen für Konten ab";
+"multiprofile.healthstrip.numbers_never" = "Nie";
+"multiprofile.healthstrip.numbers_suffix" = "% belegt";
+"multiprofile.healthstrip.numbers_hint" = "Ein Konto auf oder über diesem Wert zeigt seine Zahlen zusätzlich in der Menüleiste.";
+"menubar.healthstrip.accessibility_label" = "%@ Claude-Konten";
+"menubar.healthstrip.header" = "Claude-Konten";
+"menubar.healthstrip.footer.refresh_all" = "Alle aktualisieren";
+"menubar.healthstrip.row.active_badge" = "Aktiv";

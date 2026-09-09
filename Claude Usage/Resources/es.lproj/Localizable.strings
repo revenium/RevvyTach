@@ -1373,3 +1373,18 @@
 "menubar.accessibility.state.setup_incomplete" = "Configuración incompleta: inicia sesión con Claude Code o el navegador";
 "personal.connected_not_saved" = "Conectado: no guardado";
 "personal.retry_save" = "Reintentar guardado";
+
+/* Menu bar health strip */
+"multiprofile.layout.title" = "Diseño de la barra de menús";
+"multiprofile.layout.per_profile" = "Un elemento por cuenta";
+"multiprofile.layout.health_strip" = "Barra de estado";
+"multiprofile.layout.description" = "La barra de estado dibuja una pequeña barra por cuenta en un solo elemento de la barra de menús.";
+"multiprofile.layout.icon_style_hint" = "Con la barra de estado activada, el estilo de icono solo se aplica a las cuentas de Codex.";
+"multiprofile.healthstrip.numbers_title" = "Mostrar números para cuentas a partir de";
+"multiprofile.healthstrip.numbers_never" = "Nunca";
+"multiprofile.healthstrip.numbers_suffix" = "% usado";
+"multiprofile.healthstrip.numbers_hint" = "Una cuenta en este nivel o por encima también muestra sus números en la barra de menús.";
+"menubar.healthstrip.accessibility_label" = "%@ cuentas de Claude";
+"menubar.healthstrip.header" = "Cuentas de Claude";
+"menubar.healthstrip.footer.refresh_all" = "Actualizar todo";
+"menubar.healthstrip.row.active_badge" = "Activo";
