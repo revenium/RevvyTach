@@ -275,6 +275,101 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         )
     }
 
+    func testTheStripItemSurvivesAFullLayoutRoundTrip() {
+        let target = MenuTarget()
+        let profiles = claudeProfiles(2)
+        let manager = makeStripManager(profiles: profiles, target: target)
+        defer { manager.cleanup() }
+
+        let identity = manager.healthStripItemIdentityForTesting
+        XCTAssertNotNil(identity)
+
+        for layout in [
+            MenuBarMultiLayout.perProfileItems,
+            .healthStrip,
+            .perProfileItems,
+            .healthStrip
+        ] {
+            manager.multiLayout = layout
+            manager.updateMultiProfileConfiguration(
+                profiles: profiles,
+                target: target,
+                action: #selector(MenuTarget.toggle)
+            )
+            XCTAssertEqual(
+                manager.healthStripItemIdentityForTesting,
+                identity,
+                "Removing the item on the way out would delete its saved "
+                    + "menu bar position, so a Thaw or Ice user would lose "
+                    + "their arrangement on every toggle of this setting"
+            )
+        }
+        XCTAssertNotNil(manager.healthStripButton)
+    }
+
+    // MARK: - Nothing to draw
+
+    func testDeselectingEveryClaudeAccountHidesTheStripButKeepsTheItem() {
+        let target = MenuTarget()
+        let claude = claudeProfiles(2)
+        let codexAccount = codexProfile()
+        let manager = makeStripManager(
+            profiles: claude + [codexAccount],
+            target: target
+        )
+        defer { manager.cleanup() }
+        let identity = manager.healthStripItemIdentityForTesting
+        XCTAssertNotNil(manager.healthStripButton)
+
+        let deselected = claude.map { profile -> Profile in
+            var hidden = profile
+            hidden.isSelectedForDisplay = false
+            return hidden
+        }
+        manager.updateMultiProfileConfiguration(
+            profiles: deselected + [codexAccount],
+            target: target,
+            action: #selector(MenuTarget.toggle)
+        )
+
+        XCTAssertNil(
+            manager.healthStripButton,
+            "An empty strip would be a 2pt sliver in the menu bar opening a "
+                + "popover with no accounts in it"
+        )
+        XCTAssertEqual(
+            manager.healthStripItemIdentityForTesting,
+            identity,
+            "Hidden, not removed"
+        )
+        XCTAssertNotNil(
+            manager.button(for: codexAccount.id),
+            "The Codex account still has its own item"
+        )
+    }
+
+    func testAFullyEmptySelectionFallsBackToTheDefaultLogoItem() {
+        let target = MenuTarget()
+        let claude = claudeProfiles(1)
+        let manager = makeStripManager(profiles: claude, target: target)
+        defer { manager.cleanup() }
+
+        var deselected = claude[0]
+        deselected.isSelectedForDisplay = false
+        manager.updateMultiProfileConfiguration(
+            profiles: [deselected],
+            target: target,
+            action: #selector(MenuTarget.toggle)
+        )
+
+        XCTAssertNil(manager.healthStripButton)
+        XCTAssertTrue(
+            manager.hasValidStatusBar,
+            "The existing default-logo placeholder still covers a fully "
+                + "empty selection, so the app never goes itemless"
+        )
+    }
+
     // MARK: - Overflow is bypassed
 
     func testStripLayoutHidesTheOverflowItemAndNeverConsultsTheSpaceProbe() {
