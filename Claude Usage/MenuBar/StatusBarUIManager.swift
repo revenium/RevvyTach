@@ -24,6 +24,11 @@ final class StatusBarUIManager {
     /// track the overflow item the same way they track every other item.
     static let overflowAutosaveName = "claude-usage-tracker.overflow"
 
+    /// Stable identifier for the health strip item, for the same reason.
+    /// Never reused for anything else, and never changed: a changed
+    /// `autosaveName` is a new item to every menu bar manager.
+    static let healthStripAutosaveName = "claude-usage-tracker.healthstrip"
+
     /// Splits `profiles` (already filtered to those selected for display)
     /// into the ones that get their own status item and the ones that
     /// collapse into the single overflow item, using the app's original
@@ -141,6 +146,63 @@ final class StatusBarUIManager {
     var overflowMode: MenuBarOverflowMode = .afterCount(
         StatusBarUIManager.overflowThreshold
     )
+
+    /// Whether the selected Claude accounts get one status item each, or
+    /// share one health strip item. Defaults to today's behaviour so a
+    /// caller (or a test) that never sets it is unaffected; `MenuBarManager`
+    /// reads the persisted setting and assigns it before every layout pass,
+    /// exactly as it does for `overflowMode`.
+    var multiLayout: MenuBarMultiLayout = .perProfileItems
+
+    /// The one status item every Claude account shares in strip layout.
+    /// Hidden rather than removed when the layout changes, for the reason
+    /// `updateOverflowItem` hides its own item: `removeStatusItem` discards
+    /// AppKit's saved menu bar position.
+    private var healthStripStatusItem: NSStatusItem?
+
+    /// Where each account's bar sits inside the strip's image, so a click's
+    /// x coordinate can be resolved back to the account under it.
+    private var healthStripCells: [HealthStripCell] = []
+
+    /// The account a click on the strip's padding falls back to — the
+    /// active one when it is on the strip, otherwise the first drawn.
+    private var healthStripFallbackProfileID: UUID?
+
+    /// Which accounts are currently spelling out their numbers in the
+    /// strip. This is what makes the hysteresis in `HealthStripNumbers`
+    /// work, and it lives here rather than on a SwiftUI view (which would
+    /// reset on every render) or keyed by index (which would transfer
+    /// between accounts when the profile list is reordered). Never
+    /// persisted: on a cold launch every account starts from its plain
+    /// threshold.
+    private var healthStripNumbersShown: [UUID: Bool] = [:]
+
+    /// The threshold the map above was built against, so a change to the
+    /// setting clears stale "already showing" state instead of letting the
+    /// hysteresis band of the old level survive into the new one.
+    private var healthStripNumbersThreshold:
+        MenuBarHealthStripNumbersThreshold?
+
+    /// Exposed so a test can prove the map is pruned and cleared rather
+    /// than growing for the life of the process.
+    var healthStripNumbersShownForTesting: [UUID: Bool] {
+        healthStripNumbersShown
+    }
+
+    /// Whether one multi-profile status item is on screen.
+    ///
+    /// In strip layout every Claude item is kept alive but hidden — so
+    /// switching back restores AppKit's saved positions instead of minting
+    /// fresh items — while Codex accounts keep their own visible items,
+    /// since the strip draws Claude accounts only.
+    static func multiProfileItemIsVisible(
+        providerID: ProviderID,
+        isIndividual: Bool,
+        layout: MenuBarMultiLayout
+    ) -> Bool {
+        guard layout == .healthStrip else { return isIndividual }
+        return providerID != .claude
+    }
 
     /// Supplies live screen/foreign-item measurements for `.automatic`
     /// mode. Injectable so tests can supply a fake without touching real
@@ -810,6 +872,9 @@ final class StatusBarUIManager {
             ?? (overflowStatusItem?.button === sender
                 ? overflowStatusItem?.autosaveName
                 : nil)
+            ?? (healthStripStatusItem?.button === sender
+                ? healthStripStatusItem?.autosaveName
+                : nil)
     }
 
     var orderedSingleButtonsForTesting: [NSStatusBarButton] {
@@ -925,6 +990,30 @@ final class StatusBarUIManager {
         overflowStatusItem = nil
         overflowProfileIDs.removeAll()
 
+        // The health strip goes the same way as the overflow item: its
+        // button wiring is released either way, and `removeStatusItem` is
+        // called only when this is a genuine teardown rather than the app
+        // quitting — see the doc comment above.
+        if let stripItem = healthStripStatusItem {
+            if let button = stripItem.button {
+                lastImageData.removeValue(forKey: ObjectIdentifier(button))
+                statusItemIdentities.removeValue(
+                    forKey: ObjectIdentifier(button)
+                )
+                button.image = nil
+                button.action = nil
+                button.target = nil
+            }
+            if shouldRemove {
+                NSStatusBar.system.removeStatusItem(stripItem)
+            }
+        }
+        healthStripStatusItem = nil
+        healthStripCells.removeAll()
+        healthStripFallbackProfileID = nil
+        healthStripNumbersShown.removeAll()
+        healthStripNumbersThreshold = nil
+
         isMultiProfileMode = false
 
         LoggingService.shared.logUIEvent(
@@ -972,14 +1061,29 @@ final class StatusBarUIManager {
             // Above the overflow threshold, only the first few profiles get
             // their own status item; the rest collapse into one overflow
             // item (see `overflowPlan(for:mode:currentCollapsedCount:spaceInput:)`).
-            let plan = currentOverflowPlan(for: selectedProfiles)
+            // Overflow does not apply in strip layout: the strip is one
+            // item however many accounts it holds, so there is nothing to
+            // collapse — and skipping `currentOverflowPlan` also skips
+            // `MenuBarSpaceProbe`'s Accessibility reads entirely.
+            let plan: (individual: [Profile], overflow: [Profile]) =
+                multiLayout == .healthStrip
+                    ? (individual: selectedProfiles, overflow: [])
+                    : currentOverflowPlan(for: selectedProfiles)
 
             // Create one status item per individually-shown profile
             for profile in plan.individual {
                 let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
                 // Stable identifier so Bartender and similar tools can reliably track this item
                 statusItem.autosaveName = "claude-usage-tracker.profile.\(profile.id.uuidString)"
-                statusItem.isVisible = true
+                // In strip layout the Claude items are created and then
+                // hidden, never skipped: switching back has to restore the
+                // arrangement the user already had, and a hidden item costs
+                // zero menu bar width.
+                statusItem.isVisible = Self.multiProfileItemIsVisible(
+                    providerID: profile.providerID,
+                    isIndividual: true,
+                    layout: multiLayout
+                )
 
                 if let button = statusItem.button {
                     Self.configureActionButton(
@@ -1017,7 +1121,75 @@ final class StatusBarUIManager {
             )
         }
 
+        updateHealthStripItem(
+            isNeeded: Self.healthStripIsNeeded(
+                for: selectedProfiles,
+                layout: multiLayout
+            ),
+            target: target,
+            action: action
+        )
+
         observeAppearanceChanges()
+    }
+
+    /// Whether a health strip item should exist at all: only in strip
+    /// layout, and only when there is at least one Claude account to draw.
+    /// Codex accounts keep their own items and are never on the strip.
+    static func healthStripIsNeeded(
+        for selectedProfiles: [Profile],
+        layout: MenuBarMultiLayout
+    ) -> Bool {
+        guard layout == .healthStrip else { return false }
+        return selectedProfiles.contains { $0.providerID == .claude }
+    }
+
+    /// Creates the strip item the first time it is needed and hides it —
+    /// never removes it — when it stops being needed, so leaving and
+    /// re-entering strip layout keeps AppKit's saved position for it.
+    private func updateHealthStripItem(
+        isNeeded: Bool,
+        target: AnyObject,
+        action: Selector
+    ) {
+        guard isNeeded else {
+            healthStripCells.removeAll()
+            healthStripFallbackProfileID = nil
+            guard let item = healthStripStatusItem, item.isVisible else {
+                return
+            }
+            item.isVisible = false
+            LoggingService.shared.logUIEvent(
+                "Multi-profile: Hid the health strip item"
+            )
+            return
+        }
+
+        if let item = healthStripStatusItem {
+            item.isVisible = true
+            return
+        }
+        let item = NSStatusBar.system.statusItem(
+            withLength: NSStatusItem.variableLength
+        )
+        item.autosaveName = Self.healthStripAutosaveName
+        item.isVisible = true
+        if let button = item.button {
+            Self.configureActionButton(
+                button,
+                target: target,
+                action: action
+            )
+        } else {
+            LoggingService.shared.logWarning(
+                "Health strip status bar button is nil - screens: "
+                    + "\(NSScreen.screens.count)"
+            )
+        }
+        healthStripStatusItem = item
+        LoggingService.shared.logUIEvent(
+            "Multi-profile: Created the health strip item"
+        )
     }
 
     /// Pure reconciliation decision behind `updateMultiProfileConfiguration`:
@@ -1061,7 +1233,13 @@ final class StatusBarUIManager {
         let selectedProfiles = profiles.filter {
             $0.isSelectedForDisplay && !$0.deletionInProgress
         }
-        let plan = currentOverflowPlan(for: selectedProfiles)
+        // See `setupMultiProfile`: the strip cannot overflow, so the plan
+        // (and with it every Accessibility read the automatic mode makes)
+        // is skipped entirely in strip layout.
+        let plan: (individual: [Profile], overflow: [Profile]) =
+            multiLayout == .healthStrip
+                ? (individual: selectedProfiles, overflow: [])
+                : currentOverflowPlan(for: selectedProfiles)
         let individualIDs = Set(plan.individual.map(\.id))
         // Every still-selected profile keeps an item alive — visible or
         // hidden behind the overflow badge — across this update; only a
@@ -1082,6 +1260,11 @@ final class StatusBarUIManager {
         )
 
         for profileID in reconciliation.idsToRemove {
+            // A profile that has lost its status item has also lost any
+            // claim on the strip's "already showing numbers" state; leaving
+            // it behind would let a deleted account's hysteresis be
+            // inherited by nothing at best, and grow unbounded at worst.
+            healthStripNumbersShown.removeValue(forKey: profileID)
             if let statusItem = multiProfileStatusItems.removeValue(forKey: profileID) {
                 if let button = statusItem.button {
                     lastImageData.removeValue(forKey: ObjectIdentifier(button))
@@ -1120,8 +1303,13 @@ final class StatusBarUIManager {
                 statusItem.autosaveName = "claude-usage-tracker.profile.\(profile.id.uuidString)"
                 // Start in the correct visibility immediately rather than
                 // visible-then-hidden, in case this brand-new profile lands
-                // straight in overflow (e.g. several profiles added at once).
-                statusItem.isVisible = individualIDs.contains(profile.id)
+                // straight in overflow (e.g. several profiles added at once)
+                // or straight onto the strip.
+                statusItem.isVisible = Self.multiProfileItemIsVisible(
+                    providerID: profile.providerID,
+                    isIndividual: individualIDs.contains(profile.id),
+                    layout: multiLayout
+                )
                 if let button = statusItem.button {
                     Self.configureActionButton(
                         button,
@@ -1148,13 +1336,29 @@ final class StatusBarUIManager {
         // update; toggle visibility rather than recreate the item. The
         // placeholder item has no overflow concept at all and must stay
         // visible.
+        var providerByID: [UUID: ProviderID] = [:]
+        for profile in selectedProfiles {
+            providerByID[profile.id] = profile.providerID
+        }
         for (profileID, item) in multiProfileStatusItems
         where profileID != Self.multiProfileDefaultPlaceholderID {
-            item.isVisible = individualIDs.contains(profileID)
+            item.isVisible = Self.multiProfileItemIsVisible(
+                providerID: providerByID[profileID] ?? .claude,
+                isIndividual: individualIDs.contains(profileID),
+                layout: multiLayout
+            )
         }
 
         updateOverflowItem(
             for: plan.overflow,
+            target: target,
+            action: action
+        )
+        updateHealthStripItem(
+            isNeeded: Self.healthStripIsNeeded(
+                for: selectedProfiles,
+                layout: multiLayout
+            ),
             target: target,
             action: action
         )
@@ -1920,6 +2124,24 @@ final class StatusBarUIManager {
             activeProfileId: activeClaudeProfileID,
             attention: attention
         )
+        updateNonClaudeMultiProfileButtons(
+            presentations: presentations,
+            profiles: profiles,
+            config: config,
+            isActive: isActive
+        )
+    }
+
+    /// The non-Claude half of `updateProviderMultiProfileButtons`, split out
+    /// so the health strip layout can paint Codex items exactly as before
+    /// while the Claude accounts go to `updateHealthStrip` instead of to
+    /// their own status items.
+    func updateNonClaudeMultiProfileButtons(
+        presentations: [ProviderMenuPresentation],
+        profiles: [Profile],
+        config: MultiProfileDisplayConfig,
+        isActive: (Profile) -> Bool
+    ) {
         for presentation in presentations
         where presentation.identity.providerID != .claude {
             guard let item =
@@ -2065,24 +2287,42 @@ final class StatusBarUIManager {
         return isMultiProfileMode
     }
 
+    /// Whether any of the four kinds of item this manager owns counts as a
+    /// working status bar.
+    ///
+    /// Pulled out as a pure function for the same reason
+    /// `shouldRemoveStatusItem` is: the decision is load-bearing and has to
+    /// be directly testable. `AppDelegate` reruns `setup()` three seconds
+    /// after launch when `hasValidStatusBar` reads false, and
+    /// `MenuBarManager` does the same on every screen-parameter change;
+    /// `setup()` reaches `cleanup()`, which discards every saved menu bar
+    /// position. The health strip must count, because in strip layout it can
+    /// be the only Claude item on screen — omitting it would wipe the user's
+    /// arrangement on a routine display change.
+    static func hasValidStatusBar(
+        hasSingleProfileItem: Bool,
+        hasMultiProfileItem: Bool,
+        hasOverflowItem: Bool,
+        hasHealthStripItem: Bool
+    ) -> Bool {
+        hasSingleProfileItem
+            || hasMultiProfileItem
+            || hasOverflowItem
+            || hasHealthStripItem
+    }
+
     /// Checks if status bar has at least one valid button (for headless mode detection)
     var hasValidStatusBar: Bool {
-        // Check single-profile status items
-        for (_, statusItem) in statusItems {
-            if statusItem.button != nil {
-                return true
-            }
-        }
-        // Check multi-profile status items
-        for (_, statusItem) in multiProfileStatusItems {
-            if statusItem.button != nil {
-                return true
-            }
-        }
-        if overflowStatusItem?.button != nil {
-            return true
-        }
-        return false
+        Self.hasValidStatusBar(
+            hasSingleProfileItem: statusItems.values.contains {
+                $0.button != nil
+            },
+            hasMultiProfileItem: multiProfileStatusItems.values.contains {
+                $0.button != nil
+            },
+            hasOverflowItem: overflowStatusItem?.button != nil,
+            hasHealthStripItem: healthStripStatusItem?.button != nil
+        )
     }
 
     /// Get button for a specific profile (multi-profile mode). `nil` both
@@ -2107,7 +2347,259 @@ final class StatusBarUIManager {
                 return profileId
             }
         }
+        // The strip is one button for N accounts, so there is no single
+        // right answer without a click's x coordinate. This returns the
+        // account a click with no coordinate would target — the active one
+        // — while `healthStripProfileID(at:)` is the precise lookup every
+        // click actually goes through.
+        if healthStripStatusItem?.button === sender {
+            return healthStripFallbackProfileID
+        }
         return nil
+    }
+
+    // MARK: - Health Strip
+
+    /// True when `sender` is the health strip's button — the one item that
+    /// holds every selected Claude account in strip layout.
+    func isHealthStripButton(_ sender: NSStatusBarButton?) -> Bool {
+        guard let sender else { return false }
+        return healthStripStatusItem?.button === sender
+    }
+
+    /// The strip's button while it is actually on screen, for anchoring a
+    /// popover. `nil` while the item exists but is hidden, matching
+    /// `overflowButton`.
+    var healthStripButton: NSStatusBarButton? {
+        guard let item = healthStripStatusItem, item.isVisible else {
+            return nil
+        }
+        return item.button
+    }
+
+    /// The strip item's identity independent of its visibility, so a test
+    /// can confirm that leaving and re-entering strip layout reuses the
+    /// SAME `NSStatusItem` rather than minting a new window ID.
+    var healthStripItemIdentityForTesting: ObjectIdentifier? {
+        healthStripStatusItem.map(ObjectIdentifier.init)
+    }
+
+    /// Which account's bar a click at `x` — in the strip button's own
+    /// coordinates — landed on. `nil` for the 1pt padding at either end;
+    /// callers fall back to `healthStripFallbackProfile` rather than
+    /// swallowing the click.
+    func healthStripProfileID(at x: CGFloat) -> UUID? {
+        HealthStripLayout.profileID(atX: x, in: healthStripCells)
+    }
+
+    /// The account the strip targets when no x coordinate is available:
+    /// the active one when it is on the strip, otherwise the first drawn.
+    var healthStripFallbackProfile: UUID? {
+        healthStripFallbackProfileID
+    }
+
+    /// Paints the health strip: one bar per selected Claude account, in one
+    /// status item.
+    ///
+    /// Every figure for one account is resolved exactly once here,
+    /// snapshot-first — the same `snapshot?.claudeUsage ?? profile
+    /// .claudeUsage` rule `claudeCatalog` and the attention verdict already
+    /// use — and that one reading feeds the bar, the digits beside it and
+    /// the spoken label alike. Reading the profile record for the bar and a
+    /// snapshot for the number would let a bar and the figure printed next
+    /// to it disagree whenever a refresh has landed in one but not the
+    /// other.
+    ///
+    /// - Parameter now: injected so the 5-hour window's expiry check is
+    ///   deterministic in tests, rather than reading the wall clock in the
+    ///   middle of a render.
+    func updateHealthStrip(
+        profiles: [Profile],
+        config: MultiProfileDisplayConfig,
+        threshold: MenuBarHealthStripNumbersThreshold,
+        activeClaudeProfileID: UUID?,
+        attention: [UUID: MenuBarAttentionSignal.Credential] = [:],
+        snapshots: [UUID: PresentationSnapshot] = [:],
+        now: Date = Date()
+    ) {
+        guard let item = healthStripStatusItem,
+              let button = item.button else {
+            return
+        }
+
+        // A changed setting invalidates every "already showing" flag: the
+        // old level's hysteresis band must not survive into the new one.
+        if healthStripNumbersThreshold != threshold {
+            healthStripNumbersShown.removeAll()
+            healthStripNumbersThreshold = threshold
+        }
+
+        let menuBarIsDark = button.effectiveAppearance.bestMatch(
+            from: [.darkAqua, .aqua]
+        ) == .darkAqua
+        let showRemaining = config.showRemainingPercentage
+
+        // The same predicate the per-account items are built from, not the
+        // looser "selected for display" alone: a profile mid-deletion, or a
+        // Codex account with its own item, must not appear on the strip.
+        let drawn = profiles.filter {
+            $0.isSelectedForDisplay
+                && !$0.deletionInProgress
+                && $0.providerID == .claude
+        }
+
+        var inputs: [MenuBarIconRenderer.HealthStripProfileInput] = []
+        inputs.reserveCapacity(drawn.count)
+        var numbersShown: [UUID: Bool] = [:]
+
+        for profile in drawn {
+            let usage = snapshots[profile.id]?.claudeUsage
+                ?? profile.claudeUsage
+
+            // `readableSessionPercentage` in everything but its clock: the
+            // expiry comparison is made against the injected instant so a
+            // render is reproducible. Nil means no reading was received,
+            // which the strip draws as a dash rather than as a zero.
+            let sessionUsed: Double? = usage.flatMap { reading in
+                guard reading.sessionPercentageAvailable else { return nil }
+                return reading.sessionResetTime < now
+                    ? 0
+                    : reading.sessionPercentage
+            }
+            let weekUsed = usage?.readableWeeklyPercentage
+
+            var unknownWindows: MenuBarUnknownWindows = []
+            if sessionUsed == nil {
+                unknownWindows.insert(.session)
+            }
+            if weekUsed == nil {
+                unknownWindows.insert(.week)
+            }
+
+            let sessionDisplay = sessionUsed.map {
+                UsageStatusCalculator.getDisplayPercentage(
+                    usedPercentage: $0,
+                    showRemaining: showRemaining
+                )
+            }
+            let weekDisplay = UsageStatusCalculator.getDisplayPercentage(
+                usedPercentage: weekUsed ?? 0,
+                showRemaining: showRemaining
+            )
+
+            let sessionElapsed = UsageStatusCalculator.elapsedFraction(
+                resetTime: usage?.sessionResetTime,
+                duration: Constants.sessionWindow,
+                showRemaining: false
+            )
+            let weekElapsed = UsageStatusCalculator.elapsedFraction(
+                resetTime: usage?.weeklyResetTime,
+                duration: Constants.weeklyWindow,
+                showRemaining: false
+            )
+            let sessionStatus = UsageStatusCalculator.calculateStatus(
+                usedPercentage: sessionUsed ?? 0,
+                showRemaining: showRemaining,
+                elapsedFraction: config.usePaceColoring
+                    ? sessionElapsed
+                    : nil
+            )
+            let weekStatus = UsageStatusCalculator.calculateStatus(
+                usedPercentage: weekUsed ?? 0,
+                showRemaining: showRemaining,
+                elapsedFraction: config.usePaceColoring ? weekElapsed : nil
+            )
+
+            let showsNumbers = HealthStripNumbers.showsNumbers(
+                sessionUsed: sessionUsed,
+                weekUsed: weekUsed,
+                threshold: threshold,
+                isCurrentlyShowing: healthStripNumbersShown[profile.id]
+                    ?? false
+            )
+            numbersShown[profile.id] = showsNumbers
+
+            var numbersImage: NSImage?
+            if showsNumbers {
+                // The existing percentage renderer, unchanged, so the
+                // digits, the " · ", the critical underline, the pace dot
+                // and the 3-character name are identical to what the
+                // per-account `.percentage` style already draws.
+                let sessionPaceStatus: PaceStatus? = {
+                    guard config.showPaceMarker,
+                          let elapsed = sessionElapsed else { return nil }
+                    return PaceStatus.calculate(
+                        usedPercentage: sessionUsed ?? 0,
+                        elapsedFraction: elapsed
+                    )
+                }()
+                let weekPaceStatus: PaceStatus? = {
+                    guard config.showPaceMarker,
+                          let elapsed = weekElapsed else { return nil }
+                    return PaceStatus.calculate(
+                        usedPercentage: weekUsed ?? 0,
+                        elapsedFraction: elapsed
+                    )
+                }()
+                numbersImage = renderer.createMultiProfilePercentage(
+                    sessionPercentage: sessionDisplay,
+                    weekPercentage: config.showWeek ? weekDisplay : nil,
+                    sessionStatus: sessionStatus,
+                    weekStatus: weekStatus,
+                    profileName: config.showProfileLabel
+                        ? profile.name
+                        : nil,
+                    monochromeMode: config.useSystemColor,
+                    isDarkMode: menuBarIsDark,
+                    useSystemColor: false,
+                    sessionPaceStatus: sessionPaceStatus,
+                    weekPaceStatus: config.showWeek ? weekPaceStatus : nil,
+                    showPaceMarker: config.showPaceMarker,
+                    unknownWindows: unknownWindows
+                )
+            }
+
+            inputs.append(
+                MenuBarIconRenderer.HealthStripProfileInput(
+                    profileID: profile.id,
+                    profileName: profile.name,
+                    sessionDisplay: sessionDisplay,
+                    status: sessionStatus,
+                    showRemaining: showRemaining,
+                    isActive: profile.id == activeClaudeProfileID,
+                    attention: attention[profile.id],
+                    numbersImage: numbersImage
+                )
+            )
+        }
+
+        // Replaced wholesale rather than patched, so an account that has
+        // left the strip cannot leave its hysteresis behind.
+        healthStripNumbersShown = numbersShown
+
+        let render = renderer.createHealthStrip(
+            profiles: inputs,
+            monochromeMode: config.useSystemColor,
+            isDarkMode: menuBarIsDark
+        )
+        healthStripCells = render.cells
+
+        let fallbackProfile = drawn.first {
+            $0.id == activeClaudeProfileID
+        } ?? drawn.first
+        healthStripFallbackProfileID = fallbackProfile?.id
+        if let fallbackProfile {
+            statusItemIdentities[ObjectIdentifier(button)] =
+                ProviderStatusItemIdentity(
+                    profileID: fallbackProfile.id,
+                    providerID: fallbackProfile.providerID,
+                    providerRevision: fallbackProfile.providerRevision,
+                    metricID: nil
+                )
+        }
+        setButtonImage(button, image: render.image)
+        button.setAccessibilityLabel(render.accessibilityLabel)
+        button.toolTip = render.tooltip
     }
 
     // MARK: - UI Updates
