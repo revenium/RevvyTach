@@ -111,21 +111,69 @@ extension HealthStripAccountRow {
         OverflowProfileRow(id: id, name: name, windows: windows)
     }
 
-    /// "Session 42% · Week 78%", or a single dash when nothing was read.
-    var valueText: String { windowRow.valueText }
+    /// One visible line per usage window, including its reset when known, or
+    /// a single dash when nothing was read.
+    var valueLines: [String] {
+        guard windows.contains(where: { $0.percentageText != nil }) else {
+            return [OverflowProfileRow.noReadingText]
+        }
+        return windows.map { window in
+            let value = "\(window.name) "
+                + "\(window.percentageText ?? OverflowProfileRow.noReadingText)"
+            guard window.percentageText != nil,
+                  let resetTime = window.resetTime else {
+                return value
+            }
+            let reset = ProviderUILocalization.text(
+                "menubar.resets_time",
+                fallback: "Resets %@"
+            )
+            return value + " · " + String(
+                format: reset,
+                resetTime.resetTimeString()
+            )
+        }
+    }
 
-    /// The spoken form of the same thing, which collapses on exactly the
-    /// condition `valueText` collapses on.
+    /// Kept as a model-level summary for tests and non-view callers. The
+    /// card renders `valueLines` separately rather than embedding newlines in
+    /// one Text view.
+    var valueText: String { valueLines.joined(separator: "\n") }
+
+    /// The spoken form of the same thing, including each usable reset time.
     var accessibilityValueText: String {
-        windowRow.accessibilityValueText
+        guard windows.contains(where: { $0.percentageText != nil }) else {
+            return windowRow.accessibilityValueText
+        }
+        let resetFormat = ProviderUILocalization.text(
+            "menubar.resets_time",
+            fallback: "Resets %@"
+        )
+        let noReading = ProviderUILocalization.text(
+            "menubar.accessibility.state.no_data",
+            fallback: "no usage data"
+        )
+        return windows.map { window in
+            guard let percentage = window.percentageText else {
+                return "\(window.name), \(noReading)"
+            }
+            var text = "\(window.name), \(percentage) \(window.modeText)"
+            if let resetTime = window.resetTime {
+                text += ", " + String(
+                    format: resetFormat,
+                    resetTime.resetTimeString()
+                )
+            }
+            return text
+        }.joined(separator: ", ")
     }
 
     /// Builds the list the strip's popover shows.
     ///
     /// The row set is the predicate the strip DRAWS — selected for display,
     /// not mid-deletion, and Claude — rather than the looser "selected for
-    /// display" alone. Order is the profile list's own order, so the rows
-    /// and the bars read left to right the same way.
+    /// display" alone. The shared reset ordering puts the earliest known
+    /// weekly reset first, exactly as the strip's bars and overflow list do.
     static func rows(
         profiles: [Profile],
         snapshots: [UUID: PresentationSnapshot],
@@ -136,14 +184,21 @@ extension HealthStripAccountRow {
         isActive: (Profile) -> Bool,
         now: Date = Date()
     ) -> [HealthStripAccountRow] {
-        profiles
+        ProfileResetOrder.sorted(
+            profiles
             .filter {
                 $0.isSelectedForDisplay
                     && !$0.deletionInProgress
                     && $0.providerID == .claude
-            }
+            },
+            snapshots: snapshots
+        )
             .map { profile in
                 let snapshot = snapshots[profile.id]
+                let usage = ProfileResetOrder.claudeUsage(
+                    for: profile,
+                    snapshot: snapshot
+                )
                 let metrics = ProviderMenuPresentationBuilder
                     .leadingWindowPresentations(
                         profile: profile,
@@ -178,13 +233,29 @@ extension HealthStripAccountRow {
                         metricID: nil
                     ),
                     name: profile.name,
-                    windows: metrics.map {
+                    windows: metrics.map { metric in
                         OverflowProfileRow.Window(
-                            name: $0.descriptor.metricName,
-                            percentageText: $0.displayedPercentage == nil
+                            name: metric.descriptor.metricName,
+                            percentageText: metric.displayedPercentage == nil
                                 ? nil
-                                : $0.percentageText,
-                            modeText: $0.modeText
+                                : metric.percentageText,
+                            modeText: metric.modeText,
+                            resetTime: {
+                                switch metric.descriptor.id {
+                                case .claudeSession:
+                                    return usage?.sessionPercentageAvailable
+                                        == true
+                                        ? usage?.sessionResetTime
+                                        : nil
+                                case .claudeWeek:
+                                    return usage?.weeklyPercentageAvailable
+                                        == true
+                                        ? usage?.weeklyResetTime
+                                        : nil
+                                default:
+                                    return nil
+                                }
+                            }()
                         )
                     },
                     isActive: profile.id == activeClaudeProfileID,
@@ -203,8 +274,8 @@ extension HealthStripAccountRow {
 /// A SwiftUI popover rather than an `NSMenu`: a row carries a name, two
 /// windows, a pace dot, an attention flag, an active badge and three
 /// actions, which in an `NSMenu` means custom views — losing keyboard and
-/// VoiceOver behaviour, and unable to do the two-line name-over-numbers
-/// layout that 8 of the 9 shipped locales need.
+/// VoiceOver behaviour, and unable to do the three-line name-over-windows
+/// layout the reset text needs.
 struct HealthStripAccountsView: View {
     let rows: [HealthStripAccountRow]
     let onOpen: (ProviderStatusItemIdentity) -> Void
@@ -216,34 +287,44 @@ struct HealthStripAccountsView: View {
 
     static let rowSpacing: CGFloat = 4
 
+    /// The reset rows need more horizontal room than the standard detail
+    /// popover: German's longest real line is just over 304pt before the
+    /// action column and card/list insets are added.
+    static let width: CGFloat = 420
+
+    /// Name plus two usage-window lines, including the card's vertical
+    /// padding. Kept explicit so the cap and rendering tests describe the
+    /// three-line card rather than the former two-line one.
+    static let rowHeight: CGFloat = 62
+
     /// The list scrolls past this height rather than growing the popover
     /// without limit. A cap in points, not in rows: row height is a text
     /// measurement that differs between locales, so counting rows would clip
     /// exactly where the rows are tallest.
-    static let scrollMaxHeight: CGFloat = 360
+    static let scrollMaxHeight: CGFloat = 420
 
     /// Size of one action icon button, the space between them, and the
     /// width the whole cluster takes out of a row.
     ///
     /// Not private: the localization fit test subtracts this from the row's
-    /// content budget, because the name and numbers columns get whatever is
+    /// content budget, because the name and window columns get whatever is
     /// left after the three buttons, not the whole row.
     ///
-    /// Sized by that measurement rather than by taste. Italian's
-    /// "Sessione 100% · Settimana 100%" needs 207.8pt at the real font, out
-    /// of the row's 272pt, so the cluster cannot exceed about 64pt without
-    /// clipping the very numbers the list exists to show. Three 18pt buttons
+    /// Sized by that measurement rather than by taste. German's longest
+    /// reset line needs just over 304pt at the real font, out of the row's
+    /// 372pt, so the cluster cannot exceed about 68pt without clipping the
+    /// information the list exists to show. Three 18pt buttons
     /// with 1pt between them and a 4pt gap come to 60pt.
     static let actionButtonSize: CGFloat = 18
     static let actionSpacing: CGFloat = 1
     static let actionColumnWidth: CGFloat =
         actionButtonSize * 3 + actionSpacing * 2 + 4
 
-    /// Width the name and numbers columns actually get: the popover width,
+    /// Width the name and window columns actually get: the popover width,
     /// less the outer inset on each side, less the row's own 8pt horizontal
     /// padding on each side, less the action cluster.
     static let rowTextWidth: CGFloat =
-        PopoverDesign.width
+        width
             - 2 * PopoverDesign.outerInset
             - 2 * 8
             - actionColumnWidth
@@ -304,7 +385,7 @@ struct HealthStripAccountsView: View {
         // height would have to guess the tallest locale's row, and guessing
         // low clips the footer.
         .fixedSize(horizontal: false, vertical: true)
-        .frame(width: PopoverDesign.width)
+        .frame(width: Self.width)
     }
 
     private func footerButton(
@@ -323,7 +404,7 @@ struct HealthStripAccountsView: View {
 }
 
 /// One row. The container is deliberately not a `Button`: three buttons
-/// nested inside an outer button break hit testing, so the name and numbers
+/// nested inside an outer button break hit testing, so the name and windows
 /// column carries the "Open" affordance and the three icon buttons sit
 /// beside it.
 /// Internal rather than private so a test can host one row on its own and
@@ -366,16 +447,24 @@ struct HealthStripAccountRowView: View {
                             .foregroundColor(.secondary)
                         }
                     }
-                    Text(row.valueText)
-                        .font(PopoverDesign.valueFont)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(
+                            Array(row.valueLines.enumerated()),
+                            id: \.offset
+                        ) { _, line in
+                            Text(line)
+                                .font(PopoverDesign.valueFont)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(openLabel)
+            .accessibilityValue(row.accessibilityValueText)
 
             HStack(spacing: HealthStripAccountsView.actionSpacing) {
                 ForEach(row.actions) { action in
@@ -389,6 +478,7 @@ struct HealthStripAccountRowView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
+        .frame(minHeight: HealthStripAccountsView.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(

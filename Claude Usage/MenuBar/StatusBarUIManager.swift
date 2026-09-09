@@ -2490,11 +2490,14 @@ final class StatusBarUIManager {
         // The same predicate the per-account items are built from, not the
         // looser "selected for display" alone: a profile mid-deletion, or a
         // Codex account with its own item, must not appear on the strip.
-        let drawn = profiles.filter {
-            $0.isSelectedForDisplay
-                && !$0.deletionInProgress
-                && $0.providerID == .claude
-        }
+        let drawn = ProfileResetOrder.sorted(
+            profiles.filter {
+                $0.isSelectedForDisplay
+                    && !$0.deletionInProgress
+                    && $0.providerID == .claude
+            },
+            snapshots: snapshots
+        )
 
         var inputs: [MenuBarIconRenderer.HealthStripProfileInput] = []
         inputs.reserveCapacity(drawn.count)
@@ -2535,8 +2538,7 @@ final class StatusBarUIManager {
                 unknownWindows.insert(.week)
             }
 
-            // The bar draws the TIGHTER window, the one that runs out first
-            // — the rule `tightestUsed` already states for the overflow list.
+            // The bar draws the TIGHTER window, the one that runs out first.
             // A session-only bar would show an account at 10% session and 85%
             // week as comfortable, and would show nothing at all for an
             // account whose session window is unread but whose week is at

@@ -17,10 +17,13 @@ final class HealthStripAccountRowTests: XCTestCase {
 
     private func usage(
         session: Double?,
-        week: Double? = 20
+        week: Double? = 20,
+        sessionReset: Date = Date(timeIntervalSince1970: 2_000_000_000),
+        weeklyReset: Date = Date(timeIntervalSince1970: 2_000_100_000)
     ) -> ClaudeUsage {
         var reading = ClaudeUsage.empty
-        reading.sessionResetTime = Date().addingTimeInterval(3_600)
+        reading.sessionResetTime = sessionReset
+        reading.weeklyResetTime = weeklyReset
         if let session {
             reading.sessionPercentage = session
             reading.sessionPercentageAvailable = true
@@ -87,13 +90,17 @@ final class HealthStripAccountRowTests: XCTestCase {
         )
     }
 
-    func testRowsKeepTheProfileListsOwnOrder() {
-        let profiles = ["A", "B", "C", "D"].map { claude($0) }
+    func testRowsFollowWeeklyResetOrderRegardlessOfInputOrder() {
+        var late = claude("Late")
+        late.claudeUsage?.weeklyResetTime = Date(timeIntervalSince1970: 300)
+        var early = claude("Early")
+        early.claudeUsage?.weeklyResetTime = Date(timeIntervalSince1970: 100)
+        var middle = claude("Middle")
+        middle.claudeUsage?.weeklyResetTime = Date(timeIntervalSince1970: 200)
 
         XCTAssertEqual(
-            rows(profiles).map(\.name),
-            ["A", "B", "C", "D"],
-            "Rows and bars must read left to right the same way"
+            rows([late, early, middle]).map(\.name),
+            ["Early", "Middle", "Late"]
         )
     }
 
@@ -111,6 +118,67 @@ final class HealthStripAccountRowTests: XCTestCase {
         XCTAssertFalse(row.windows.isEmpty)
         XCTAssertTrue(row.valueText.contains("83"))
         XCTAssertNotEqual(row.valueText, OverflowProfileRow.noReadingText)
+    }
+
+    func testBothWindowLinesIncludeTheirResetTimes() throws {
+        let reading = usage(
+            session: 42,
+            week: 78,
+            sessionReset: Date().addingTimeInterval(3_600),
+            weeklyReset: Date().addingTimeInterval(72 * 3_600)
+        )
+        var profile = claude("Work")
+        profile.claudeUsage = reading
+
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertEqual(row.valueLines.count, 2)
+        XCTAssertTrue(row.valueLines[0].contains("Session 42%"))
+        XCTAssertTrue(
+            row.valueLines[0].contains(
+                reading.sessionResetTime.resetTimeString()
+            )
+        )
+        XCTAssertTrue(row.valueLines[1].contains("Week 78%"))
+        XCTAssertTrue(
+            row.valueLines[1].contains(
+                reading.weeklyResetTime.resetTimeString()
+            )
+        )
+    }
+
+    func testWeeklyResetIsOmittedWhenWeeklyReadingIsUnavailable() throws {
+        var reading = usage(session: 42, week: nil)
+        reading.weeklyResetTime = Date().addingTimeInterval(72 * 3_600)
+        var profile = claude("Work")
+        profile.claudeUsage = reading
+
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertEqual(row.valueLines.count, 2)
+        XCTAssertEqual(row.valueLines[1], "Week —")
+        XCTAssertFalse(
+            row.valueLines[1].contains(reading.weeklyResetTime.resetTimeString())
+        )
+    }
+
+    func testAccessibilityValueNamesBothResetTimes() throws {
+        let reading = usage(
+            session: 42,
+            week: 78,
+            sessionReset: Date().addingTimeInterval(3_600),
+            weeklyReset: Date().addingTimeInterval(72 * 3_600)
+        )
+        var profile = claude("Work")
+        profile.claudeUsage = reading
+
+        let value = try XCTUnwrap(rows([profile]).first)
+            .accessibilityValueText
+
+        XCTAssertTrue(value.contains("Session, 42% used"))
+        XCTAssertTrue(value.contains(reading.sessionResetTime.resetTimeString()))
+        XCTAssertTrue(value.contains("Week, 78% used"))
+        XCTAssertTrue(value.contains(reading.weeklyResetTime.resetTimeString()))
     }
 
     func testAnAccountWithNoReadingCollapsesToASingleDash() throws {
@@ -168,7 +236,8 @@ final class HealthStripAccountRowTests: XCTestCase {
     }
 
     func testThePaceDotAppearsOnlyWhenThePaceMarkerIsOn() throws {
-        let profile = claude("Work", session: 60)
+        var profile = claude("Work", session: 60)
+        profile.claudeUsage?.sessionResetTime = Date().addingTimeInterval(3_600)
 
         let without = try XCTUnwrap(
             rows([profile], showPaceMarker: false).first

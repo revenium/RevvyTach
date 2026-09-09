@@ -2144,8 +2144,7 @@ struct MenuBarIconRenderer {
     /// `displayPercentage` is the *displayed* figure of the **tighter** of
     /// the account's two windows — used or remaining, whichever the user
     /// asked for. Tighter, not session: headroom is bounded by whichever
-    /// window runs out first, the rule the overflow list's `tightestUsed`
-    /// already states, and an account at 10% session and 85% week has far
+    /// window runs out first, and an account at 10% session and 85% week has far
     /// less room than a session-only bar would suggest. It is also the rule
     /// the numbers threshold uses, so the bar and the digits cannot disagree
     /// about what "busy" means.

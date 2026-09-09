@@ -243,6 +243,45 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
 
     // MARK: - Cell hit test
 
+    func testStripCellsFollowWeeklyResetOrderRegardlessOfInputOrder() throws {
+        func profile(_ name: String, reset: TimeInterval) -> Profile {
+            var usage = ClaudeUsage.empty
+            usage.weeklyPercentageAvailable = true
+            usage.weeklyResetTime = Date(timeIntervalSince1970: reset)
+            var profile = Profile(name: name)
+            profile.claudeUsage = usage
+            return profile
+        }
+        let late = profile("Late", reset: 300)
+        let early = profile("Early", reset: 100)
+        let middle = profile("Middle", reset: 200)
+        let input = [late, early, middle]
+        let expected = [early, middle, late]
+        let target = MenuTarget()
+        let manager = makeStripManager(profiles: input, target: target)
+        defer { manager.cleanup() }
+
+        manager.updateHealthStrip(
+            profiles: input,
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: nil
+        )
+        let button = try XCTUnwrap(manager.healthStripButton)
+        let image = try XCTUnwrap(button.image)
+        let inset = (button.bounds.width - image.size.width) / 2
+
+        for (index, profile) in expected.enumerated() {
+            let canvasX = HealthStripLayout.edgePadding
+                + CGFloat(index) * 7
+                + HealthStripLayout.barWidth / 2
+            XCTAssertEqual(
+                manager.healthStripProfileID(atButtonX: canvasX + inset),
+                profile.id
+            )
+        }
+    }
+
     /// The cells are laid out in the strip image's coordinates, but a click
     /// arrives in the button's, and the button is wider than the image and
     /// centres it. Measured on a real item the gap is about one 7pt cell

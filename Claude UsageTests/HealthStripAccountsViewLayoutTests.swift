@@ -80,13 +80,16 @@ final class HealthStripAccountsViewLayoutTests: XCTestCase {
                 + "20 rows: \(twenty.height)"
         )
 
-        XCTAssertEqual(one.width, PopoverDesign.width)
+        XCTAssertEqual(one.width, HealthStripAccountsView.width)
 
         // (a) One row's popover has room for the header, that row, the
         // divider and the footer. A collapsed row area lands well under this.
         XCTAssertGreaterThanOrEqual(
             one.height,
-            PopoverDesign.outerInset * 2 + 16 + 30 + 30,
+            PopoverDesign.outerInset * 2
+                + 16
+                + HealthStripAccountsView.rowHeight
+                + 30,
             "A one-row list must have room for a header, a row and the "
                 + "footer; a collapsed ScrollView would fall short here"
         )
@@ -94,7 +97,7 @@ final class HealthStripAccountsViewLayoutTests: XCTestCase {
         // (b) It grows with the rows.
         XCTAssertGreaterThan(
             five.height,
-            one.height + 40,
+            one.height + 3 * HealthStripAccountsView.rowHeight,
             "Four more rows must add height; if they do not, the row area is "
                 + "not being measured at all"
         )
@@ -104,7 +107,7 @@ final class HealthStripAccountsViewLayoutTests: XCTestCase {
         XCTAssertGreaterThan(twenty.height, five.height)
         XCTAssertLessThan(
             twenty.height,
-            five.height + 15 * 40,
+            five.height + 15 * HealthStripAccountsView.rowHeight,
             "20 rows must scroll rather than grow the popover"
         )
         XCTAssertLessThanOrEqual(
@@ -117,7 +120,7 @@ final class HealthStripAccountsViewLayoutTests: XCTestCase {
     func testAnEmptyListStillRendersItsHeaderAndFooter() {
         let empty = measuredSize(rowCount: 0)
 
-        XCTAssertEqual(empty.width, PopoverDesign.width)
+        XCTAssertEqual(empty.width, HealthStripAccountsView.width)
         XCTAssertGreaterThan(empty.height, 40)
     }
 }
