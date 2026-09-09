@@ -538,6 +538,11 @@ class MenuBarManager: NSObject, ObservableObject {
     // Kept apart from `popover` so opening it never disturbs that
     // popover's retained hosting controller / detached-window state.
     private var overflowPopover: NSPopover?
+    /// The health strip's accounts list. Its own popover, kept apart from
+    /// the main one for the reason `overflowPopover` is: nothing here may
+    /// disturb the main popover's retained hosting controller or its
+    /// detached-window state.
+    private var healthStripPopover: NSPopover?
 
     // Event monitor for closing popover on outside click
     private var eventMonitor: Any?
@@ -2280,6 +2285,16 @@ class MenuBarManager: NSObject, ObservableObject {
     }
 
     @objc private func togglePopover(_ sender: Any?) {
+        // The strip is one button for N accounts, so it has to be resolved
+        // before the ordinary context-menu branch: that branch asks the
+        // button which profile it belongs to, and the strip's answer would
+        // be the active account for every bar on it.
+        if let stripButton = sender as? NSStatusBarButton,
+           statusBarUIManager?.isHealthStripButton(stripButton) == true {
+            routeHealthStripClick(from: stripButton)
+            return
+        }
+
         if Self.isContextMenuEvent(NSApp.currentEvent?.type) {
             showContextMenu(for: sender as? NSStatusBarButton)
             return
@@ -2578,9 +2593,23 @@ class MenuBarManager: NSObject, ObservableObject {
     /// own status item would reach, anchored to the overflow item's
     /// button since that profile has no status item of its own.
     private func selectOverflowProfile(_ profileID: UUID) {
+        guard let overflowButton = statusBarUIManager?.overflowButton else {
+            return
+        }
+        openProfilePopover(profileID, anchoredTo: overflowButton)
+    }
+
+    /// Opens one profile's detail popover anchored to a button that is not
+    /// that profile's own status item — the overflow item, or the health
+    /// strip. Needs none of `setViewedProfile`'s hydration: every profile
+    /// reachable this way is already selected for display.
+    private func openProfilePopover(
+        _ profileID: UUID,
+        anchoredTo button: NSStatusBarButton
+    ) {
         guard let profile = profileManager.profiles.first(where: {
             $0.id == profileID
-        }), let overflowButton = statusBarUIManager?.overflowButton else {
+        }) else {
             return
         }
         let identity = ProviderStatusItemIdentity(
@@ -2590,10 +2619,184 @@ class MenuBarManager: NSObject, ObservableObject {
             metricID: nil
         )
         toggleValidatedPopover(
-            from: overflowButton,
+            from: button,
             target: identity,
             profile: profile
         )
+    }
+
+    // MARK: - Health Strip
+
+    /// Sends a click on the strip to the right place.
+    ///
+    /// A right click has to name the account under the pointer: the strip is
+    /// one button for N accounts, so the ordinary path would open the active
+    /// account's menu whichever bar was clicked. A left click opens the
+    /// accounts list, which is the strip's own affordance.
+    private func routeHealthStripClick(from button: NSStatusBarButton) {
+        // `NSApp.currentEvent` is nil when this action is sent
+        // programmatically, so it is read through a guarded binding rather
+        // than force-unwrapped in the middle of a click.
+        let event = NSApp.currentEvent
+        guard Self.isContextMenuEvent(event?.type) else {
+            toggleHealthStripPopover(from: button)
+            return
+        }
+
+        let profileID: UUID? = {
+            guard let event else {
+                return statusBarUIManager?.healthStripFallbackProfile
+            }
+            let point = button.convert(event.locationInWindow, from: nil)
+            return statusBarUIManager?.healthStripProfileID(at: point.x)
+                ?? statusBarUIManager?.healthStripFallbackProfile
+        }()
+        guard let profileID,
+              let profile = profileManager.profiles.first(where: {
+                  $0.id == profileID
+              }) else {
+            return
+        }
+        showContextMenu(
+            for: button,
+            identityOverride: ProviderStatusItemIdentity(
+                profileID: profile.id,
+                providerID: profile.providerID,
+                providerRevision: profile.providerRevision,
+                metricID: nil
+            )
+        )
+    }
+
+    /// Shows (or, on a repeat click, hides) the strip's accounts list.
+    ///
+    /// The rows are a value snapshot taken here, at open, and every row
+    /// action closes this popover before doing anything — so the content can
+    /// never mutate while it is on screen. That, plus `sizingOptions = []`
+    /// and an explicit `contentSize`, is the shape the main popover settled
+    /// on after a content-derived Auto Layout crash.
+    private func toggleHealthStripPopover(from button: NSStatusBarButton) {
+        if let healthStripPopover, healthStripPopover.isShown {
+            healthStripPopover.performClose(nil)
+            return
+        }
+
+        // Never show two content popovers/windows at once.
+        closePopoverOrWindow()
+
+        let config = profileManager.multiProfileConfig
+        let visible = profileManager.profiles.filter(\.isSelectedForDisplay)
+        let rows = HealthStripAccountRow.rows(
+            profiles: profileManager.profiles,
+            snapshots: profileUsagePresentations,
+            activeClaudeProfileID: profileManager.activeClaudeProfileID,
+            attention: attention(among: visible),
+            showRemaining: config.showRemainingPercentage,
+            showPaceMarker: config.showPaceMarker,
+            isActive: profileManager.isActive
+        )
+        let view = HealthStripAccountsView(
+            rows: rows,
+            onOpen: { [weak self] profileID in
+                self?.closeHealthStripPopover()
+                guard let button = self?.statusBarUIManager?
+                    .healthStripButton else { return }
+                self?.openProfilePopover(profileID, anchoredTo: button)
+            },
+            onActivate: { [weak self] profileID in
+                self?.closeHealthStripPopover()
+                self?.routeHealthStripRowAction(.activate, profileID)
+            },
+            onRefresh: { [weak self] profileID in
+                self?.closeHealthStripPopover()
+                self?.routeHealthStripRowAction(.refresh, profileID)
+            },
+            onRefreshAll: { [weak self] in
+                self?.closeHealthStripPopover()
+                self?.refreshAllSelectedProfilesFromUI()
+            },
+            onManageProfiles: { [weak self] in
+                self?.closeHealthStripPopover()
+                guard let first = rows.first?.id else {
+                    self?.showSettings(destination: .manageProfiles)
+                    return
+                }
+                self?.routeHealthStripRowAction(.manageProfiles, first)
+            },
+            onQuit: { [weak self] in
+                self?.closeHealthStripPopover()
+                guard let first = rows.first?.id else {
+                    NSApp.terminate(nil)
+                    return
+                }
+                self?.routeHealthStripRowAction(.quit, first)
+            }
+        )
+        let hostingController = NSHostingController(rootView: view)
+        hostingController.sizingOptions = []
+
+        let newPopover = NSPopover()
+        newPopover.behavior = .transient
+        newPopover.animates = false
+        newPopover.contentViewController = hostingController
+        newPopover.contentSize = NSSize(
+            width: PopoverDesign.width,
+            height: HealthStripAccountsView.contentHeight(
+                rowCount: rows.count
+            )
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        newPopover.show(
+            relativeTo: button.bounds,
+            of: button,
+            preferredEdge: .minY
+        )
+        healthStripPopover = newPopover
+    }
+
+    private func closeHealthStripPopover() {
+        healthStripPopover?.performClose(nil)
+    }
+
+    /// Sends one row's action through the captured-target router, so it
+    /// keeps the same staleness check every status item action has: a
+    /// profile deleted or re-provisioned while the list was open does
+    /// nothing rather than acting on the wrong account.
+    private func routeHealthStripRowAction(
+        _ action: ProviderCapturedTargetActionRouter.Action,
+        _ profileID: UUID
+    ) {
+        guard let profile = profileManager.profiles.first(where: {
+            $0.id == profileID
+        }) else {
+            return
+        }
+        let routed = capturedTargetRouter().route(
+            action,
+            target: ProviderStatusItemIdentity(
+                profileID: profile.id,
+                providerID: profile.providerID,
+                providerRevision: profile.providerRevision,
+                metricID: nil
+            )
+        )
+        if !routed {
+            LoggingService.shared.logWarning(
+                "Ignored health strip action for stale provider identity"
+            )
+        }
+    }
+
+    /// Refreshes every selected account at once.
+    ///
+    /// The one row action that does not go through the captured-target
+    /// router: that router dispatches a single profile and has no fan-out
+    /// case at all. `.manual` deliberately bypasses the per-profile interval
+    /// gate and writes no automatic-refresh record, and it covers Codex
+    /// accounts as well as Claude ones.
+    func refreshAllSelectedProfilesFromUI() {
+        lastRefreshTriggerTime = Date()
+        refreshAllSelectedProfiles(trigger: .manual)
     }
 
     nonisolated static func isContextMenuEvent(
@@ -2748,10 +2951,17 @@ class MenuBarManager: NSObject, ObservableObject {
         providerID == .claude
     }
 
-    private func showContextMenu(for button: NSStatusBarButton?) {
+    /// - Parameter identityOverride: The account this menu is about, when
+    ///   the button alone cannot say. The health strip is exactly that case:
+    ///   one button holds every account, so `statusIdentity(for:)` would
+    ///   name the active one whichever bar was right-clicked.
+    private func showContextMenu(
+        for button: NSStatusBarButton?,
+        identityOverride: ProviderStatusItemIdentity? = nil
+    ) {
         guard let button, let window = button.window else { return }
-        let identity =
-            ProviderStatusItemReconciliation.resolvedIdentity(
+        let identity = identityOverride
+            ?? ProviderStatusItemReconciliation.resolvedIdentity(
                 captured:
                     statusBarUIManager?.statusIdentity(for: button),
                 fallbackProfile: profileManager.activeProfile
@@ -3002,14 +3212,38 @@ class MenuBarManager: NSObject, ObservableObject {
                     isActive: profileManager.isActive
                 )
             let config = profileManager.multiProfileConfig
-            statusBarUIManager?.updateProviderMultiProfileButtons(
-                presentations: presentations,
-                profiles: profileManager.profiles,
-                config: config,
-                activeClaudeProfileID: profileManager.activeClaudeProfileID,
-                isActive: profileManager.isActive,
-                attention: attention(among: visible)
-            )
+            if statusBarUIManager?.multiLayout == .healthStrip {
+                // Codex accounts keep their own items and are painted
+                // exactly as before; every Claude account goes into the one
+                // strip image instead.
+                statusBarUIManager?.updateNonClaudeMultiProfileButtons(
+                    presentations: presentations,
+                    profiles: profileManager.profiles,
+                    config: config,
+                    isActive: profileManager.isActive
+                )
+                statusBarUIManager?.updateHealthStrip(
+                    profiles: profileManager.profiles,
+                    config: config,
+                    threshold: DataStore.shared
+                        .loadHealthStripNumbersThreshold(),
+                    activeClaudeProfileID:
+                        profileManager.activeClaudeProfileID,
+                    attention: attention(among: visible),
+                    snapshots: profileUsagePresentations,
+                    now: now
+                )
+            } else {
+                statusBarUIManager?.updateProviderMultiProfileButtons(
+                    presentations: presentations,
+                    profiles: profileManager.profiles,
+                    config: config,
+                    activeClaudeProfileID:
+                        profileManager.activeClaudeProfileID,
+                    isActive: profileManager.isActive,
+                    attention: attention(among: visible)
+                )
+            }
             scheduleFreshnessDeadline(for: presentations, now: now)
         } else {
             guard let profile = profileManager.activeProfile else {
@@ -3832,8 +4066,20 @@ class MenuBarManager: NSObject, ObservableObject {
     }
 
     private func handleFrontmostAppChange() {
-        guard profileManager.displayMode == .multi else { return }
+        guard overflowRecomputeApplies else { return }
         scheduleOverflowRecompute()
+    }
+
+    /// Whether an overflow recompute is worth doing at all.
+    ///
+    /// The health strip is one item however many accounts it holds, so it
+    /// cannot overflow. Every recompute trigger in strip layout would
+    /// produce the same empty plan — and in automatic mode would reach
+    /// `MenuBarSpaceProbe`'s synchronous Accessibility reads to do it, which
+    /// contend with a running menu bar manager.
+    private var overflowRecomputeApplies: Bool {
+        profileManager.displayMode == .multi
+            && DataStore.shared.loadMenuBarMultiLayout() == .perProfileItems
     }
 
     /// Observes any application launching or quitting, so `.automatic`
@@ -3953,7 +4199,7 @@ class MenuBarManager: NSObject, ObservableObject {
         // (see `overflowPlan`'s `.automatic`-only guard), so a replan on
         // their behalf would just repeat the same manager-independent plan
         // for no reason — skip it rather than do that pointless work.
-        guard profileManager.displayMode == .multi,
+        guard overflowRecomputeApplies,
               case .automatic = DataStore.shared.loadMenuBarOverflowMode()
         else { return }
         scheduleOverflowRecompute()
@@ -3978,7 +4224,7 @@ class MenuBarManager: NSObject, ObservableObject {
         // reconfiguration can fire this notification several times in
         // quick succession, and recomputing on every one of them would
         // thrash status items in and out.
-        guard profileManager.displayMode == .multi else { return }
+        guard overflowRecomputeApplies else { return }
         scheduleOverflowRecompute()
     }
 
@@ -3986,6 +4232,7 @@ class MenuBarManager: NSObject, ObservableObject {
     /// configuration or frontmost-application changes (see
     /// `handleScreenChange()` / `handleFrontmostAppChange()`).
     private func scheduleOverflowRecompute() {
+        guard overflowRecomputeApplies else { return }
         overflowRecomputeDebounceTimer?.invalidate()
         overflowRecomputeDebounceTimer = Timer.scheduledTimer(
             withTimeInterval: 0.2,
@@ -4007,6 +4254,8 @@ class MenuBarManager: NSObject, ObservableObject {
         let config = profileManager.multiProfileConfig
         statusBarUIManager?.overflowMode =
             DataStore.shared.loadMenuBarOverflowMode()
+        statusBarUIManager?.multiLayout =
+            DataStore.shared.loadMenuBarMultiLayout()
         statusBarUIManager?.setupMultiProfile(
             profiles: selectedProfiles,
             target: self,
@@ -4030,6 +4279,8 @@ class MenuBarManager: NSObject, ObservableObject {
     private func updateMultiProfileDisplay() {
         statusBarUIManager?.overflowMode =
             DataStore.shared.loadMenuBarOverflowMode()
+        statusBarUIManager?.multiLayout =
+            DataStore.shared.loadMenuBarMultiLayout()
         statusBarUIManager?.updateMultiProfileConfiguration(
             profiles: profileManager.profiles,
             target: self,
