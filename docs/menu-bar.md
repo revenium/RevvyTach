@@ -60,7 +60,9 @@ and narrow the strip on every refresh.
 account, both usage windows, whether it is active and whether a sign-in needs attention. Each
 row carries Make Active, Refresh and Open; the footer carries Refresh All, Manage Profiles and
 Quit. A right click on a bar opens that account's own menu — the bar under the pointer, not the
-active account.
+active account. That menu appears under the left edge of the strip rather than under the bar you
+clicked, because macOS positions a menu from the whole item; the menu still belongs to the
+account you clicked.
 
 **Codex accounts keep their own items.** The strip draws Claude accounts only. Because the icon
 style setting then governs no Claude item at all, it is disabled while the strip is on, with a

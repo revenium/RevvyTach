@@ -2648,7 +2648,8 @@ class MenuBarManager: NSObject, ObservableObject {
                 return statusBarUIManager?.healthStripFallbackProfile
             }
             let point = button.convert(event.locationInWindow, from: nil)
-            return statusBarUIManager?.healthStripProfileID(at: point.x)
+            return statusBarUIManager?
+                .healthStripProfileID(atButtonX: point.x)
                 ?? statusBarUIManager?.healthStripFallbackProfile
         }()
         guard let profileID,

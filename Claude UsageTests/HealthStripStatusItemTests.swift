@@ -205,13 +205,73 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
             "With no click coordinate, the strip resolves to the active "
                 + "account"
         )
+    }
+
+    // MARK: - Cell hit test
+
+    /// The cells are laid out in the strip image's coordinates, but a click
+    /// arrives in the button's, and the button is wider than the image and
+    /// centres it. Measured on a real item the gap is about one 7pt cell
+    /// pitch, so without the conversion cell n resolves as cell n-1 and
+    /// Refresh on the fifth account refreshes the fourth.
+    func testTheInsetConversionMovesAClickIntoImageSpace() {
         XCTAssertEqual(
-            manager.healthStripProfileID(at: HealthStripLayout.edgePadding),
-            profiles[0].id
+            StatusBarUIManager.healthStripCanvasX(
+                buttonX: 20,
+                buttonWidth: 72,
+                imageWidth: 58
+            ),
+            13,
+            "A 72pt button around a 58pt image insets it by 7pt per side"
+        )
+        XCTAssertEqual(
+            StatusBarUIManager.healthStripCanvasX(
+                buttonX: 20,
+                buttonWidth: 58,
+                imageWidth: 58
+            ),
+            20,
+            "With no inset the two spaces are the same"
+        )
+    }
+
+    func testEveryCellResolvesThroughTheRealButtonGeometry() throws {
+        let target = MenuTarget()
+        let profiles = claudeProfiles(5)
+        let manager = makeStripManager(profiles: profiles, target: target)
+        defer { manager.cleanup() }
+        manager.updateHealthStrip(
+            profiles: profiles,
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: profiles[0].id
+        )
+
+        let button = try XCTUnwrap(manager.healthStripButton)
+        let image = try XCTUnwrap(button.image)
+        let inset = (button.bounds.width - image.size.width) / 2
+
+        for (index, profile) in profiles.enumerated() {
+            // The centre of this account's own 4pt bar, in image space,
+            // pushed back out into the button's coordinates the way a real
+            // click arrives.
+            let canvasX = HealthStripLayout.edgePadding
+                + CGFloat(index) * 7
+                + HealthStripLayout.barWidth / 2
+            XCTAssertEqual(
+                manager.healthStripProfileID(atButtonX: canvasX + inset),
+                profile.id,
+                "Cell \(index) must resolve to its own account"
+            )
+        }
+        XCTAssertEqual(
+            manager.healthStripProfileID(atButtonX: inset),
+            nil,
+            "The leading 1pt margin belongs to no account"
         )
         XCTAssertNil(
-            manager.healthStripProfileID(at: 0),
-            "A click in the leading padding belongs to no account"
+            manager.healthStripProfileID(atButtonX: 0),
+            "and neither does the button's own padding"
         )
     }
 

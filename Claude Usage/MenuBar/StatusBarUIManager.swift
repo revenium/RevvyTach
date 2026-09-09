@@ -164,6 +164,12 @@ final class StatusBarUIManager {
     /// x coordinate can be resolved back to the account under it.
     private var healthStripCells: [HealthStripCell] = []
 
+    /// Width of the image those cells were laid out in. A status item's
+    /// button is wider than its image and centres it, so a click's x has to
+    /// be moved into image space before it means anything — without this the
+    /// gap is about one 7pt cell pitch and every cell resolves off by one.
+    private var healthStripImageWidth: CGFloat = 0
+
     /// The account a click on the strip's padding falls back to — the
     /// active one when it is on the strip, otherwise the first drawn.
     private var healthStripFallbackProfileID: UUID?
@@ -1010,6 +1016,7 @@ final class StatusBarUIManager {
         }
         healthStripStatusItem = nil
         healthStripCells.removeAll()
+        healthStripImageWidth = 0
         healthStripFallbackProfileID = nil
         healthStripNumbersShown.removeAll()
         healthStripNumbersThreshold = nil
@@ -1154,6 +1161,7 @@ final class StatusBarUIManager {
     ) {
         guard isNeeded else {
             healthStripCells.removeAll()
+            healthStripImageWidth = 0
             healthStripFallbackProfileID = nil
             guard let item = healthStripStatusItem, item.isVisible else {
                 return
@@ -2384,12 +2392,38 @@ final class StatusBarUIManager {
         healthStripStatusItem.map(ObjectIdentifier.init)
     }
 
+    /// Moves a click's x from the button's coordinates into the strip
+    /// image's own, which is where the cells were laid out.
+    ///
+    /// A status item button is wider than the image it draws and centres it,
+    /// so the two spaces differ by half that difference — measured on a real
+    /// item at roughly 7pt per side, one whole cell pitch. Pure and static so
+    /// the arithmetic is testable with an inset no test machine has to
+    /// produce for real.
+    static func healthStripCanvasX(
+        buttonX: CGFloat,
+        buttonWidth: CGFloat,
+        imageWidth: CGFloat
+    ) -> CGFloat {
+        buttonX - (buttonWidth - imageWidth) / 2
+    }
+
     /// Which account's bar a click at `x` — in the strip button's own
     /// coordinates — landed on. `nil` for the 1pt padding at either end;
     /// callers fall back to `healthStripFallbackProfile` rather than
     /// swallowing the click.
-    func healthStripProfileID(at x: CGFloat) -> UUID? {
-        HealthStripLayout.profileID(atX: x, in: healthStripCells)
+    func healthStripProfileID(atButtonX x: CGFloat) -> UUID? {
+        guard let button = healthStripStatusItem?.button else {
+            return nil
+        }
+        return HealthStripLayout.profileID(
+            atX: Self.healthStripCanvasX(
+                buttonX: x,
+                buttonWidth: button.bounds.width,
+                imageWidth: healthStripImageWidth
+            ),
+            in: healthStripCells
+        )
     }
 
     /// The account the strip targets when no x coordinate is available:
@@ -2621,6 +2655,7 @@ final class StatusBarUIManager {
             isDarkMode: menuBarIsDark
         )
         healthStripCells = render.cells
+        healthStripImageWidth = render.image.size.width
 
         let fallbackProfile = drawn.first {
             $0.id == activeClaudeProfileID
