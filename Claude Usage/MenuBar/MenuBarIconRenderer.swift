@@ -2158,6 +2158,13 @@ struct MenuBarIconRenderer {
         let profileID: UUID
         let profileName: String
         let displayPercentage: Double?
+        /// The two windows' own displayed figures, for the words. The bar can
+        /// only show one number; the tooltip and the spoken label say which
+        /// window each figure belongs to, because the bar's own figure
+        /// switches between them as usage moves and a number that changes
+        /// meaning without saying so is worse than no number.
+        let sessionDisplay: Double?
+        let weekDisplay: Double?
         let status: UsageStatusLevel
         let showRemaining: Bool
         let isActive: Bool
@@ -2170,6 +2177,8 @@ struct MenuBarIconRenderer {
             profileID: UUID,
             profileName: String,
             displayPercentage: Double?,
+            sessionDisplay: Double? = nil,
+            weekDisplay: Double? = nil,
             status: UsageStatusLevel,
             showRemaining: Bool,
             isActive: Bool = false,
@@ -2179,6 +2188,8 @@ struct MenuBarIconRenderer {
             self.profileID = profileID
             self.profileName = profileName
             self.displayPercentage = displayPercentage
+            self.sessionDisplay = sessionDisplay
+            self.weekDisplay = weekDisplay
             self.status = status
             self.showRemaining = showRemaining
             self.isActive = isActive
@@ -2343,23 +2354,49 @@ struct MenuBarIconRenderer {
         )
     }
 
-    /// What the strip says about one account, in the vocabulary the
-    /// per-account items already use — so nobody hears "no usage data" in
-    /// one layout and a fabricated "0% used" in the other.
+    /// What the strip says about one account.
+    ///
+    /// Both windows, each named — the shape
+    /// `compactPercentageAccessibilityLabel` already speaks for a per-account
+    /// status item, and `OverflowProfileRow.accessibilityValueText` for the
+    /// strip's own list. One unnamed number would be worse here than
+    /// anywhere else: the bar draws whichever window is tighter, so a single
+    /// figure silently changes which window it describes, and can fall while
+    /// usage rises. A window nobody read says so in words rather than being
+    /// rounded into a zero.
     static func healthStripAccountSentence(
         _ input: HealthStripProfileInput
     ) -> String {
+        let noReading = ProviderUILocalization.text(
+            "menubar.accessibility.state.no_data",
+            fallback: "no usage data"
+        )
+        let mode = StatusBarUIManager.usageModeText(
+            showRemaining: input.showRemaining
+        )
+        func window(_ name: String, _ display: Double?) -> String {
+            guard let display else {
+                return "\(name), \(noReading)"
+            }
+            return "\(name), \(Int(display.rounded()))% \(mode)"
+        }
+
         let value: String
-        if let display = input.displayPercentage {
-            value = "\(Int(display.rounded()))% "
-                + StatusBarUIManager.usageModeText(
-                    showRemaining: input.showRemaining
-                )
+        if input.sessionDisplay == nil && input.weekDisplay == nil {
+            // Nothing read at all is one sentence, not a list of absences —
+            // the condition `OverflowProfileRow.valueText` collapses on.
+            value = noReading
         } else {
-            value = ProviderUILocalization.text(
-                "menubar.accessibility.state.no_data",
-                fallback: "no usage data"
-            )
+            value = [
+                window(
+                    StatusBarUIManager.legacyMetricName(for: .session),
+                    input.sessionDisplay
+                ),
+                window(
+                    StatusBarUIManager.legacyMetricName(for: .week),
+                    input.weekDisplay
+                )
+            ].joined(separator: ", ")
         }
         return StatusBarUIManager.profileAccessibilityLabel(
             "\(input.profileName), \(value)",

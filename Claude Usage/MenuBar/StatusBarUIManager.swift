@@ -2519,14 +2519,13 @@ final class StatusBarUIManager {
                 ?? profile.claudeUsage
                 ?? ClaudeUsage.empty
 
-            // `readableSessionPercentage` in everything but its clock: the
-            // expiry comparison is made against the injected instant so a
-            // render is reproducible. Nil means no reading was received,
-            // which the strip draws as a dash rather than as a zero.
-            let sessionUsed: Double? = usage.sessionPercentageAvailable
-                ? (usage.sessionResetTime < now ? 0 : usage.sessionPercentage)
-                : nil
-            let weekUsed = usage.readableWeeklyPercentage
+            // One implementation of "what did each window actually read",
+            // shared with the numbers threshold. Nil means no reading was
+            // received, which the strip draws as a dash rather than a zero.
+            let (sessionUsed, weekUsed) = HealthStripNumbers.usedPercentages(
+                for: usage,
+                now: now
+            )
 
             var unknownWindows: MenuBarUnknownWindows = []
             if sessionUsed == nil {
@@ -2650,6 +2649,10 @@ final class StatusBarUIManager {
                     profileID: profile.id,
                     profileName: profile.name,
                     displayPercentage: displayPercentage,
+                    // The words name both windows even though the bar can
+                    // only draw one; nil is an unread window, not a zero.
+                    sessionDisplay: sessionUsed.map { _ in sessionDisplay },
+                    weekDisplay: weekUsed.map { _ in weekDisplay },
                     status: barStatus,
                     showRemaining: showRemaining,
                     isActive: profile.id == activeClaudeProfileID,

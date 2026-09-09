@@ -62,14 +62,24 @@ nonisolated enum HealthStripNumbers {
     /// Both are *used* percentages, never the displayed figure — otherwise
     /// remaining mode would invert the trigger and an idle account would
     /// widen the strip.
-    /// `@MainActor` only because `ClaudeUsage` is: the app target defaults
-    /// to main-actor isolation, and this reads two of its properties. The
-    /// decision itself, `showsNumbers`, stays free of any isolation.
+    /// `now` rather than the wall clock: `readableSessionPercentage`
+    /// compares the 5-hour window's expiry against `Date()` at call time, and
+    /// a menu bar render has to be reproducible from its inputs. This is the
+    /// same rule with the instant injected, and it is the one implementation
+    /// — `updateHealthStrip` calls it rather than repeating it inline.
+    ///
+    /// `@MainActor` only because `ClaudeUsage` is: the app target defaults to
+    /// main-actor isolation, and this reads its properties. The decision
+    /// itself, `showsNumbers`, stays free of any isolation.
     @MainActor
     static func usedPercentages(
-        for usage: ClaudeUsage
+        for usage: ClaudeUsage,
+        now: Date = Date()
     ) -> (session: Double?, week: Double?) {
-        (usage.readableSessionPercentage, usage.readableWeeklyPercentage)
+        let session: Double? = usage.sessionPercentageAvailable
+            ? (usage.sessionResetTime < now ? 0 : usage.sessionPercentage)
+            : nil
+        return (session, usage.readableWeeklyPercentage)
     }
 
     /// Whether this account's cell shows its numbers.

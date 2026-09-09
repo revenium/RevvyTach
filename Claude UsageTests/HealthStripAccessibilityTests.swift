@@ -16,9 +16,13 @@ import XCTest
 final class HealthStripAccessibilityTests: XCTestCase {
     private let renderer = MenuBarIconRenderer()
 
+    /// `session` and `week` are the two windows' own displayed figures;
+    /// the bar's figure is whichever is tighter, which is what the strip
+    /// actually resolves upstream.
     private func input(
         name: String,
-        displayPercentage: Double?,
+        session: Double?,
+        week: Double? = nil,
         showRemaining: Bool = false,
         isActive: Bool = false,
         attention: MenuBarAttentionSignal.Credential? = nil
@@ -26,13 +30,23 @@ final class HealthStripAccessibilityTests: XCTestCase {
         MenuBarIconRenderer.HealthStripProfileInput(
             profileID: UUID(),
             profileName: name,
-            displayPercentage: displayPercentage,
+            displayPercentage: [session, week].compactMap { $0 }.max(),
+            sessionDisplay: session,
+            weekDisplay: week,
             status: .safe,
             showRemaining: showRemaining,
             isActive: isActive,
             attention: attention,
             numbersImage: nil
         )
+    }
+
+    private func sessionName() -> String {
+        StatusBarUIManager.legacyMetricName(for: .session)
+    }
+
+    private func weekName() -> String {
+        StatusBarUIManager.legacyMetricName(for: .week)
     }
 
     private func strip(
@@ -48,7 +62,7 @@ final class HealthStripAccessibilityTests: XCTestCase {
     func testTheTooltipNamesEveryAccountOnTheStrip() {
         let names = ["Work", "Personal", "Consulting", "Spare"]
         let render = strip(
-            names.map { input(name: $0, displayPercentage: 40) }
+            names.map { input(name: $0, session: 40) }
         )
 
         for name in names {
@@ -62,21 +76,27 @@ final class HealthStripAccessibilityTests: XCTestCase {
 
     func testTheHeaderCountsTheAccounts() {
         let render = strip(
-            (0..<3).map { input(name: "P\($0)", displayPercentage: 10) }
+            (0..<3).map { input(name: "P\($0)", session: 10) }
         )
 
         XCTAssertTrue(render.tooltip.contains("3"))
         XCTAssertTrue(render.accessibilityLabel.contains("3"))
     }
 
-    func testTheLabelStatesEachAccountsSessionValue() {
+    func testTheLabelNamesBothWindowsForEveryAccount() {
         let render = strip([
-            input(name: "Work", displayPercentage: 83),
-            input(name: "Personal", displayPercentage: 12)
+            input(name: "Work", session: 83, week: 40),
+            input(name: "Personal", session: 12, week: 9)
         ])
 
-        XCTAssertTrue(render.accessibilityLabel.contains("83%"))
-        XCTAssertTrue(render.accessibilityLabel.contains("12%"))
+        for figure in ["83%", "40%", "12%", "9%"] {
+            XCTAssertTrue(
+                render.accessibilityLabel.contains(figure),
+                "\(figure) is missing from: \(render.accessibilityLabel)"
+            )
+        }
+        XCTAssertTrue(render.accessibilityLabel.contains(sessionName()))
+        XCTAssertTrue(render.accessibilityLabel.contains(weekName()))
         XCTAssertTrue(
             render.accessibilityLabel.contains(
                 StatusBarUIManager.usageModeText(showRemaining: false)
@@ -84,9 +104,41 @@ final class HealthStripAccessibilityTests: XCTestCase {
         )
     }
 
+    /// The bar draws whichever window is tighter, so an unnamed number would
+    /// change meaning between refreshes — and could fall while usage rises.
+    func testTheWeekIsNamedWhenItIsTheTighterWindow() throws {
+        let render = strip([input(name: "Work", session: 30, week: 91)])
+        let line = try XCTUnwrap(
+            render.tooltip.split(separator: "\n").map(String.init).last
+        )
+
+        XCTAssertTrue(
+            line.contains("\(weekName()), 91%"),
+            "The 91% the bar is drawn from must be named as the week: \(line)"
+        )
+        XCTAssertTrue(
+            line.contains("\(sessionName()), 30%"),
+            "and the session figure must still be said: \(line)"
+        )
+    }
+
+    func testAWindowNobodyReadIsNamedAndSaidInWords() throws {
+        let render = strip([input(name: "Work", session: nil, week: 60)])
+        let noData = ProviderUILocalization.text(
+            "menubar.accessibility.state.no_data",
+            fallback: "no usage data"
+        )
+        let line = try XCTUnwrap(
+            render.tooltip.split(separator: "\n").map(String.init).last
+        )
+
+        XCTAssertTrue(line.contains("\(sessionName()), \(noData)"))
+        XCTAssertTrue(line.contains("\(weekName()), 60%"))
+    }
+
     func testRemainingModeIsSaidInTheRemainingVocabulary() {
         let render = strip([
-            input(name: "Work", displayPercentage: 80, showRemaining: true)
+            input(name: "Work", session: 80, showRemaining: true)
         ])
 
         XCTAssertTrue(
@@ -97,9 +149,9 @@ final class HealthStripAccessibilityTests: XCTestCase {
         )
     }
 
-    func testAnAccountWithNoReadingIsSaidInWordsNotAsZeroPercent() {
+    func testAnAccountWithNeitherWindowReadCollapsesToOneSentence() {
         let render = strip([
-            input(name: "Work", displayPercentage: nil)
+            input(name: "Work", session: nil, week: nil)
         ])
         let noData = ProviderUILocalization.text(
             "menubar.accessibility.state.no_data",
@@ -115,10 +167,10 @@ final class HealthStripAccessibilityTests: XCTestCase {
 
     func testTheCredentialSentenceComesFromAttentionStateTextAndDiffers() {
         let claudeCode = strip([
-            input(name: "Work", displayPercentage: 50, attention: .claudeCode)
+            input(name: "Work", session: 50, attention: .claudeCode)
         ])
         let claudeAI = strip([
-            input(name: "Work", displayPercentage: 50, attention: .claudeAI)
+            input(name: "Work", session: 50, attention: .claudeAI)
         ])
 
         let codeText = StatusBarUIManager.attentionStateText(.claudeCode)
@@ -137,8 +189,8 @@ final class HealthStripAccessibilityTests: XCTestCase {
 
     func testOnlyTheTroubledAccountCarriesTheCredentialSentence() {
         let render = strip([
-            input(name: "Work", displayPercentage: 50, attention: .claudeAI),
-            input(name: "Personal", displayPercentage: 50)
+            input(name: "Work", session: 50, attention: .claudeAI),
+            input(name: "Personal", session: 50)
         ])
         let aiText = StatusBarUIManager.attentionStateText(.claudeAI)
         let lines = render.tooltip.split(separator: "\n").map(String.init)
@@ -150,13 +202,13 @@ final class HealthStripAccessibilityTests: XCTestCase {
 
     func testTheActiveAccountIsAnnouncedAsActive() {
         let render = strip([
-            input(name: "Work", displayPercentage: 50, isActive: true),
-            input(name: "Personal", displayPercentage: 50)
+            input(name: "Work", session: 50, isActive: true),
+            input(name: "Personal", session: 50)
         ])
         let lines = render.tooltip.split(separator: "\n").map(String.init)
 
         let activeWording = StatusBarUIManager.profileAccessibilityLabel(
-            "Work, 50% used",
+            "Work, \(sessionName()), 50% used, \(weekName()), no usage data",
             isActive: true
         )
         XCTAssertEqual(lines[1], activeWording)
@@ -165,9 +217,9 @@ final class HealthStripAccessibilityTests: XCTestCase {
 
     func testTheTooltipAndTheLabelDescribeTheSameAccounts() {
         let inputs = [
-            input(name: "Work", displayPercentage: 83, attention: .claudeCode),
-            input(name: "Personal", displayPercentage: nil),
-            input(name: "Spare", displayPercentage: 4, isActive: true)
+            input(name: "Work", session: 83, week: 20, attention: .claudeCode),
+            input(name: "Personal", session: nil),
+            input(name: "Spare", session: 4, isActive: true)
         ]
         let render = strip(inputs)
 

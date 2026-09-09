@@ -137,6 +137,40 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         }
     }
 
+    /// Splitting the non-Claude half of `updateProviderMultiProfileButtons`
+    /// out is where a Codex item could silently go blank in strip layout
+    /// only, so it is not enough that its item is still visible.
+    func testACodexItemStillGetsAnImageInStripLayout() throws {
+        let target = MenuTarget()
+        let codex = codexProfile()
+        let profiles = claudeProfiles(1) + [codex]
+        let manager = makeStripManager(profiles: profiles, target: target)
+        defer { manager.cleanup() }
+
+        let presentations = ProviderMenuPresentationBuilder.presentations(
+            profiles: profiles,
+            snapshots: [:],
+            now: Date(),
+            isActive: { _ in false }
+        )
+        manager.updateNonClaudeMultiProfileButtons(
+            presentations: presentations,
+            profiles: profiles,
+            config: MultiProfileDisplayConfig(),
+            isActive: { _ in false }
+        )
+
+        let button = try XCTUnwrap(manager.button(for: codex.id))
+        XCTAssertNotNil(
+            button.image,
+            "A Codex account must still be drawn while the strip is on"
+        )
+        XCTAssertGreaterThan(
+            button.image?.size.width ?? 0,
+            0
+        )
+    }
+
     func testAStripIsNotCreatedWhenNoClaudeAccountIsSelected() {
         let target = MenuTarget()
         let manager = makeStripManager(
@@ -673,21 +707,33 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         let manager = makeStripManager(profiles: [profile], target: target)
         defer { manager.cleanup() }
 
+        // A threshold the week clears and the session does not: if the
+        // strip still keyed on the session alone, 10% would be under it.
         manager.updateHealthStrip(
             profiles: [profile],
             config: MultiProfileDisplayConfig(),
-            threshold: .percent(90),
+            threshold: .percent(80),
             activeClaudeProfileID: nil
         )
 
-        let tooltip = try stripTooltip(manager)
-        XCTAssertTrue(
-            tooltip.contains("85%"),
+        XCTAssertEqual(
+            manager.healthStripNumbersShownForTesting[profile.id],
+            true,
             "Headroom is bounded by the tighter window; a 10% session bar "
-                + "would call an account near its weekly wall comfortable. "
+                + "would call an account near its weekly wall comfortable"
+        )
+        let tooltip = try stripTooltip(manager)
+        let week = StatusBarUIManager.legacyMetricName(for: .week)
+        let session = StatusBarUIManager.legacyMetricName(for: .session)
+        XCTAssertTrue(
+            tooltip.contains("\(week), 85%"),
+            "and the words must name the window the bar was drawn from. "
                 + "Tooltip was: \(tooltip)"
         )
-        XCTAssertFalse(tooltip.contains("10%"))
+        XCTAssertTrue(
+            tooltip.contains("\(session), 10%"),
+            "without dropping the other window"
+        )
     }
 
     func testAnUnreadSessionWithAReadWeekIsNotADash() throws {
@@ -707,19 +753,23 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
             activeClaudeProfileID: nil
         )
 
-        let tooltip = try stripTooltip(manager)
-        XCTAssertTrue(
-            tooltip.contains("95%"),
-            "A working account at 95% of its week must not be drawn as no "
+        XCTAssertEqual(
+            manager.healthStripNumbersShownForTesting[profile.id],
+            true,
+            "A working account at 95% of its week must not be treated as no "
                 + "reading just because its session window is missing"
         )
-        XCTAssertFalse(
-            tooltip.contains(
-                ProviderUILocalization.text(
-                    "menubar.accessibility.state.no_data",
-                    fallback: "no usage data"
-                )
-            )
+        let tooltip = try stripTooltip(manager)
+        let week = StatusBarUIManager.legacyMetricName(for: .week)
+        let session = StatusBarUIManager.legacyMetricName(for: .session)
+        let noData = ProviderUILocalization.text(
+            "menubar.accessibility.state.no_data",
+            fallback: "no usage data"
+        )
+        XCTAssertTrue(tooltip.contains("\(week), 95%"))
+        XCTAssertTrue(
+            tooltip.contains("\(session), \(noData)"),
+            "and the missing window is named rather than passed over"
         )
     }
 
