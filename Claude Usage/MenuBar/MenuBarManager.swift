@@ -2605,9 +2605,15 @@ class MenuBarManager: NSObject, ObservableObject {
     /// that profile's own status item — the overflow item, or the health
     /// strip. Needs none of `setViewedProfile`'s hydration: every profile
     /// reachable this way is already selected for display.
+    /// - Parameter checksBounce: Left on for the overflow list, whose
+    ///   behaviour is unchanged. The health strip turns it off: it collapses
+    ///   N accounts into one button, so its list is anchored to the same
+    ///   button a profile popover would be, and the 250 ms same-button guard
+    ///   would read a row's Open as a second click on the status item.
     private func openProfilePopover(
         _ profileID: UUID,
-        anchoredTo button: NSStatusBarButton
+        anchoredTo button: NSStatusBarButton,
+        checksBounce: Bool = true
     ) {
         guard let profile = profileManager.profiles.first(where: {
             $0.id == profileID
@@ -2624,10 +2630,7 @@ class MenuBarManager: NSObject, ObservableObject {
             from: button,
             target: identity,
             profile: profile,
-            // This runs from a press inside a popover that has just closed
-            // itself, on the same button. The bounce guard would read that as
-            // a double click on the status item and silently do nothing.
-            checksBounce: false
+            checksBounce: checksBounce
         )
     }
 
@@ -2710,7 +2713,11 @@ class MenuBarManager: NSObject, ObservableObject {
                 self?.closeHealthStripPopover()
                 guard let button = self?.statusBarUIManager?
                     .healthStripButton else { return }
-                self?.openProfilePopover(profileID, anchoredTo: button)
+                self?.openProfilePopover(
+                    profileID,
+                    anchoredTo: button,
+                    checksBounce: false
+                )
             },
             onActivate: { [weak self] profileID in
                 self?.closeHealthStripPopover()
@@ -2724,21 +2731,19 @@ class MenuBarManager: NSObject, ObservableObject {
                 self?.closeHealthStripPopover()
                 self?.refreshAllSelectedProfilesFromUI()
             },
+            // Neither of these is about an account, so neither goes
+            // through the captured-target router: routing them would gate
+            // them on the first row's provider revision, and a credential
+            // rotation landing while the list is open would make Quit
+            // silently do nothing. `NSApp.terminate` is the app's normal
+            // quit path, the one `applicationShouldTerminate` guards.
             onManageProfiles: { [weak self] in
                 self?.closeHealthStripPopover()
-                guard let first = rows.first?.id else {
-                    self?.showSettings(destination: .manageProfiles)
-                    return
-                }
-                self?.routeHealthStripRowAction(.manageProfiles, first)
+                self?.showSettings(destination: .manageProfiles)
             },
             onQuit: { [weak self] in
                 self?.closeHealthStripPopover()
-                guard let first = rows.first?.id else {
-                    NSApp.terminate(nil)
-                    return
-                }
-                self?.routeHealthStripRowAction(.quit, first)
+                NSApp.terminate(nil)
             }
         )
         let hostingController = NSHostingController(rootView: view)
