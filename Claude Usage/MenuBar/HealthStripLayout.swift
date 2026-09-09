@@ -65,8 +65,8 @@ nonisolated enum HealthStripLayout {
         return barHeight * CGFloat(clamped) / 100
     }
 
-    /// Lays the accounts out left to right in the order given, which is the
-    /// profile list's own order.
+    /// Lays the accounts out left to right in the shared reset order prepared
+    /// by `ProfileResetOrder`.
     static func cells(
         for inputs: [(id: UUID, numbersWidth: CGFloat?)]
     ) -> [HealthStripCell] {

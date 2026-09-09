@@ -15,7 +15,7 @@ import XCTest
 /// records: an earlier pass on this popover predicted two truncations by
 /// counting characters and six of the nine locales truncated. These are real
 /// Core Text measurements of the real strings at the real font sizes, against
-/// the width the row actually gets — which is the 272pt content width minus
+/// the width the row actually gets — which is the 372pt content width minus
 /// the three action buttons and their spacing.
 final class HealthStripLocalizationFitTests: XCTestCase {
 
@@ -23,7 +23,7 @@ final class HealthStripLocalizationFitTests: XCTestCase {
         "de", "en", "es", "fr", "it", "ja", "ko", "pt", "zh-Hans"
     ]
 
-    /// What the name and numbers columns are left with once the three icon
+    /// What the name and window columns are left with once the three icon
     /// buttons are subtracted.
     private static var rowTextWidth: CGFloat {
         HealthStripAccountsView.rowTextWidth
@@ -31,7 +31,7 @@ final class HealthStripLocalizationFitTests: XCTestCase {
 
     /// The footer sits inside the popover's insets and shares one line.
     private static let footerWidth =
-        PopoverDesign.width - 2 * PopoverDesign.outerInset
+        HealthStripAccountsView.width - 2 * PopoverDesign.outerInset
     private static let footerSpacing: CGFloat = 12
 
     private func resourceBundle(for locale: String) throws -> Bundle {
@@ -86,24 +86,37 @@ final class HealthStripLocalizationFitTests: XCTestCase {
         ).width
     }
 
-    // MARK: - The numbers line
+    // MARK: - The window lines
 
-    /// "Session 100% · Week 100%" — 100 is the widest figure either window
-    /// can render in either polarity, since a remaining-mode account at 0%
-    /// used shows 100% too.
-    func testTheWindowsLineFitsBesideTheThreeActionButtons() throws {
+    /// The real three-line card puts each window and reset on its own line.
+    /// Render the widest percentage with both relative and calendar-shaped
+    /// reset text at the exact width left beside the action buttons.
+    func testEachWindowAndResetLineFitsBesideTheThreeActionButtons() throws {
         for locale in Self.locales {
             let session = try string("appearance.metric.name.session", locale)
             let week = try string("appearance.metric.name.week", locale)
-            let line = "\(session) 100% · \(week) 100%"
-            let measured = roundedWidth(line, size: 13, weight: .semibold)
+            let resetFormat = try string("menubar.resets_time", locale)
+            let cases = [
+                (session, "Tomorrow 12:59pm"),
+                (week, "Sep 12, 12:59pm")
+            ]
 
-            XCTAssertLessThanOrEqual(
-                measured,
-                Self.rowTextWidth,
-                "\(locale) clips the windows line: \(line) needs "
-                    + "\(measured)pt of \(Self.rowTextWidth)pt"
-            )
+            for (window, resetTime) in cases {
+                let reset = String(format: resetFormat, resetTime)
+                let line = "\(window) 100% · \(reset)"
+                let measured = roundedWidth(
+                    line,
+                    size: 13,
+                    weight: .semibold
+                )
+
+                XCTAssertLessThanOrEqual(
+                    measured,
+                    Self.rowTextWidth,
+                    "\(locale) clips the reset line: \(line) needs "
+                        + "\(measured)pt of \(Self.rowTextWidth)pt"
+                )
+            }
         }
     }
 
@@ -228,7 +241,8 @@ final class HealthStripLocalizationFitTests: XCTestCase {
             "menubar.healthstrip.accessibility_label",
             "menubar.healthstrip.header",
             "menubar.healthstrip.footer.refresh_all",
-            "menubar.healthstrip.row.active_badge"
+            "menubar.healthstrip.row.active_badge",
+            "menubar.resets_time"
         ]
         for locale in Self.locales {
             for key in keys {

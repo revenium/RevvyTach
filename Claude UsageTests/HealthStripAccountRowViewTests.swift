@@ -96,13 +96,20 @@ final class HealthStripAccountRowViewTests: XCTestCase {
         XCTAssertTrue(row.openLabel.contains("Consulting"))
     }
 
-    /// The name and numbers column is the same affordance as the Open
+    /// The name and windows column is the same affordance as the Open
     /// button, so it must announce the same thing.
     func testTheNameColumnAndTheOpenButtonShareOneLabel() {
         let row = makeRow(canActivate: true)
         let open = row.actions.first { $0.kind == .open }
 
         XCTAssertEqual(open?.label, row.openLabel)
+    }
+
+    func testAPercentageWithoutAUsableResetShowsOnlyThePercentage() {
+        let row = makeRow(canActivate: true)
+
+        XCTAssertEqual(row.valueLines, ["Session 42%"])
+        XCTAssertFalse(row.valueText.localizedCaseInsensitiveContains("reset"))
     }
 
     /// The row still has to render. This catches a view that fails to build
@@ -118,15 +125,18 @@ final class HealthStripAccountRowViewTests: XCTestCase {
         host.frame = NSRect(
             x: 0,
             y: 0,
-            width: PopoverDesign.width,
-            height: 60
+            width: HealthStripAccountsView.width,
+            height: HealthStripAccountsView.rowHeight
         )
         host.layoutSubtreeIfNeeded()
 
-        XCTAssertGreaterThan(host.fittingSize.height, 20)
+        XCTAssertGreaterThanOrEqual(
+            host.fittingSize.height,
+            HealthStripAccountsView.rowHeight
+        )
         XCTAssertLessThanOrEqual(
             host.fittingSize.width,
-            PopoverDesign.width
+            HealthStripAccountsView.width
         )
     }
 }

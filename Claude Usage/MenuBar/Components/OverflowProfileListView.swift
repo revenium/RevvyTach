@@ -31,6 +31,23 @@ struct OverflowProfileRow: Identifiable, Equatable {
         /// polarity, so the word would be noise on screen and is the only
         /// cue a VoiceOver user gets.
         let modeText: String
+
+        /// Present only on the Health strip's account cards. The overflow
+        /// list deliberately leaves this nil and keeps its compact one-line
+        /// value text unchanged.
+        let resetTime: Date?
+
+        init(
+            name: String,
+            percentageText: String?,
+            modeText: String,
+            resetTime: Date? = nil
+        ) {
+            self.name = name
+            self.percentageText = percentageText
+            self.modeText = modeText
+            self.resetTime = resetTime
+        }
     }
 
     let id: UUID
@@ -91,10 +108,10 @@ extension OverflowProfileRow {
 /// through to it exactly like clicking that profile's own status item
 /// would — same `onSelect` contract as `AccountChipView`'s tap handler.
 ///
-/// Rows arrive already ordered freest-first by
+/// Rows arrive already ordered by weekly reset by
 /// `MenuBarManager.overflowProfileRows`; this view never reorders them, and
-/// must not, because the ordering is keyed on raw used percentages the
-/// rendered text no longer carries. The "More Profiles" header is what
+/// must not, because the compact rendered text does not carry reset times.
+/// The "More Profiles" header is what
 /// names this as the set of accounts that did *not* fit, so a ranked
 /// partial list does not read as an answer about every account.
 struct OverflowProfileListView: View {

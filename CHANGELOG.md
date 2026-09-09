@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Claude accounts now line up by when their weekly window resets.** The
+  Health strip bars, its account dropdown, and the "+N" overflow list all put
+  the earliest known weekly reset first, then use the session reset and name
+  to break ties. Accounts without a weekly reading stay at the end. Each
+  Health strip account card also shows the session and weekly reset beside
+  its percentage, so choosing the next account no longer requires opening
+  them one at a time.
+
 - **The organization picker no longer lists console/API organizations you
   cannot choose.** Signing in with a claude.ai account showed every
   organization the account belongs to, including console/API ones that have no

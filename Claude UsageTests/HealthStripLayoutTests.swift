@@ -100,13 +100,30 @@ final class HealthStripLayoutTests: XCTestCase {
 
     // MARK: - Order
 
-    func testCellsKeepTheOrderTheyWereGiven() {
-        let ids = (0..<5).map { _ in UUID() }
+    func testCellsFollowThePreparedWeeklyResetOrder() {
+        func profile(_ name: String, weeklyReset: TimeInterval) -> Profile {
+            var usage = ClaudeUsage.empty
+            usage.weeklyPercentageAvailable = true
+            usage.weeklyResetTime = Date(timeIntervalSince1970: weeklyReset)
+            var profile = Profile(name: name)
+            profile.claudeUsage = usage
+            return profile
+        }
+        let late = profile("Late", weeklyReset: 300)
+        let early = profile("Early", weeklyReset: 100)
+        let middle = profile("Middle", weeklyReset: 200)
+        let ordered = ProfileResetOrder.sorted(
+            [late, early, middle],
+            snapshots: [:]
+        )
         let cells = HealthStripLayout.cells(
-            for: ids.map { (id: $0, numbersWidth: nil) }
+            for: ordered.map { (id: $0.id, numbersWidth: nil) }
         )
 
-        XCTAssertEqual(cells.map(\.profileID), ids)
+        XCTAssertEqual(
+            cells.map(\.profileID),
+            [early.id, middle.id, late.id]
+        )
     }
 
     // MARK: - Hit testing

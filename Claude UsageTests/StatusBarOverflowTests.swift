@@ -228,11 +228,13 @@ final class StatusBarOverflowTests: HostedAppTestCase {
     private func claudeProfile(
         named name: String,
         session: Double?,
-        week: Double?
+        week: Double?,
+        sessionReset: Date = Date(timeIntervalSince1970: 2_000_000_000),
+        weeklyReset: Date = Date(timeIntervalSince1970: 2_000_100_000)
     ) -> Profile {
         var usage = ClaudeUsage.empty
-        usage.sessionResetTime = Date().addingTimeInterval(3_600)
-        usage.weeklyResetTime = Date().addingTimeInterval(72 * 3_600)
+        usage.sessionResetTime = sessionReset
+        usage.weeklyResetTime = weeklyReset
         if let session {
             usage.sessionPercentage = session
             usage.sessionPercentageAvailable = true
@@ -258,22 +260,30 @@ final class StatusBarOverflowTests: HostedAppTestCase {
         )
     }
 
-    /// The list is ranked by headroom, not by which profiles happened to
-    /// fall off the end of the menu bar. Replaces the previous
-    /// `testOverflowProfileRowsMatchOrderAndPercentage`, which asserted the
-    /// positional order this ticket abolishes — and which, despite its name,
-    /// never asserted a percentage: its fixture set `sessionPercentage`
-    /// without `sessionPercentageAvailable`, so the 42 it wrote was a figure
-    /// the app was never told.
-    func testOverflowProfileRowsSortFreestFirstNotInSelectionOrder() {
+    func testOverflowProfileRowsSortByWeeklyResetNotSelectionOrder() {
+        let base = Date(timeIntervalSince1970: 2_000_000_000)
         let rows = overflowRows([
-            claudeProfile(named: "Charlie", session: 90, week: 10),
-            claudeProfile(named: "Alpha", session: 10, week: 80),
-            claudeProfile(named: "Bravo", session: 30, week: 20)
+            claudeProfile(
+                named: "Late",
+                session: 10,
+                week: 10,
+                weeklyReset: base.addingTimeInterval(300)
+            ),
+            claudeProfile(
+                named: "Early",
+                session: 90,
+                week: 90,
+                weeklyReset: base.addingTimeInterval(100)
+            ),
+            claudeProfile(
+                named: "Middle",
+                session: 50,
+                week: 50,
+                weeklyReset: base.addingTimeInterval(200)
+            )
         ])
 
-        // Keys are the tighter window: 30, 80, 90.
-        XCTAssertEqual(rows.map(\.name), ["Bravo", "Alpha", "Charlie"])
+        XCTAssertEqual(rows.map(\.name), ["Early", "Middle", "Late"])
     }
 
     func testOverflowProfileRowsPutUnmeasuredProfilesLast() {
@@ -306,14 +316,23 @@ final class StatusBarOverflowTests: HostedAppTestCase {
         XCTAssertEqual(rows[1].accessibilityValueText, "no usage data")
     }
 
-    /// Polarity flips what the row displays; it must never flip the order.
-    /// Alpha shows the larger number and still ranks first, because it has
-    /// used less.
-    func testOverflowProfileRowsSortByUsedWhenTheListDisplaysRemaining() {
+    /// Polarity flips what the row displays; it must never flip reset order.
+    func testOverflowProfileRowsKeepResetOrderWhenDisplayingRemaining() {
+        let base = Date(timeIntervalSince1970: 2_000_000_000)
         let rows = overflowRows(
             [
-                claudeProfile(named: "Bravo", session: 20, week: 20),
-                claudeProfile(named: "Alpha", session: 10, week: 10)
+                claudeProfile(
+                    named: "Bravo",
+                    session: 20,
+                    week: 20,
+                    weeklyReset: base.addingTimeInterval(200)
+                ),
+                claudeProfile(
+                    named: "Alpha",
+                    session: 10,
+                    week: 10,
+                    weeklyReset: base.addingTimeInterval(100)
+                )
             ],
             showRemaining: true
         )
@@ -374,7 +393,9 @@ final class StatusBarOverflowTests: HostedAppTestCase {
         var withCredits = claudeProfile(
             named: "Alpha",
             session: 60,
-            week: 70
+            week: 70,
+            weeklyReset: Date(timeIntervalSince1970: 2_000_100_000)
+                .addingTimeInterval(100)
         )
         // 1% of credits spent — far "freer" than either usage window, so a
         // row that let Credits in would rank Alpha first.
@@ -391,11 +412,17 @@ final class StatusBarOverflowTests: HostedAppTestCase {
 
         let rows = overflowRows([
             withCredits,
-            claudeProfile(named: "Bravo", session: 65, week: 65)
+            claudeProfile(
+                named: "Bravo",
+                session: 65,
+                week: 65,
+                weeklyReset: Date(timeIntervalSince1970: 2_000_100_000)
+            )
         ])
 
         XCTAssertEqual(rows[0].windows.map(\.name), ["Session", "Week"])
-        // Alpha keys on 70 (its weekly window), not on the 1% of credits.
+        // The API credit reset and percentage do not affect subscription
+        // reset ordering.
         XCTAssertEqual(rows.map(\.name), ["Bravo", "Alpha"])
     }
 
@@ -430,18 +457,18 @@ final class StatusBarOverflowTests: HostedAppTestCase {
     }
 
     /// A profile with one window read still shows both, with a dash naming
-    /// the one that is missing, and ranks on the window it does have. Only a
-    /// profile with no reading at all drops to the bottom.
+    /// the one that is missing. An unknown weekly window sorts last even
+    /// when its session window is readable.
     func testOverflowProfileRowsShowADashForAWindowThatWasNotRead() {
         let rows = overflowRows([
             claudeProfile(named: "Papa", session: 90, week: 90),
             claudeProfile(named: "Quebec", session: 40, week: nil)
         ])
 
-        XCTAssertEqual(rows.map(\.name), ["Quebec", "Papa"])
-        XCTAssertEqual(rows[0].valueText, "Session 40% · Week —")
+        XCTAssertEqual(rows.map(\.name), ["Papa", "Quebec"])
+        XCTAssertEqual(rows[1].valueText, "Session 40% · Week —")
         XCTAssertEqual(
-            rows[0].accessibilityValueText,
+            rows[1].accessibilityValueText,
             "Session, 40% used, Week, no usage data"
         )
     }

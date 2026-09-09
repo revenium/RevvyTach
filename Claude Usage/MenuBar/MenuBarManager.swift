@@ -2436,49 +2436,16 @@ class MenuBarManager: NSObject, ObservableObject {
         }
     }
 
-    /// One candidate overflow row, with everything the ordering needs
-    /// resolved once, before any comparison runs.
-    private struct OverflowSortEntry {
-        let profile: Profile
-        let metrics: [ProviderMetricPresentation]
-        /// Position in `profileIDs`, i.e. the overflow item's own order.
-        /// Last tiebreak only, so the ordering is total and reproducible.
-        let position: Int
-
-        /// Every window that actually has a reading.
-        var measured: [Double] { metrics.compactMap(\.usedPercentage) }
-
-        /// The window that limits this profile, as a *used* percentage —
-        /// never the displayed figure, which is flipped for a profile shown
-        /// in "remaining" mode. Headroom is bounded by the tighter of the
-        /// two windows: an account at 0% session and 100% week has none at
-        /// all, and ranking it first would send the user straight into the
-        /// weekly wall this list exists to help them avoid.
-        /// `nil` means no window was read.
-        ///
-        /// Windows with no reading are skipped rather than treated as 0, so
-        /// a half-read profile can rank on a flattering figure — 5% session
-        /// with an unread week keys at 5 however full that week is. Only a
-        /// profile with *no* reading at all is pushed to the bottom; ties
-        /// above that are broken by name, and demoting partial readings
-        /// would break that rule.
-        var tightestUsed: Double? { measured.max() }
-    }
-
-    /// Builds the rows for the overflow profile list popover, ordered
-    /// freest-first. Pulled out as a static, non-UI function so the "which
+    /// Builds the rows for the overflow profile list popover, ordered by the
+    /// shared weekly-reset rule. Pulled out as a static, non-UI function so
+    /// the "which
     /// profile shows which percentages, in which order" logic is testable
     /// without a live `MenuBarManager`/`NSStatusItem`.
     ///
-    /// The order is by ascending *used* percentage, so one list has one
-    /// meaning even though `showRemaining` flips what the row displays;
-    /// profiles with no reading at all sort last and read as a dash rather
-    /// than a reassuring 0%. Ties fall to `localizedStandardCompare` on the
-    /// name, the same Finder-style ordering
-    /// `ProviderMenuPresentationBuilder.presentations` already uses, then to
-    /// the incoming position — `sorted(by:)` is not documented stable, and
-    /// nothing makes profile names unique, so the total order has to come
-    /// from the comparator.
+    /// Known weekly resets sort earliest first; ties fall to known session
+    /// reset, Finder-style name order, then incoming position. Unknown weekly
+    /// resets form the last group. `showRemaining` changes only the figures
+    /// the row displays, never this order.
     ///
     /// This orders the popover list only. Status-item order and saved item
     /// positions are untouched, deliberately: menu bar managers track those
@@ -2495,58 +2462,34 @@ class MenuBarManager: NSObject, ObservableObject {
         showRemaining: Bool,
         now: Date = Date()
     ) -> [OverflowProfileRow] {
-        let entries = profileIDs.enumerated().compactMap {
-            position, id -> OverflowSortEntry? in
-            guard let profile = profiles.first(where: { $0.id == id })
-            else {
-                return nil
-            }
-            return OverflowSortEntry(
-                profile: profile,
-                metrics: ProviderMenuPresentationBuilder
+        let orderedProfiles = ProfileResetOrder.sorted(
+            profileIDs.compactMap { id in
+                profiles.first { $0.id == id }
+            },
+            snapshots: snapshots
+        )
+        return orderedProfiles.map { profile in
+            let metrics = ProviderMenuPresentationBuilder
                     .leadingWindowPresentations(
                         profile: profile,
-                        snapshot: snapshots[id],
+                        snapshot: snapshots[profile.id],
                         showRemaining: showRemaining,
                         now: now
-                    ),
-                position: position
+                    )
+            return OverflowProfileRow(
+                id: profile.id,
+                name: profile.name,
+                windows: metrics.map {
+                    OverflowProfileRow.Window(
+                        name: $0.descriptor.metricName,
+                        percentageText: $0.displayedPercentage == nil
+                            ? nil
+                            : $0.percentageText,
+                        modeText: $0.modeText
+                    )
+                }
             )
         }
-        return entries
-            .sorted { lhs, rhs in
-                switch (lhs.tightestUsed, rhs.tightestUsed) {
-                case let (left?, right?) where left != right:
-                    return left < right
-                case (nil, .some):
-                    return false
-                case (.some, nil):
-                    return true
-                default:
-                    break
-                }
-                let byName = lhs.profile.name
-                    .localizedStandardCompare(rhs.profile.name)
-                if byName != .orderedSame {
-                    return byName == .orderedAscending
-                }
-                return lhs.position < rhs.position
-            }
-            .map { entry in
-                OverflowProfileRow(
-                    id: entry.profile.id,
-                    name: entry.profile.name,
-                    windows: entry.metrics.map {
-                        OverflowProfileRow.Window(
-                            name: $0.descriptor.metricName,
-                            percentageText: $0.displayedPercentage == nil
-                                ? nil
-                                : $0.percentageText,
-                            modeText: $0.modeText
-                        )
-                    }
-                )
-            }
     }
 
     /// Shows (or, on a repeat click, hides) the overflow item's profile
