@@ -275,6 +275,69 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         )
     }
 
+    /// A real right-click event on cell 0 and on the last cell.
+    ///
+    /// This is the whole resolution chain a context menu goes through:
+    /// `NSEvent.locationInWindow` → the button's coordinates → the image's →
+    /// the cell. `showContextMenu` itself is not called, because it ends in
+    /// `NSMenu.popUp`, which blocks a test run in its own tracking loop.
+    func testARightClickResolvesTheFirstAndLastCell() throws {
+        let target = MenuTarget()
+        let profiles = claudeProfiles(5)
+        let manager = makeStripManager(profiles: profiles, target: target)
+        defer { manager.cleanup() }
+        manager.updateHealthStrip(
+            profiles: profiles,
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: profiles[0].id
+        )
+
+        let button = try XCTUnwrap(manager.healthStripButton)
+        let window = try XCTUnwrap(button.window)
+        let image = try XCTUnwrap(button.image)
+        let buttonOriginX = button.convert(button.bounds, to: nil).minX
+        let inset = (button.bounds.width - image.size.width) / 2
+
+        func rightClick(atCanvasX canvasX: CGFloat) throws -> NSEvent {
+            try XCTUnwrap(
+                NSEvent.mouseEvent(
+                    with: .rightMouseUp,
+                    location: NSPoint(
+                        x: buttonOriginX + inset + canvasX,
+                        y: button.convert(button.bounds, to: nil).midY
+                    ),
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 1
+                )
+            )
+        }
+
+        for index in [0, profiles.count - 1] {
+            let canvasX = HealthStripLayout.edgePadding
+                + CGFloat(index) * 7
+                + HealthStripLayout.barWidth / 2
+            let event = try rightClick(atCanvasX: canvasX)
+
+            XCTAssertTrue(
+                MenuBarManager.isContextMenuEvent(event.type),
+                "The event must classify as a context menu, or the strip "
+                    + "branch opens the accounts list instead"
+            )
+            XCTAssertEqual(
+                manager.healthStripProfileID(for: event),
+                profiles[index].id,
+                "A right click on cell \(index) must name that account, not "
+                    + "the active one and not its neighbour"
+            )
+        }
+    }
+
     // MARK: - Entering and leaving the layout
 
     func testEnteringAndLeavingStripLayoutPreservesEveryItemIdentity() {

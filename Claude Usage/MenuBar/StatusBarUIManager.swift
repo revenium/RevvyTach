@@ -2408,6 +2408,20 @@ final class StatusBarUIManager {
         buttonX - (buttonWidth - imageWidth) / 2
     }
 
+    /// Which account's bar a click landed on.
+    ///
+    /// The whole conversion chain lives here — window coordinates to the
+    /// button's, the button's to the image's — so a test can drive it with a
+    /// real event instead of reproducing two thirds of it.
+    func healthStripProfileID(for event: NSEvent) -> UUID? {
+        guard let button = healthStripStatusItem?.button else {
+            return nil
+        }
+        return healthStripProfileID(
+            atButtonX: button.convert(event.locationInWindow, from: nil).x
+        )
+    }
+
     /// Which account's bar a click at `x` — in the strip button's own
     /// coordinates — landed on. `nil` for the 1pt padding at either end;
     /// callers fall back to `healthStripFallbackProfile` rather than
