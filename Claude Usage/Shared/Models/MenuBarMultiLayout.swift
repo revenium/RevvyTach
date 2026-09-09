@@ -21,7 +21,7 @@ import Foundation
 /// It is also not a `MultiProfileIconStyle`: that enum picks how a *single*
 /// profile's own status item is drawn, and every consumer of it assumes one
 /// item per profile.
-enum MenuBarMultiLayout: String, Codable, CaseIterable {
+nonisolated enum MenuBarMultiLayout: String, Codable, CaseIterable {
     /// Today's behavior: one `NSStatusItem` per selected profile, with the
     /// overflow ("+N") item collapsing the ones that don't fit.
     case perProfileItems
