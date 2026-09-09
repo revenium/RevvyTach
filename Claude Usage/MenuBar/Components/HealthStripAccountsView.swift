@@ -302,6 +302,7 @@ struct HealthStripAccountsView: View {
     /// measurement that differs between locales, so counting rows would clip
     /// exactly where the rows are tallest.
     static let scrollMaxHeight: CGFloat = 420
+    static let clockRefreshInterval: TimeInterval = 60
 
     /// Size of one action icon button, the space between them, and the
     /// width the whole cluster takes out of a row.
@@ -330,6 +331,14 @@ struct HealthStripAccountsView: View {
             - actionColumnWidth
 
     var body: some View {
+        TimelineView(
+            .periodic(from: .now, by: Self.clockRefreshInterval)
+        ) { _ in
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
             PopoverSectionHeader(
                 title: ProviderUILocalization.text(
