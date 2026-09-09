@@ -435,6 +435,100 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         )
     }
 
+    // MARK: - The tighter window drives the bar
+
+    /// The strip's own words state the figure its bar was drawn from, so
+    /// they are how these tests read the bar without counting pixels.
+    private func stripTooltip(
+        _ manager: StatusBarUIManager
+    ) throws -> String {
+        let button = try XCTUnwrap(manager.healthStripButton)
+        return try XCTUnwrap(button.toolTip)
+    }
+
+    func testAnIdleSessionWithABusyWeekStillDrawsABusyBar() throws {
+        let target = MenuTarget()
+        var profile = Profile(name: "Work")
+        var reading = usage(sessionPercentage: 10)
+        reading.weeklyPercentage = 85
+        profile.claudeUsage = reading
+        let manager = makeStripManager(profiles: [profile], target: target)
+        defer { manager.cleanup() }
+
+        manager.updateHealthStrip(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: nil
+        )
+
+        let tooltip = try stripTooltip(manager)
+        XCTAssertTrue(
+            tooltip.contains("85%"),
+            "Headroom is bounded by the tighter window; a 10% session bar "
+                + "would call an account near its weekly wall comfortable. "
+                + "Tooltip was: \(tooltip)"
+        )
+        XCTAssertFalse(tooltip.contains("10%"))
+    }
+
+    func testAnUnreadSessionWithAReadWeekIsNotADash() throws {
+        let target = MenuTarget()
+        var profile = Profile(name: "Work")
+        var reading = ClaudeUsage.empty
+        reading.weeklyPercentage = 95
+        reading.weeklyPercentageAvailable = true
+        profile.claudeUsage = reading
+        let manager = makeStripManager(profiles: [profile], target: target)
+        defer { manager.cleanup() }
+
+        manager.updateHealthStrip(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: nil
+        )
+
+        let tooltip = try stripTooltip(manager)
+        XCTAssertTrue(
+            tooltip.contains("95%"),
+            "A working account at 95% of its week must not be drawn as no "
+                + "reading just because its session window is missing"
+        )
+        XCTAssertFalse(
+            tooltip.contains(
+                ProviderUILocalization.text(
+                    "menubar.accessibility.state.no_data",
+                    fallback: "no usage data"
+                )
+            )
+        )
+    }
+
+    func testAnAccountWithNeitherWindowReadIsADash() throws {
+        let target = MenuTarget()
+        var profile = Profile(name: "Work")
+        profile.claudeUsage = ClaudeUsage.empty
+        let manager = makeStripManager(profiles: [profile], target: target)
+        defer { manager.cleanup() }
+
+        manager.updateHealthStrip(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: nil
+        )
+
+        XCTAssertTrue(
+            try stripTooltip(manager).contains(
+                ProviderUILocalization.text(
+                    "menubar.accessibility.state.no_data",
+                    fallback: "no usage data"
+                )
+            )
+        )
+    }
+
     // MARK: - One reading for the bar and the numbers
 
     func testTheSnapshotWinsOverTheProfileRecordForBothBarAndNumbers() throws {
@@ -465,6 +559,59 @@ final class HealthStripStatusItemTests: HostedAppTestCase {
         XCTAssertTrue(
             button.toolTip?.contains("96%") == true,
             "and the words say the same figure the bar was drawn from"
+        )
+    }
+
+    /// A snapshot whose provider revision has moved on describes the
+    /// account as it was before a re-link or a credential rotation.
+    /// Rendering it would put the old identity's numbers on the strip while
+    /// every other surface correctly showed none.
+    func testASnapshotForAStaleIdentityIsIgnored() throws {
+        let target = MenuTarget()
+        var profile = Profile(name: "Work", providerRevision: 4)
+        profile.claudeUsage = usage(sessionPercentage: 12)
+        let manager = makeStripManager(profiles: [profile], target: target)
+        defer { manager.cleanup() }
+
+        var stale = presentationSnapshot(
+            for: profile,
+            usage: usage(sessionPercentage: 96)
+        )
+        stale = PresentationSnapshot(
+            profileID: stale.profileID,
+            profileName: stale.profileName,
+            providerID: stale.providerID,
+            providerRevision: profile.providerRevision + 1,
+            presentationEpoch: stale.presentationEpoch,
+            capabilities: stale.capabilities,
+            configurationState: stale.configurationState,
+            report: stale.report,
+            claudeUsage: stale.claudeUsage,
+            claudeAPIUsage: stale.claudeAPIUsage,
+            activity: stale.activity,
+            lastSuccessfulAt: stale.lastSuccessfulAt,
+            currentFailure: stale.currentFailure
+        )
+
+        manager.updateHealthStrip(
+            profiles: [profile],
+            config: MultiProfileDisplayConfig(),
+            threshold: .percent(90),
+            activeClaudeProfileID: nil,
+            snapshots: [profile.id: stale]
+        )
+
+        let button = try XCTUnwrap(manager.healthStripButton)
+        XCTAssertTrue(
+            button.toolTip?.contains("12%") == true,
+            "The profile record must win over a snapshot for a revision "
+                + "that no longer exists. Tooltip was: "
+                + "\(button.toolTip ?? "nil")"
+        )
+        XCTAssertEqual(
+            manager.healthStripNumbersShownForTesting[profile.id],
+            false,
+            "and the stale 96% must not trip the numbers threshold"
         )
     }
 

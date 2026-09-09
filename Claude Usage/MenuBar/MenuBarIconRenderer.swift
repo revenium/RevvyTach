@@ -2141,15 +2141,23 @@ struct MenuBarIconRenderer {
     /// caller so the bar, the digits and the spoken label can never describe
     /// different readings.
     ///
-    /// `sessionDisplay` is the *displayed* session figure — used or
-    /// remaining, whichever the user asked for — and `nil` means no reading
-    /// was ever received. That single nil drives both the dash in place of a
-    /// fill and the "no usage data" wording, so the picture and the words
-    /// agree by construction rather than by discipline.
+    /// `displayPercentage` is the *displayed* figure of the **tighter** of
+    /// the account's two windows — used or remaining, whichever the user
+    /// asked for. Tighter, not session: headroom is bounded by whichever
+    /// window runs out first, the rule the overflow list's `tightestUsed`
+    /// already states, and an account at 10% session and 85% week has far
+    /// less room than a session-only bar would suggest. It is also the rule
+    /// the numbers threshold uses, so the bar and the digits cannot disagree
+    /// about what "busy" means.
+    ///
+    /// `nil` means **neither** window was ever read. That single nil drives
+    /// both the dash in place of a fill and the "no usage data" wording, so
+    /// the picture and the words agree by construction rather than by
+    /// discipline.
     struct HealthStripProfileInput {
         let profileID: UUID
         let profileName: String
-        let sessionDisplay: Double?
+        let displayPercentage: Double?
         let status: UsageStatusLevel
         let showRemaining: Bool
         let isActive: Bool
@@ -2161,7 +2169,7 @@ struct MenuBarIconRenderer {
         init(
             profileID: UUID,
             profileName: String,
-            sessionDisplay: Double?,
+            displayPercentage: Double?,
             status: UsageStatusLevel,
             showRemaining: Bool,
             isActive: Bool = false,
@@ -2170,7 +2178,7 @@ struct MenuBarIconRenderer {
         ) {
             self.profileID = profileID
             self.profileName = profileName
-            self.sessionDisplay = sessionDisplay
+            self.displayPercentage = displayPercentage
             self.status = status
             self.showRemaining = showRemaining
             self.isActive = isActive
@@ -2203,15 +2211,11 @@ struct MenuBarIconRenderer {
             }
         )
         let width = HealthStripLayout.totalWidth(cells)
-        // `createMultiProfilePercentage` is taller with the profile label
-        // switched on than without it, so the canvas grows to whatever the
-        // tallest numbers image needs rather than clipping it.
-        let tallestNumbers = profiles
-            .compactMap { $0.numbersImage?.size.height }
-            .max() ?? 0
-        let height = HealthStripLayout.canvasHeight(
-            tallestNumbersHeight: tallestNumbers
-        )
+        // Always 22. Growing the canvas to fit a numbers image would let
+        // NSButtonCell scale the whole strip down, which both blurs every bar
+        // and moves the cell positions the click hit test reads. A taller
+        // numbers image is clipped instead — see `numbersOriginY`.
+        let height = HealthStripLayout.baseCanvasHeight
 
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
@@ -2234,13 +2238,14 @@ struct MenuBarIconRenderer {
             foreground.withAlphaComponent(0.18).setFill()
             track.fill()
 
-            if input.sessionDisplay == nil {
-                // No reading: a dimmed dash, never an empty bar. An empty
-                // bar is a measurement of zero, which is a different claim.
+            if input.displayPercentage == nil {
+                // Neither window was read: a dimmed dash, never an empty bar.
+                // An empty bar is a measurement of zero, which is a different
+                // claim.
                 drawUnknownStripDash(in: trackRect, isDarkMode: isDarkMode)
             } else {
                 let fill = HealthStripLayout.fillHeight(
-                    displayPercentage: input.sessionDisplay
+                    displayPercentage: input.displayPercentage
                 )
                 if fill > 0 {
                     NSGraphicsContext.saveGraphicsState()
@@ -2281,9 +2286,7 @@ struct MenuBarIconRenderer {
             }
 
             if let numbers = input.numbersImage {
-                // Centred on the bar's own span rather than sitting on the
-                // canvas floor, and clamped so a tall numbers image cannot
-                // spill outside the canvas and be clipped.
+                // Centred in the canvas rather than sitting on its floor.
                 let y = HealthStripLayout.numbersOriginY(
                     numbersHeight: numbers.size.height,
                     canvasHeight: height
@@ -2347,7 +2350,7 @@ struct MenuBarIconRenderer {
         _ input: HealthStripProfileInput
     ) -> String {
         let value: String
-        if let display = input.sessionDisplay {
+        if let display = input.displayPercentage {
             value = "\(Int(display.rounded()))% "
                 + StatusBarUIManager.usageModeText(
                     showRemaining: input.showRemaining

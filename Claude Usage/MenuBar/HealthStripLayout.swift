@@ -43,9 +43,11 @@ nonisolated enum HealthStripLayout {
     static let edgePadding: CGFloat = 1
     /// Space between a bar and the numbers drawn beside it.
     static let numbersGap: CGFloat = 2
-    /// Vertical centre of the attention marker. Its 5.5pt footprint (a 4pt
-    /// marker plus a ±0.75 halo) then runs 16.25…21.75 — inside the 22pt
-    /// canvas, and clear of the bar top at 16.
+    /// Bottom edge — the origin, not the centre — of the 4pt attention
+    /// marker, which is how `applyAttentionMarker` builds its own rect. The
+    /// marker therefore spans 17…21 and its 5.5pt footprint, the marker plus
+    /// a ±0.75 halo, runs 16.25…21.75: inside the 22pt canvas, and clear of
+    /// the bar top at 16.
     static let markerY: CGFloat = 17
 
     /// Horizontal offset of the numbers image from the cell's left edge.
@@ -91,30 +93,25 @@ nonisolated enum HealthStripLayout {
         return cells
     }
 
-    /// Canvas height for a strip whose tallest numbers image is
-    /// `tallestNumbersHeight`.
+    /// Where a numbers image sits vertically: centred in the full 22pt
+    /// canvas.
     ///
-    /// `createMultiProfilePercentage` is taller with the profile label
-    /// switched on than without it, so the canvas grows to fit rather than
-    /// clipping the digits.
-    static func canvasHeight(tallestNumbersHeight: CGFloat) -> CGFloat {
-        max(baseCanvasHeight, ceil(tallestNumbersHeight))
-    }
-
-    /// Where a numbers image sits vertically: centred on the bar's own span
-    /// (4 to 16) rather than on the canvas floor, then clamped so it can
-    /// never be drawn partly outside the canvas and clipped.
+    /// The canvas never grows to fit the image. The image's height is a run
+    /// time text measurement, so it can land at 23pt, and nothing in this app
+    /// pins a menu bar height or an image scaling mode — an oversized image
+    /// is left to `NSButtonCell`'s proportional down-scaling. One account
+    /// crossing the numbers threshold would then shrink the whole strip by a
+    /// few percent, moving every cell's `minX` away from the values the click
+    /// hit test depends on, and blurring every bar to make room for one
+    /// number. A taller image is clipped, roughly symmetrically, instead.
     ///
-    /// Floored to a whole point so the composite lands on pixel boundaries
-    /// instead of resampling the digits.
+    /// Rounded to a whole point so the composite lands on pixel boundaries
+    /// rather than resampling the digits.
     static func numbersOriginY(
         numbersHeight: CGFloat,
-        canvasHeight: CGFloat
+        canvasHeight: CGFloat = baseCanvasHeight
     ) -> CGFloat {
-        let barMidY = barBottom + barHeight / 2
-        let centred = barMidY - numbersHeight / 2
-        let highest = max(0, canvasHeight - numbersHeight)
-        return min(max(0, centred), highest).rounded(.down)
+        ((canvasHeight - numbersHeight) / 2).rounded()
     }
 
     /// Total canvas width: the padding at both ends plus every cell.

@@ -2453,20 +2453,32 @@ final class StatusBarUIManager {
         var numbersShown: [UUID: Bool] = [:]
 
         for profile in drawn {
-            let usage = snapshots[profile.id]?.claudeUsage
+            // Snapshot first, but only a snapshot that still describes THIS
+            // profile. `snapshotMatches` rejects one whose profile id,
+            // provider or provider revision has moved on — after a re-link or
+            // a credential rotation the stale snapshot would otherwise render
+            // the previous identity's readings while every other surface
+            // correctly showed none. `.empty` closes the chain: its two
+            // availability flags are false by design, which is what makes the
+            // dash correct rather than a confident zero.
+            let validSnapshot = snapshots[profile.id].flatMap {
+                ProviderMenuPresentationBuilder.snapshotMatches(
+                    profile: profile,
+                    snapshot: $0
+                ) ? $0 : nil
+            }
+            let usage = validSnapshot?.claudeUsage
                 ?? profile.claudeUsage
+                ?? ClaudeUsage.empty
 
             // `readableSessionPercentage` in everything but its clock: the
             // expiry comparison is made against the injected instant so a
             // render is reproducible. Nil means no reading was received,
             // which the strip draws as a dash rather than as a zero.
-            let sessionUsed: Double? = usage.flatMap { reading in
-                guard reading.sessionPercentageAvailable else { return nil }
-                return reading.sessionResetTime < now
-                    ? 0
-                    : reading.sessionPercentage
-            }
-            let weekUsed = usage?.readableWeeklyPercentage
+            let sessionUsed: Double? = usage.sessionPercentageAvailable
+                ? (usage.sessionResetTime < now ? 0 : usage.sessionPercentage)
+                : nil
+            let weekUsed = usage.readableWeeklyPercentage
 
             var unknownWindows: MenuBarUnknownWindows = []
             if sessionUsed == nil {
@@ -2476,24 +2488,37 @@ final class StatusBarUIManager {
                 unknownWindows.insert(.week)
             }
 
-            let sessionDisplay = sessionUsed.map {
+            // The bar draws the TIGHTER window, the one that runs out first
+            // — the rule `tightestUsed` already states for the overflow list.
+            // A session-only bar would show an account at 10% session and 85%
+            // week as comfortable, and would show nothing at all for an
+            // account whose session window is unread but whose week is at
+            // 95%.
+            let tightestUsed = [sessionUsed, weekUsed]
+                .compactMap { $0 }
+                .max()
+            let displayPercentage = tightestUsed.map {
                 UsageStatusCalculator.getDisplayPercentage(
                     usedPercentage: $0,
                     showRemaining: showRemaining
                 )
             }
+            let sessionDisplay = UsageStatusCalculator.getDisplayPercentage(
+                usedPercentage: sessionUsed ?? 0,
+                showRemaining: showRemaining
+            )
             let weekDisplay = UsageStatusCalculator.getDisplayPercentage(
                 usedPercentage: weekUsed ?? 0,
                 showRemaining: showRemaining
             )
 
             let sessionElapsed = UsageStatusCalculator.elapsedFraction(
-                resetTime: usage?.sessionResetTime,
+                resetTime: usage.sessionResetTime,
                 duration: Constants.sessionWindow,
                 showRemaining: false
             )
             let weekElapsed = UsageStatusCalculator.elapsedFraction(
-                resetTime: usage?.weeklyResetTime,
+                resetTime: usage.weeklyResetTime,
                 duration: Constants.weeklyWindow,
                 showRemaining: false
             )
@@ -2508,6 +2533,15 @@ final class StatusBarUIManager {
                 usedPercentage: weekUsed ?? 0,
                 showRemaining: showRemaining,
                 elapsedFraction: config.usePaceColoring ? weekElapsed : nil
+            )
+            // The colour follows the same window the fill does, pace included.
+            let weekIsTighter = (weekUsed ?? -1) > (sessionUsed ?? -1)
+            let barStatus = UsageStatusCalculator.calculateStatus(
+                usedPercentage: tightestUsed ?? 0,
+                showRemaining: showRemaining,
+                elapsedFraction: config.usePaceColoring
+                    ? (weekIsTighter ? weekElapsed : sessionElapsed)
+                    : nil
             )
 
             let showsNumbers = HealthStripNumbers.showsNumbers(
@@ -2541,6 +2575,10 @@ final class StatusBarUIManager {
                         elapsedFraction: elapsed
                     )
                 }()
+                // Non-optional display figures plus `unknownWindows`, the
+                // shape `updateMultiProfileButtons` already uses: the week
+                // gate is `if let weekPct`, so passing nil for an unread week
+                // would drop it entirely instead of drawing its dimmed dash.
                 numbersImage = renderer.createMultiProfilePercentage(
                     sessionPercentage: sessionDisplay,
                     weekPercentage: config.showWeek ? weekDisplay : nil,
@@ -2563,8 +2601,8 @@ final class StatusBarUIManager {
                 MenuBarIconRenderer.HealthStripProfileInput(
                     profileID: profile.id,
                     profileName: profile.name,
-                    sessionDisplay: sessionDisplay,
-                    status: sessionStatus,
+                    displayPercentage: displayPercentage,
+                    status: barStatus,
                     showRemaining: showRemaining,
                     isActive: profile.id == activeClaudeProfileID,
                     attention: attention[profile.id],

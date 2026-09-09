@@ -77,7 +77,7 @@ final class HealthStripRenderTests: XCTestCase {
     // MARK: - Inputs
 
     private func input(
-        sessionDisplay: Double?,
+        displayPercentage: Double?,
         status: UsageStatusLevel = .safe,
         showRemaining: Bool = false,
         isActive: Bool = false,
@@ -88,7 +88,7 @@ final class HealthStripRenderTests: XCTestCase {
         MenuBarIconRenderer.HealthStripProfileInput(
             profileID: UUID(),
             profileName: name,
-            sessionDisplay: sessionDisplay,
+            displayPercentage: displayPercentage,
             status: status,
             showRemaining: showRemaining,
             isActive: isActive,
@@ -123,7 +123,7 @@ final class HealthStripRenderTests: XCTestCase {
 
     func testFillHeightTracksTheDisplayPercentage() {
         for percentage in [25.0, 50.0, 75.0, 100.0] {
-            let render = strip([input(sessionDisplay: percentage)])
+            let render = strip([input(displayPercentage: percentage)])
             let expectedTop = HealthStripLayout.barBottom
                 + HealthStripLayout.fillHeight(displayPercentage: percentage)
             let top = fillTop(
@@ -141,7 +141,7 @@ final class HealthStripRenderTests: XCTestCase {
     }
 
     func testAZeroReadingDrawsAnEmptyTrackRatherThanAFill() {
-        let render = strip([input(sessionDisplay: 0)])
+        let render = strip([input(displayPercentage: 0)])
 
         XCTAssertNil(
             fillTop(forBarAt: render.cells[0].minX, in: render.image),
@@ -161,10 +161,10 @@ final class HealthStripRenderTests: XCTestCase {
         XCTAssertEqual(remainingDisplay, 80)
 
         let usedRender = strip(
-            [input(sessionDisplay: used, showRemaining: false)]
+            [input(displayPercentage: used, showRemaining: false)]
         )
         let remainingRender = strip(
-            [input(sessionDisplay: remainingDisplay, showRemaining: true)]
+            [input(displayPercentage: remainingDisplay, showRemaining: true)]
         )
 
         let usedTop = fillTop(
@@ -188,10 +188,24 @@ final class HealthStripRenderTests: XCTestCase {
         )
     }
 
+    /// The input carries the tighter window's figure, so a bar can be tall
+    /// because of the week even when the session is idle.
+    func testTheBarDrawsWhateverTighterFigureItIsGiven() {
+        let render = strip([input(displayPercentage: 85)])
+        let top = fillTop(forBarAt: render.cells[0].minX, in: render.image)
+
+        XCTAssertEqual(
+            top ?? 0,
+            HealthStripLayout.barBottom
+                + HealthStripLayout.fillHeight(displayPercentage: 85),
+            accuracy: 1.0
+        )
+    }
+
     // MARK: - No reading
 
     func testAnUnreadSessionDrawsTheDashAndNoFill() {
-        let render = strip([input(sessionDisplay: nil)])
+        let render = strip([input(displayPercentage: nil)])
         let minX = render.cells[0].minX
         let x = minX + HealthStripLayout.barWidth / 2
 
@@ -215,71 +229,84 @@ final class HealthStripRenderTests: XCTestCase {
 
     // MARK: - Numbers
 
-    func testCanvasGrowsToTheTallestNumbersImageInBothLabelStates() {
+    /// The canvas is pinned at 22pt whatever the numbers image measures.
+    /// Growing it would let AppKit scale the whole strip down, blurring
+    /// every bar and moving the cell positions the click hit test reads.
+    func testTheCanvasIsExactly22InBothLabelStates() {
         for showProfileLabel in [false, true] {
             let numbers = numbersImage(showProfileLabel: showProfileLabel)
             let render = strip(
-                [input(sessionDisplay: 93, numbers: numbers)]
+                [input(displayPercentage: 93, numbers: numbers)]
             )
 
             XCTAssertEqual(
                 render.image.size.height,
-                max(
-                    HealthStripLayout.baseCanvasHeight,
-                    ceil(numbers.size.height)
-                ),
-                "Canvas height is max(22, ceil(numbers height)) "
-                    + "with label \(showProfileLabel)"
+                22,
+                "The canvas must stay 22pt with label \(showProfileLabel), "
+                    + "even though the numbers image measures "
+                    + "\(numbers.size.height)pt"
+            )
+            XCTAssertEqual(
+                HealthStripLayout.baseCanvasHeight,
+                22
             )
         }
     }
 
-    func testTheNumbersImageAlwaysLiesFullyInsideTheCanvas() {
+    func testTheNumbersImageIsCentredInTheCanvas() {
         for showProfileLabel in [false, true] {
             let numbers = numbersImage(showProfileLabel: showProfileLabel)
-            let canvasHeight = HealthStripLayout.canvasHeight(
-                tallestNumbersHeight: numbers.size.height
-            )
             let originY = HealthStripLayout.numbersOriginY(
-                numbersHeight: numbers.size.height,
-                canvasHeight: canvasHeight
+                numbersHeight: numbers.size.height
             )
+            let topGap = HealthStripLayout.baseCanvasHeight
+                - (originY + numbers.size.height)
 
-            XCTAssertGreaterThanOrEqual(originY, 0)
             XCTAssertLessThanOrEqual(
-                originY + numbers.size.height,
-                canvasHeight,
-                "Nothing may be clipped off the top of the strip "
-                    + "with label \(showProfileLabel)"
+                abs(originY - topGap),
+                1,
+                "The gap above and below the digits must match within a "
+                    + "point, with label \(showProfileLabel)"
+            )
+            XCTAssertGreaterThanOrEqual(
+                originY,
+                0,
+                "A real numbers image fits inside 22pt and must not be "
+                    + "clipped, with label \(showProfileLabel)"
             )
         }
     }
 
-    /// The property above has to hold for shapes no current font produces
-    /// too, or a future font change turns it into a silent clip.
-    func testNumbersPlacementStaysInsideTheCanvasForExtremeHeights() {
+    /// A future font could push the image past 22pt. It is then clipped
+    /// roughly symmetrically rather than allowed to resize the strip.
+    func testAnOversizedNumbersImageIsClippedSymmetrically() {
         for height in stride(from: 1.0, through: 40.0, by: 0.5) {
-            let canvasHeight = HealthStripLayout.canvasHeight(
-                tallestNumbersHeight: CGFloat(height)
-            )
             let originY = HealthStripLayout.numbersOriginY(
-                numbersHeight: CGFloat(height),
-                canvasHeight: canvasHeight
+                numbersHeight: CGFloat(height)
             )
-            XCTAssertGreaterThanOrEqual(originY, 0, "height \(height)")
+            let topGap = HealthStripLayout.baseCanvasHeight
+                - (originY + CGFloat(height))
+
             XCTAssertLessThanOrEqual(
-                originY + CGFloat(height),
-                canvasHeight,
-                "height \(height)"
+                abs(originY - topGap),
+                1,
+                "height \(height) is not centred"
             )
+            if height > HealthStripLayout.baseCanvasHeight {
+                XCTAssertLessThanOrEqual(
+                    originY,
+                    0,
+                    "height \(height) must overhang, not resize the canvas"
+                )
+            }
         }
     }
 
     func testANumericCellWidensTheStripAndDrawsTheDigits() {
         let numbers = numbersImage(showProfileLabel: false)
-        let plain = strip([input(sessionDisplay: 93)])
+        let plain = strip([input(displayPercentage: 93)])
         let withNumbers = strip(
-            [input(sessionDisplay: 93, numbers: numbers)]
+            [input(displayPercentage: 93, numbers: numbers)]
         )
 
         XCTAssertGreaterThan(
@@ -287,8 +314,7 @@ final class HealthStripRenderTests: XCTestCase {
             plain.image.size.width
         )
         let originY = HealthStripLayout.numbersOriginY(
-            numbersHeight: numbers.size.height,
-            canvasHeight: withNumbers.image.size.height
+            numbersHeight: numbers.size.height
         )
         var painted = false
         var x = withNumbers.cells[0].minX
@@ -311,12 +337,12 @@ final class HealthStripRenderTests: XCTestCase {
     // MARK: - Attention markers
 
     func testTheTwoCredentialsProduceDifferentImages() {
-        let plain = strip([input(sessionDisplay: 50)])
+        let plain = strip([input(displayPercentage: 50)])
         let claudeCode = strip(
-            [input(sessionDisplay: 50, attention: .claudeCode)]
+            [input(displayPercentage: 50, attention: .claudeCode)]
         )
         let claudeAI = strip(
-            [input(sessionDisplay: 50, attention: .claudeAI)]
+            [input(displayPercentage: 50, attention: .claudeAI)]
         )
 
         let plainPrint = StatusBarUIManager.imageFingerprint(plain.image)
@@ -338,7 +364,7 @@ final class HealthStripRenderTests: XCTestCase {
 
     func testTheMarkerSitsAboveTheBarInsideTheCanvas() {
         let render = strip(
-            [input(sessionDisplay: 50, attention: .claudeCode)]
+            [input(displayPercentage: 50, attention: .claudeCode)]
         )
         let x = render.cells[0].minX + HealthStripLayout.barWidth / 2
 
@@ -357,8 +383,8 @@ final class HealthStripRenderTests: XCTestCase {
     // MARK: - Active profile
 
     func testOnlyTheActiveProfileGetsTheGreenBase() {
-        let active = input(sessionDisplay: 50, isActive: true, name: "One")
-        let idle = input(sessionDisplay: 50, name: "Two")
+        let active = input(displayPercentage: 50, isActive: true, name: "One")
+        let idle = input(displayPercentage: 50, name: "Two")
         let render = strip([active, idle])
 
         let activeX = render.cells[0].minX + HealthStripLayout.barWidth / 2
@@ -385,7 +411,7 @@ final class HealthStripRenderTests: XCTestCase {
     // MARK: - Geometry passthrough
 
     func testTheRenderCarriesTheCellsAClickIsResolvedAgainst() {
-        let inputs = (0..<4).map { _ in input(sessionDisplay: 50) }
+        let inputs = (0..<4).map { _ in input(displayPercentage: 50) }
         let render = strip(inputs)
 
         XCTAssertEqual(
