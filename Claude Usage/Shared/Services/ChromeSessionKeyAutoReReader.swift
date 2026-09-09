@@ -19,7 +19,9 @@
 //     recorded on this RevvyTach profile. A profile with nothing recorded is
 //     never read, and nothing here discovers or chooses a Chrome profile.
 //  2. It cannot loop. One attempt per profile per hour, whatever the outcome,
-//     and never two attempts for one profile at the same time.
+//     and never two attempts for one profile at the same time. The hour is
+//     remembered on disk, because a declined macOS prompt must not be raised
+//     again simply because the app was quit and reopened.
 //  3. A key that comes back unchanged writes nothing and says nothing. The
 //     profile keeps today's expired state, which is exactly what it had.
 //
@@ -42,10 +44,26 @@ nonisolated enum ChromeSessionKeyReReadOutcome: Equatable, Sendable {
     case malformed
     /// A key was read but secure storage refused to keep it.
     case saveFailed
+    /// The profile's stored credential or its remembered Chrome profile
+    /// changed while the read was still running, so what came back described a
+    /// pairing the profile has already moved on from. The read result is
+    /// discarded rather than written over whatever replaced it.
+    case superseded
     /// An attempt for this profile ran less than the throttle window ago.
     case throttled
     /// An attempt for this profile is running right now.
     case alreadyRunning
+}
+
+/// What the saver did with a key an automatic re-read produced.
+nonisolated enum ChromeSessionKeyReReadSaveResult: Equatable, Sendable {
+    /// The key was written to the profile.
+    case stored
+    /// Storage refused the key.
+    case failed
+    /// The profile no longer matches the attempt this key belongs to, so the
+    /// key was deliberately not written.
+    case superseded
 }
 
 /// Re-reads a revoked claude.ai session key from the remembered Chrome
@@ -58,16 +76,35 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
     /// Blocking, and blocking on the macOS password prompt at that, so it is
     /// always called off the main thread.
     typealias SessionKeyReader = @Sendable (String) throws -> String
-    /// Stores a renewed key on one profile. `false` means nothing was stored.
-    typealias CredentialSaver = @Sendable (UUID, String) async -> Bool
+    /// Stores a renewed key on one profile.
+    ///
+    /// It is handed the whole attempt, not just the new key: the profile, the
+    /// renewed key, the key claude.ai refused when the attempt started, and
+    /// the Chrome profile the key was read from. A macOS password prompt can
+    /// sit on screen for minutes, and the user is free to replace the
+    /// credential in Settings while it does, so the saver has to be able to
+    /// check that both of those are still what it started from before it
+    /// writes anything.
+    typealias CredentialSaver = @Sendable (
+        UUID, String, String?, ProfileChromeSessionKeySource
+    ) async -> ChromeSessionKeyReReadSaveResult
     /// Tells the user once, naming the RevvyTach profile and the Chrome
     /// profile in that order.
     typealias Notifier = @Sendable (String, String) async -> Void
+    /// Reads the persisted last-attempt times, keyed by profile UUID string.
+    /// Only those two things are ever kept; no key and nothing secret.
+    typealias AttemptLogReader = @Sendable () -> [String: Date]
+    /// Replaces the persisted last-attempt times.
+    typealias AttemptLogWriter = @Sendable ([String: Date]) -> Void
 
     /// At most one attempt per profile per hour. The window is deliberately
     /// long: a refusal repeats on every refresh, and the failure modes here
     /// are a macOS password prompt and a Chrome database read.
     static let defaultMinimumInterval: TimeInterval = 60 * 60
+
+    /// Where the hour lives between launches. The value is a dictionary of
+    /// profile UUID string to the time that profile was last attempted.
+    static let attemptLogDefaultsKey = "chromeSessionKeyAutoReReadLastAttempts"
 
     private let readSessionKey: SessionKeyReader
     private let saveSessionKey: CredentialSaver
@@ -75,9 +112,12 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
     private let validator: SessionKeyValidator
     private let now: @Sendable () -> Date
     private let minimumInterval: TimeInterval
+    private let readAttemptLog: AttemptLogReader
+    private let writeAttemptLog: AttemptLogWriter
 
     private let lock = NSLock()
     private var lastAttemptAt: [UUID: Date] = [:]
+    private var consultedAttemptLog: Set<UUID> = []
     private var inFlight: Set<UUID> = []
 
     init(
@@ -87,7 +127,13 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         validator: SessionKeyValidator = SessionKeyValidator(),
         now: @escaping @Sendable () -> Date = Date.init,
         minimumInterval: TimeInterval = ChromeSessionKeyAutoReReader
-            .defaultMinimumInterval
+            .defaultMinimumInterval,
+        readAttemptLog: @escaping AttemptLogReader = {
+            ChromeSessionKeyAutoReReader.attemptLogFromStandardDefaults()
+        },
+        writeAttemptLog: @escaping AttemptLogWriter = { log in
+            ChromeSessionKeyAutoReReader.writeAttemptLogToStandardDefaults(log)
+        }
     ) {
         self.readSessionKey = readSessionKey
         self.saveSessionKey = saveSessionKey
@@ -95,6 +141,20 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         self.validator = validator
         self.now = now
         self.minimumInterval = minimumInterval
+        self.readAttemptLog = readAttemptLog
+        self.writeAttemptLog = writeAttemptLog
+    }
+
+    private static func attemptLogFromStandardDefaults() -> [String: Date] {
+        let stored = UserDefaults.standard
+            .dictionary(forKey: attemptLogDefaultsKey) ?? [:]
+        return stored.compactMapValues { $0 as? Date }
+    }
+
+    private static func writeAttemptLogToStandardDefaults(
+        _ log: [String: Date]
+    ) {
+        UserDefaults.standard.set(log, forKey: attemptLogDefaultsKey)
     }
 
     /// The instance production uses.
@@ -108,24 +168,49 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
                 profileDirectoryName: directoryName
             )
         },
-        saveSessionKey: { profileID, sessionKey in
-            await MainActor.run {
+        saveSessionKey: { profileID, sessionKey, refusedSessionKey, source in
+            // The check and the write share one main-actor hop, so nothing can
+            // change the profile in between them.
+            await MainActor.run { () -> ChromeSessionKeyReReadSaveResult in
                 do {
                     var credentials = try ProfileManager.shared
                         .loadCredentials(for: profileID)
+                    guard credentials.claudeSessionKey == refusedSessionKey
+                    else {
+                        LoggingService.shared.logWarning(
+                            "The profile's claude.ai session key changed while "
+                            + "an automatic re-read from Chrome was running. "
+                            + "The newer key was kept and the re-read result "
+                            + "discarded."
+                        )
+                        return .superseded
+                    }
+                    let remembered = ProfileManager.shared.profiles
+                        .first { $0.id == profileID }?
+                        .chromeSessionKeySource
+                    guard remembered?.directoryName == source.directoryName
+                    else {
+                        LoggingService.shared.logWarning(
+                            "The Chrome profile remembered for this profile "
+                            + "changed while an automatic re-read was running. "
+                            + "The re-read result was discarded rather than "
+                            + "paired with a different browser profile."
+                        )
+                        return .superseded
+                    }
                     credentials.claudeSessionKey = sessionKey
                     try ProfileManager.shared.saveCredentials(
                         for: profileID,
                         credentials: credentials,
                         browserCredentialSave: true
                     )
-                    return true
+                    return .stored
                 } catch {
                     LoggingService.shared.logWarning(
                         "A session key re-read from Chrome could not be "
                         + "stored; the profile keeps its expired state."
                     )
-                    return false
+                    return .failed
                 }
             }
         },
@@ -193,8 +278,18 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
 
         guard validator.isValid(candidate) else { return .malformed }
         guard candidate != currentSessionKey else { return .unchanged }
-        guard await saveSessionKey(profileID, candidate) else {
+        switch await saveSessionKey(
+            profileID,
+            candidate,
+            currentSessionKey,
+            source
+        ) {
+        case .stored:
+            break
+        case .failed:
             return .saveFailed
+        case .superseded:
+            return .superseded
         }
 
         await notify(profileName, source.label)
@@ -213,18 +308,41 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
     ///
     /// The timestamp is written for every attempt that starts, not only for
     /// the ones that succeed, so a Chrome that cannot be read is retried once
-    /// an hour rather than on every refresh.
+    /// an hour rather than on every refresh. It is also written to disk: the
+    /// startup refresh is exactly when a re-read is attempted, so an hour that
+    /// only lived in memory would be spent again by every relaunch, and a
+    /// declined macOS prompt would come back with it.
     private func claimAttempt(for profileID: UUID) -> AttemptClaim {
         lock.lock()
         defer { lock.unlock() }
         guard !inFlight.contains(profileID) else { return .alreadyRunning }
+        if !consultedAttemptLog.contains(profileID) {
+            consultedAttemptLog.insert(profileID)
+            if lastAttemptAt[profileID] == nil,
+               let persisted = readAttemptLog()[profileID.uuidString] {
+                lastAttemptAt[profileID] = persisted
+            }
+        }
         if let last = lastAttemptAt[profileID],
            now().timeIntervalSince(last) < minimumInterval {
             return .throttled
         }
-        lastAttemptAt[profileID] = now()
+        let attemptedAt = now()
+        lastAttemptAt[profileID] = attemptedAt
+        persistAttempt(at: attemptedAt, for: profileID)
         inFlight.insert(profileID)
         return .proceed
+    }
+
+    /// Records this attempt on disk, dropping every entry the throttle window
+    /// has already expired so a Mac with many profiles cannot grow the stored
+    /// dictionary without bound.
+    private func persistAttempt(at attemptedAt: Date, for profileID: UUID) {
+        var log = readAttemptLog().filter { _, recordedAt in
+            attemptedAt.timeIntervalSince(recordedAt) < minimumInterval
+        }
+        log[profileID.uuidString] = attemptedAt
+        writeAttemptLog(log)
     }
 
     private func releaseAttempt(for profileID: UUID) {

@@ -56,27 +56,50 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
     private func makeReader(
         recorder: Recorder,
         read: @escaping @Sendable (String) throws -> String,
-        saveSucceeds: Bool = true,
+        saveResult: ChromeSessionKeyReReadSaveResult = .stored,
         now: @escaping @Sendable () -> Date = Date.init,
         minimumInterval: TimeInterval = ChromeSessionKeyAutoReReader
-            .defaultMinimumInterval
+            .defaultMinimumInterval,
+        attemptLog: AttemptLog = AttemptLog()
     ) -> ChromeSessionKeyAutoReReader {
         ChromeSessionKeyAutoReReader(
             readSessionKey: { directoryName in
                 recorder.recordRead(directoryName)
                 return try read(directoryName)
             },
-            saveSessionKey: { _, key in
-                guard saveSucceeds else { return false }
+            saveSessionKey: { _, key, _, _ in
+                guard saveResult == .stored else { return saveResult }
                 recorder.recordSave(key)
-                return true
+                return .stored
             },
             notify: { profileName, chromeLabel in
                 recorder.recordNotification(profileName, chromeLabel)
             },
             now: now,
-            minimumInterval: minimumInterval
+            minimumInterval: minimumInterval,
+            readAttemptLog: { attemptLog.value },
+            writeAttemptLog: { attemptLog.value = $0 }
         )
+    }
+
+    /// Stands in for the persisted last-attempt times, so the throttle can be
+    /// tested across two re-reader instances without touching `UserDefaults`.
+    private final class AttemptLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String: Date] = [:]
+
+        var value: [String: Date] {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return storage
+            }
+            set {
+                lock.lock()
+                storage = newValue
+                lock.unlock()
+            }
+        }
     }
 
     // MARK: - The remembered Chrome profile survives a round trip
@@ -383,7 +406,7 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
         let reader = makeReader(
             recorder: recorder,
             read: { [freshKey] _ in freshKey },
-            saveSucceeds: false
+            saveResult: .failed
         )
 
         let outcome = await refuseOnce(with: reader)
@@ -392,7 +415,189 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
         XCTAssertTrue(recorder.notifications.isEmpty)
     }
 
+    // MARK: - A profile that moved on keeps what it has
+
+    /// The macOS password prompt can sit on screen for minutes, and Settings
+    /// stays usable while it does. A key the user stored in the meantime is
+    /// the newer one, so the read result is dropped rather than written over
+    /// it.
+    func testANewerStoredKeyIsNotOverwrittenByTheReadResult() async {
+        let recorder = Recorder()
+        let profile = SavedProfile(sessionKey: deadKey, source: source)
+        let typedKey = "sk-ant-sid01-typed0000000000000"
+        let reader = makeCompareAndSetReader(
+            recorder: recorder,
+            profile: profile,
+            read: { [freshKey] _ in
+                // Stands in for the user replacing the credential in Settings
+                // while the prompt is still up.
+                profile.sessionKey = typedKey
+                return freshKey
+            }
+        )
+
+        let outcome = await refuseOnce(with: reader)
+
+        XCTAssertEqual(outcome, .superseded)
+        XCTAssertEqual(profile.sessionKey, typedKey)
+        XCTAssertTrue(recorder.savedKeys.isEmpty)
+        XCTAssertTrue(recorder.notifications.isEmpty)
+    }
+
+    /// A key must never be paired with a Chrome profile it did not come from,
+    /// so a remembered profile that changed mid-read discards the result too.
+    func testAChangedRememberedChromeProfileDiscardsTheReadResult() async {
+        let recorder = Recorder()
+        let profile = SavedProfile(sessionKey: deadKey, source: source)
+        let reader = makeCompareAndSetReader(
+            recorder: recorder,
+            profile: profile,
+            read: { [freshKey] _ in
+                profile.source = ProfileChromeSessionKeySource(
+                    directoryName: "Profile 4",
+                    label: "Personal — Profile 4"
+                )
+                return freshKey
+            }
+        )
+
+        let outcome = await refuseOnce(with: reader)
+
+        XCTAssertEqual(outcome, .superseded)
+        XCTAssertEqual(profile.sessionKey, deadKey)
+        XCTAssertTrue(recorder.savedKeys.isEmpty)
+        XCTAssertTrue(recorder.notifications.isEmpty)
+    }
+
+    // MARK: - The hour survives a relaunch
+
+    /// Quitting and reopening the app must not buy another macOS password
+    /// prompt, so a brand new re-reader honours the hour the previous one
+    /// spent.
+    func testAFreshReReaderHonoursTheHourFromPersistedState() async {
+        let attemptLog = AttemptLog()
+        let clock = MutableClock(Date(timeIntervalSince1970: 10_000))
+        let first = makeReader(
+            recorder: Recorder(),
+            read: { [deadKey] _ in deadKey },
+            now: { clock.value },
+            attemptLog: attemptLog
+        )
+
+        _ = await refuseOnce(with: first)
+
+        clock.value = clock.value.addingTimeInterval(59 * 60)
+        let restartRecorder = Recorder()
+        let afterRestart = makeReader(
+            recorder: restartRecorder,
+            read: { [deadKey] _ in deadKey },
+            now: { clock.value },
+            attemptLog: attemptLog
+        )
+
+        let outcome = await refuseOnce(with: afterRestart)
+
+        XCTAssertEqual(outcome, .throttled)
+        XCTAssertTrue(restartRecorder.readDirectories.isEmpty)
+        XCTAssertEqual(attemptLog.value.count, 1)
+        XCTAssertNotNil(attemptLog.value[profileID.uuidString])
+    }
+
+    /// The persisted log keeps only what the throttle window still covers, so
+    /// a long-lived install cannot accumulate an entry per profile forever.
+    func testExpiredEntriesArePrunedFromThePersistedLog() async {
+        let attemptLog = AttemptLog()
+        attemptLog.value = [
+            UUID().uuidString: Date(timeIntervalSince1970: 0)
+        ]
+        let clock = MutableClock(Date(timeIntervalSince1970: 10_000))
+        let reader = makeReader(
+            recorder: Recorder(),
+            read: { [deadKey] _ in deadKey },
+            now: { clock.value },
+            attemptLog: attemptLog
+        )
+
+        _ = await refuseOnce(with: reader)
+
+        XCTAssertEqual(
+            Array(attemptLog.value.keys),
+            [profileID.uuidString]
+        )
+    }
+
     // MARK: - Helpers
+
+    /// The two pieces of a profile the saver has to re-check: the stored key
+    /// and the Chrome profile it is remembered as coming from.
+    private final class SavedProfile: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedKey: String?
+        private var storedSource: ProfileChromeSessionKeySource?
+
+        init(sessionKey: String?, source: ProfileChromeSessionKeySource?) {
+            storedKey = sessionKey
+            storedSource = source
+        }
+
+        var sessionKey: String? {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return storedKey
+            }
+            set {
+                lock.lock()
+                storedKey = newValue
+                lock.unlock()
+            }
+        }
+
+        var source: ProfileChromeSessionKeySource? {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return storedSource
+            }
+            set {
+                lock.lock()
+                storedSource = newValue
+                lock.unlock()
+            }
+        }
+    }
+
+    /// A re-reader whose saver applies the same compare-and-set the real one
+    /// does: it writes only when the stored key is still the refused key and
+    /// the remembered Chrome profile is still the one that was read.
+    private func makeCompareAndSetReader(
+        recorder: Recorder,
+        profile: SavedProfile,
+        read: @escaping @Sendable (String) throws -> String
+    ) -> ChromeSessionKeyAutoReReader {
+        let attemptLog = AttemptLog()
+        return ChromeSessionKeyAutoReReader(
+            readSessionKey: { directoryName in
+                recorder.recordRead(directoryName)
+                return try read(directoryName)
+            },
+            saveSessionKey: { _, key, refusedKey, readSource in
+                guard profile.sessionKey == refusedKey,
+                      profile.source?.directoryName
+                        == readSource.directoryName else {
+                    return .superseded
+                }
+                profile.sessionKey = key
+                recorder.recordSave(key)
+                return .stored
+            },
+            notify: { profileName, chromeLabel in
+                recorder.recordNotification(profileName, chromeLabel)
+            },
+            readAttemptLog: { attemptLog.value },
+            writeAttemptLog: { attemptLog.value = $0 }
+        )
+    }
 
     private final class MutableClock: @unchecked Sendable {
         var value: Date
