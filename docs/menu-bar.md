@@ -41,9 +41,10 @@ Instead of one item per account, every selected Claude account becomes a small v
 inside a single menu bar item. Eight accounts come to about 58 points of menu bar, against
 roughly 470 for eight separate items.
 
-**What a bar means.** Each bar's fill is that account's session figure, coloured by the same
-thresholds every other icon uses. In remaining mode a full bar means plenty left, exactly as the
-per-account icons read. An account with no reading at all shows a dimmed dash across the middle
+**What a bar means.** Each bar's fill is whichever of that account's two windows is closer to
+running out — the session or the week, the higher used figure — coloured by the same thresholds
+every other icon uses. In remaining mode a full bar means plenty left, exactly as the per-account
+icons read. An account with no reading in either window shows a dimmed dash across the middle
 of its track rather than an empty bar — an empty bar would be a measurement of zero, which is a
 different claim. The active account gets a short green base under its bar, and an account whose
 sign-in needs attention gets a mark above it: a filled red dot for the Claude Code sign-in, a
