@@ -1390,3 +1390,20 @@
 "menubar.accessibility.state.setup_incomplete" = "設定未完了: Claude Code またはブラウザーでサインインしてください";
 "personal.connected_not_saved" = "接続済み — 未保存";
 "personal.retry_save" = "保存を再試行";
+
+/* Menu bar health strip */
+"multiprofile.layout.title" = "メニューバーのレイアウト";
+"multiprofile.layout.per_profile" = "アカウントごとに1項目";
+"multiprofile.layout.health_strip" = "ヘルスストリップ";
+"multiprofile.layout.description" = "ヘルスストリップは、1つのメニューバー項目にアカウントごとの小さなバーを描画します。";
+"multiprofile.layout.health_strip_manager_hint" = "Thaw、Ice、Bartender などのメニューバー管理アプリがヘルスストリップを隠している場合は、そのアプリで一度表示に切り替えてください。";
+"multiprofile.layout.icon_style_hint" = "ヘルスストリップが有効な間、アイコンスタイルはCodexアカウントにのみ適用されます。";
+"multiprofile.layout.time_marker_hint" = "ヘルスストリップが有効な間、経過時間マーカーはCodexアカウントにのみ適用されます。";
+"multiprofile.healthstrip.numbers_title" = "数値を表示するしきい値";
+"multiprofile.healthstrip.numbers_never" = "表示しない";
+"multiprofile.healthstrip.numbers_suffix" = "% 使用";
+"multiprofile.healthstrip.numbers_hint" = "この値以上のアカウントは、メニューバーに数値も表示します。";
+"menubar.healthstrip.accessibility_label" = "%@個のClaudeアカウント";
+"menubar.healthstrip.header" = "Claudeアカウント";
+"menubar.healthstrip.footer.refresh_all" = "すべて更新";
+"menubar.healthstrip.row.active_badge" = "アクティブ";

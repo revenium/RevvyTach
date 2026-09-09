@@ -1366,3 +1366,20 @@
 "menubar.accessibility.state.setup_incomplete" = "설정 미완료: Claude Code 또는 브라우저로 로그인하세요";
 "personal.connected_not_saved" = "연결됨 — 저장되지 않음";
 "personal.retry_save" = "저장 다시 시도";
+
+/* Menu bar health strip */
+"multiprofile.layout.title" = "메뉴 막대 레이아웃";
+"multiprofile.layout.per_profile" = "계정당 항목 1개";
+"multiprofile.layout.health_strip" = "상태 바";
+"multiprofile.layout.description" = "상태 바는 메뉴 막대 항목 하나에 계정마다 작은 막대를 그립니다.";
+"multiprofile.layout.health_strip_manager_hint" = "Thaw, Ice, Bartender 같은 메뉴 막대 관리 앱이 상태 바를 숨긴다면 해당 앱에서 한 번 표시로 바꾸세요.";
+"multiprofile.layout.icon_style_hint" = "상태 바를 사용하는 동안 아이콘 스타일은 Codex 계정에만 적용됩니다.";
+"multiprofile.layout.time_marker_hint" = "상태 바를 사용하는 동안 경과 시간 마커는 Codex 계정에만 적용됩니다.";
+"multiprofile.healthstrip.numbers_title" = "숫자를 표시할 기준";
+"multiprofile.healthstrip.numbers_never" = "표시 안 함";
+"multiprofile.healthstrip.numbers_suffix" = "% 사용";
+"multiprofile.healthstrip.numbers_hint" = "이 값 이상인 계정은 메뉴 막대에 숫자도 함께 표시합니다.";
+"menubar.healthstrip.accessibility_label" = "Claude 계정 %@개";
+"menubar.healthstrip.header" = "Claude 계정";
+"menubar.healthstrip.footer.refresh_all" = "모두 새로고침";
+"menubar.healthstrip.row.active_badge" = "활성";

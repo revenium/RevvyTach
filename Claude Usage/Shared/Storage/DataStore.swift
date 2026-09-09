@@ -212,6 +212,104 @@ class DataStore: StorageProvider {
         }
     }
 
+    /// Saves the menu bar multi-profile layout (one item per account, or the
+    /// health strip).
+    func saveMenuBarMultiLayout(_ layout: MenuBarMultiLayout) {
+        defaults.set(
+            layout.rawValue,
+            forKey: Constants.UserDefaultsKeys.menuBarMultiLayout
+        )
+    }
+
+    /// Loads the menu bar multi-profile layout.
+    func loadMenuBarMultiLayout() -> MenuBarMultiLayout {
+        Self.menuBarMultiLayout(in: defaults)
+    }
+
+    /// Shared multi-layout read, parameterized by `UserDefaults` so callers
+    /// that inject a test suite (rather than reaching for the singleton) get
+    /// identical semantics.
+    ///
+    /// Absence means `.perProfileItems`: the health strip is opt-in and
+    /// nothing changes for anyone who never touches the setting. As with
+    /// `menuBarOverflowMode(in:)`, a missing `String` key reads as `nil`
+    /// rather than an ambiguous zero value, so no explicit `object(forKey:)`
+    /// probe is needed.
+    static func menuBarMultiLayout(
+        in defaults: UserDefaults
+    ) -> MenuBarMultiLayout {
+        guard let raw = defaults.string(
+                forKey: Constants.UserDefaultsKeys.menuBarMultiLayout
+              ),
+              let layout = MenuBarMultiLayout(rawValue: raw)
+        else {
+            return .perProfileItems
+        }
+        return layout
+    }
+
+    /// Saves the health strip's "show numbers above" threshold.
+    func saveHealthStripNumbersThreshold(
+        _ threshold: MenuBarHealthStripNumbersThreshold
+    ) {
+        defaults.set(
+            threshold.storageKind.rawValue,
+            forKey: Constants.UserDefaultsKeys.menuBarHealthStripNumbersKind
+        )
+        if case .percent(let percent) = threshold {
+            defaults.set(
+                percent,
+                forKey: Constants.UserDefaultsKeys
+                    .menuBarHealthStripNumbersPercent
+            )
+        }
+    }
+
+    /// Loads the health strip's "show numbers above" threshold.
+    func loadHealthStripNumbersThreshold()
+        -> MenuBarHealthStripNumbersThreshold {
+        Self.healthStripNumbersThreshold(in: defaults)
+    }
+
+    /// Shared numbers-threshold read, parameterized by `UserDefaults` for
+    /// test injection.
+    ///
+    /// Absence — and any stored kind this version doesn't recognize — means
+    /// the default percentage, so a fresh install and a foreign build both
+    /// land on the documented behavior rather than on "never".
+    static func healthStripNumbersThreshold(
+        in defaults: UserDefaults
+    ) -> MenuBarHealthStripNumbersThreshold {
+        let fallback = MenuBarHealthStripNumbersThreshold.percent(
+            MenuBarHealthStripNumbersThreshold.defaultPercent
+        )
+        guard let rawKind = defaults.string(
+                forKey: Constants.UserDefaultsKeys
+                    .menuBarHealthStripNumbersKind
+              ),
+              let kind = MenuBarHealthStripNumbersThreshold.StorageKind(
+                rawValue: rawKind
+              )
+        else {
+            return fallback
+        }
+        switch kind {
+        case .never:
+            return .never
+        case .percent:
+            let stored = defaults.integer(
+                forKey: Constants.UserDefaultsKeys
+                    .menuBarHealthStripNumbersPercent
+            )
+            return .percent(
+                stored > 0
+                    ? MenuBarHealthStripNumbersThreshold
+                        .nearestSelectablePercent(to: stored)
+                    : MenuBarHealthStripNumbersThreshold.defaultPercent
+            )
+        }
+    }
+
     /// Saves refresh interval
     func saveRefreshInterval(_ interval: TimeInterval) {
         defaults.set(interval, forKey: Constants.UserDefaultsKeys.refreshInterval)

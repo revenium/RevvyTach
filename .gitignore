@@ -135,6 +135,8 @@ settings.local.json
 *.sha256
 *.dmg
 build-pkg-*/
+build-*/
+build-*.log
 pkg/
 release/
 *.zip

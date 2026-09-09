@@ -24,6 +24,13 @@ struct ManageProfilesView: View {
     // `DataStore`-backed settings elsewhere in the app.
     @State private var overflowMode: MenuBarOverflowMode =
         DataStore.shared.loadMenuBarOverflowMode()
+    /// Owned locally and written through on change, exactly like
+    /// `overflowMode` above and for the same reason.
+    @State private var multiLayout: MenuBarMultiLayout =
+        DataStore.shared.loadMenuBarMultiLayout()
+    @State private var healthStripNumbers:
+        MenuBarHealthStripNumbersThreshold =
+            DataStore.shared.loadHealthStripNumbersThreshold()
 
     init(
         dependencies: ProviderUIDependencies? = nil
@@ -160,6 +167,118 @@ struct ManageProfilesView: View {
                             Divider()
                                 .padding(.vertical, DesignTokens.Spacing.small)
 
+                            // Menu Bar Layout Picker
+                            VStack(
+                                alignment: .leading,
+                                spacing: DesignTokens.Spacing.small
+                            ) {
+                                Text("multiprofile.layout.title".localized)
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+
+                                Picker("", selection: Binding(
+                                    get: { multiLayout },
+                                    set: { setMultiLayout($0) }
+                                )) {
+                                    Text(
+                                        "multiprofile.layout.per_profile"
+                                            .localized
+                                    )
+                                    .tag(MenuBarMultiLayout.perProfileItems)
+                                    Text(
+                                        "multiprofile.layout.health_strip"
+                                            .localized
+                                    )
+                                    .tag(MenuBarMultiLayout.healthStrip)
+                                }
+                                .pickerStyle(.segmented)
+                                .labelsHidden()
+
+                                Text(
+                                    "multiprofile.layout.description"
+                                        .localized
+                                )
+                                .font(DesignTokens.Typography.caption)
+                                .foregroundColor(.secondary)
+
+                                // A menu bar manager sorts items by
+                                // identity, and the strip is one it has
+                                // never seen, so the first time it is
+                                // switched on the manager is likely to file
+                                // it away hidden. Without this line that
+                                // looks exactly like a broken feature.
+                                if multiLayout == .healthStrip {
+                                    Text(
+                                        "multiprofile.layout.health_strip_manager_hint"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(
+                                        horizontal: false,
+                                        vertical: true
+                                    )
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            // Health strip numbers threshold
+                            VStack(
+                                alignment: .leading,
+                                spacing: DesignTokens.Spacing.small
+                            ) {
+                                HStack(
+                                    spacing: DesignTokens.Spacing.extraSmall
+                                ) {
+                                    Text(
+                                        "multiprofile.healthstrip.numbers_title"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+
+                                    Picker("", selection: Binding(
+                                        get: { healthStripNumbersSelection },
+                                        set: {
+                                            setHealthStripNumbersSelection($0)
+                                        }
+                                    )) {
+                                        ForEach(
+                                            MenuBarHealthStripNumbersThreshold
+                                                .selectablePercents,
+                                            id: \.self
+                                        ) { percent in
+                                            Text(
+                                                "\(percent)"
+                                                    + "multiprofile.healthstrip.numbers_suffix"
+                                                        .localized
+                                            )
+                                            .tag(percent)
+                                        }
+                                        Text(
+                                            "multiprofile.healthstrip.numbers_never"
+                                                .localized
+                                        )
+                                        .tag(Self.healthStripNumbersNeverTag)
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(.menu)
+                                    .frame(width: 110)
+                                }
+
+                                Text(
+                                    "multiprofile.healthstrip.numbers_hint"
+                                        .localized
+                                )
+                                .font(DesignTokens.Typography.caption)
+                                .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .disabled(multiLayout != .healthStrip)
+
+                            Divider()
+                                .padding(.vertical, DesignTokens.Spacing.small)
+
                             // Icon Style Picker
                             VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
                                 Text("multiprofile.icon_style".localized)
@@ -181,6 +300,19 @@ struct ManageProfilesView: View {
                                 }
                                 .pickerStyle(.segmented)
                                 .labelsHidden()
+                                .disabled(multiLayout == .healthStrip)
+
+                                // A silently dead control is worse than a
+                                // disabled one: in strip layout the icon
+                                // style governs no Claude item at all.
+                                if multiLayout == .healthStrip {
+                                    Text(
+                                        "multiprofile.layout.icon_style_hint"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -230,19 +362,42 @@ struct ManageProfilesView: View {
                             )
 
                             // Show Time Marker Toggle
-                            SettingToggle(
-                                title: "appearance.show_time_marker_title".localized,
-                                description: "appearance.show_time_marker_description".localized,
-                                isOn: Binding(
-                                    get: { profileManager.multiProfileConfig.showTimeMarker },
-                                    set: { showMarker in
-                                        var config = profileManager.multiProfileConfig
-                                        config.showTimeMarker = showMarker
-                                        profileManager.updateMultiProfileConfig(config)
-                                        MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
-                                    }
+                            VStack(
+                                alignment: .leading,
+                                spacing: DesignTokens.Spacing.extraSmall
+                            ) {
+                                SettingToggle(
+                                    title: "appearance.show_time_marker_title".localized,
+                                    description: "appearance.show_time_marker_description".localized,
+                                    isOn: Binding(
+                                        get: { profileManager.multiProfileConfig.showTimeMarker },
+                                        set: { showMarker in
+                                            var config = profileManager.multiProfileConfig
+                                            config.showTimeMarker = showMarker
+                                            profileManager.updateMultiProfileConfig(config)
+                                            MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
+                                        }
+                                    )
                                 )
-                            )
+                                .disabled(multiLayout == .healthStrip)
+
+                                // A 4pt bar has nowhere to put a time
+                                // marker, so in strip layout this governs
+                                // Codex items only — the same reason the
+                                // icon style picker above is disabled, but
+                                // its own sentence: a line about the icon
+                                // style is false about this control. Show
+                                // Week and the pace marker stay enabled:
+                                // both still shape the inline numbers.
+                                if multiLayout == .healthStrip {
+                                    Text(
+                                        "multiprofile.layout.time_marker_hint"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+                                }
+                            }
 
                             // Pace Marker Toggle
                             SettingToggle(
@@ -315,10 +470,12 @@ struct ManageProfilesView: View {
                                             setOverflowMode(.automatic)
                                         }
                                     )
-                                    AccessibilityGrantHint()
-                                        .padding(.leading, 22)
-                                    DetectedMenuBarManagerHint()
-                                        .padding(.leading, 22)
+                                    if multiLayout != .healthStrip {
+                                        AccessibilityGrantHint()
+                                            .padding(.leading, 22)
+                                        DetectedMenuBarManagerHint()
+                                            .padding(.leading, 22)
+                                    }
                                     overflowModeRow(
                                         title:
                                             "multiprofile.overflow.never"
@@ -382,6 +539,9 @@ struct ManageProfilesView: View {
                                     }
                                 }
                             }
+                            // The strip is one item however many accounts
+                            // it holds, so it cannot overflow.
+                            .disabled(multiLayout == .healthStrip)
 
                             // Info message
                             HStack(alignment: .top, spacing: 8) {
@@ -510,6 +670,44 @@ struct ManageProfilesView: View {
             return count
         }
         return MenuBarOverflowMode.defaultAfterCountThreshold
+    }
+
+    /// Tag standing for "Never" in the numbers picker, which is otherwise
+    /// keyed on percentages. Zero is not a selectable percentage, so it can
+    /// never collide with one.
+    private static let healthStripNumbersNeverTag = 0
+
+    private var healthStripNumbersSelection: Int {
+        if case .percent(let percent) = healthStripNumbers {
+            return percent
+        }
+        return Self.healthStripNumbersNeverTag
+    }
+
+    private func setHealthStripNumbersSelection(_ selection: Int) {
+        setHealthStripNumbers(
+            selection == Self.healthStripNumbersNeverTag
+                ? .never
+                : .percent(selection)
+        )
+    }
+
+    private func setHealthStripNumbers(
+        _ threshold: MenuBarHealthStripNumbersThreshold
+    ) {
+        healthStripNumbers = threshold
+        DataStore.shared.saveHealthStripNumbersThreshold(threshold)
+        MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
+    }
+
+    /// Writes the layout through and reuses the existing multi-profile
+    /// recompute path. That path ends in a fan-out refresh, which is an
+    /// accepted cost for a setting nobody touches twice in a session — do
+    /// not add a second notification just for this.
+    private func setMultiLayout(_ layout: MenuBarMultiLayout) {
+        multiLayout = layout
+        DataStore.shared.saveMenuBarMultiLayout(layout)
+        MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
     }
 
     private func setOverflowMode(_ mode: MenuBarOverflowMode) {

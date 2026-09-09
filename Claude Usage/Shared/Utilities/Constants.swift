@@ -82,6 +82,13 @@ enum Constants {
         static let menuBarOverflowAfterCountThreshold =
             "menuBarOverflowAfterCountThreshold"
 
+        // Menu bar multi-profile layout (per-profile items vs health strip)
+        static let menuBarMultiLayout = "menuBarMultiLayout"
+        static let menuBarHealthStripNumbersKind =
+            "menuBarHealthStripNumbersKind"
+        static let menuBarHealthStripNumbersPercent =
+            "menuBarHealthStripNumbersPercent"
+
         // Menu bar icon configuration (new multi-metric system)
         static let menuBarIconConfiguration = "menuBarIconConfiguration"
         static let showIconNames = "showIconNames"
