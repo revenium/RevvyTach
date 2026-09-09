@@ -1184,6 +1184,43 @@ class NotificationManager: NotificationServiceProtocol {
         }
     }
 
+    /// Says that one profile's claude.ai sign-in was refreshed from Chrome.
+    ///
+    /// Sent once per successful automatic re-read, and only then: an
+    /// unchanged key, a Chrome that could not be read, and a refusal on a
+    /// profile with no remembered Chrome profile all stay silent, because
+    /// none of them changed anything. Ungated by the usage-alert master
+    /// switch for the same reason the auto-start and auto-switch notices are
+    /// — it reports something the app did to a credential on the user's
+    /// behalf, not a usage threshold.
+    func sendChromeSessionKeyRefreshedNotification(
+        profileName: String,
+        chromeProfileLabel: String
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = "notification.chrome_key_refreshed.title".localized
+        content.body = "notification.chrome_key_refreshed.message"
+            .localized(with: profileName, chromeProfileLabel)
+        content.sound = .default
+        content.categoryIdentifier = "INFO_ALERT"
+
+        let request = UNNotificationRequest(
+            identifier: "chrome_key_refreshed_"
+                + "\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+
+        notificationRequestAdder(request) { error in
+            if let error {
+                LoggingService.shared.logError(
+                    "Failed to send Chrome session key refresh "
+                    + "notification: \(error)"
+                )
+            }
+        }
+    }
+
     /// Clears notification tracking state for a specific profile
     func clearNotificationsForProfile(_ profileName: String) {
         stateLock.lock()

@@ -1134,6 +1134,102 @@ final class ProfileSecurityIntegrationTests: HostedAppTestCase {
     }
 
     @MainActor
+    func testHandEnteredKeyClearsTheChromeOriginItReplaces() throws {
+        let profileID = UUID()
+        let secrets = MockProfileSecretStore()
+        let store = retain(
+            makeIsolatedProfileStore(defaults: defaults, secretStore: secrets)
+        )
+        var original = Profile(
+            id: profileID,
+            name: "Read from Chrome",
+            claudeSessionKey: "CHROME_CLAUDE",
+            organizationId: "org"
+        )
+        original.chromeSessionKeySource = ProfileChromeSessionKeySource(
+            directoryName: "Profile 19",
+            label: "Work — Profile 19"
+        )
+        try seedProfilesForTesting([original], in: store)
+        secrets.values[locator(profileID, .claudeSessionKey)] =
+            "CHROME_CLAUDE"
+        let manager = retain(ProfileManager(profileStore: store))
+        manager.profiles = [original]
+        manager.activeProfile = original
+
+        // The key the user typed did not come from Chrome, so the profile
+        // must stop claiming a Chrome origin. Left behind, that origin would
+        // make this key eligible for an automatic re-read that replaces it
+        // from a browser profile the user never pointed at it.
+        try manager.saveCredentials(
+            for: profileID,
+            credentials: ProfileCredentials(
+                claudeSessionKey: "TYPED_CLAUDE",
+                organizationId: "org"
+            ),
+            browserCredentialSave: true,
+            chromeSessionKeySource: .set(nil)
+        )
+
+        XCTAssertEqual(
+            manager.activeProfile?.claudeSessionKey,
+            "TYPED_CLAUDE"
+        )
+        XCTAssertNil(manager.profiles.first?.chromeSessionKeySource)
+        XCTAssertNil(
+            store.loadProfiles()
+                .first(where: { $0.id == profileID })?
+                .chromeSessionKeySource
+        )
+    }
+
+    @MainActor
+    func testFailedKeySaveLeavesNoChromeOriginForAKeyThatWasNotStored() throws {
+        let profileID = UUID()
+        let secrets = MockProfileSecretStore()
+        let store = retain(
+            makeIsolatedProfileStore(defaults: defaults, secretStore: secrets)
+        )
+        let original = Profile(
+            id: profileID,
+            name: "No origin yet",
+            claudeSessionKey: "OLD_CLAUDE",
+            organizationId: "org"
+        )
+        try seedProfilesForTesting([original], in: store)
+        secrets.values[locator(profileID, .claudeSessionKey)] = "OLD_CLAUDE"
+        let manager = retain(ProfileManager(profileStore: store))
+        manager.profiles = [original]
+        manager.activeProfile = original
+        secrets.writeErrors[.claudeSessionKey] = TestError.expected
+
+        XCTAssertThrowsError(
+            try manager.saveCredentials(
+                for: profileID,
+                credentials: ProfileCredentials(
+                    claudeSessionKey: "CHROME_CLAUDE",
+                    organizationId: "org"
+                ),
+                browserCredentialSave: true,
+                chromeSessionKeySource: .set(
+                    ProfileChromeSessionKeySource(
+                        directoryName: "Profile 19",
+                        label: "Work — Profile 19"
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(manager.activeProfile?.claudeSessionKey, "OLD_CLAUDE")
+        XCTAssertNil(manager.profiles.first?.chromeSessionKeySource)
+        XCTAssertNil(
+            store.loadProfiles()
+                .first(where: { $0.id == profileID })?
+                .chromeSessionKeySource
+        )
+    }
+
+    @MainActor
     func testDirectCLISyncWritersInvalidateOnlyChangedSuccessfulMutations() throws {
         let profileID = UUID()
         let secrets = MockProfileSecretStore()
@@ -1286,6 +1382,76 @@ final class ProfileSecurityIntegrationTests: HostedAppTestCase {
             "sk-ant-sid01-replacement-session-key-value"
         )
         XCTAssertNil(reloaded.organizationId)
+    }
+
+    @MainActor
+    func testSessionKeyReplacementClearsRecordedChromeOrigin() throws {
+        let profileID = UUID()
+        let secrets = MockProfileSecretStore()
+        let store = retain(makeIsolatedProfileStore(defaults: defaults, secretStore: secrets))
+        var original = Profile(
+            id: profileID,
+            name: "Claude",
+            claudeSessionKey: "sk-ant-sid01-existing-session-key-value",
+            organizationId: "existing-org"
+        )
+        original.chromeSessionKeySource = ProfileChromeSessionKeySource(
+            directoryName: "Profile 19",
+            label: "Work — Profile 19"
+        )
+        try seedProfilesForTesting([original], in: store)
+        secrets.values[locator(profileID, .claudeSessionKey)] =
+            "sk-ant-sid01-existing-session-key-value"
+        store.saveActiveProfileId(profileID, for: .claude)
+        let manager = retain(ProfileManager(profileStore: store))
+        manager.loadProfiles()
+        let service = retain(ClaudeAPIService(profileManager: manager))
+
+        try service.saveSessionKey("sk-ant-sid01-replacement-session-key-value")
+
+        XCTAssertEqual(
+            manager.activeProfile?.claudeSessionKey,
+            "sk-ant-sid01-replacement-session-key-value"
+        )
+        XCTAssertNil(manager.activeProfile?.chromeSessionKeySource)
+        let reloaded = try XCTUnwrap(
+            store.loadProfiles().first(where: { $0.id == profileID })
+        )
+        XCTAssertNil(reloaded.chromeSessionKeySource)
+    }
+
+    @MainActor
+    func testResavingTheSameSessionKeyKeepsRecordedChromeOrigin() throws {
+        let profileID = UUID()
+        let secrets = MockProfileSecretStore()
+        let store = retain(makeIsolatedProfileStore(defaults: defaults, secretStore: secrets))
+        let source = ProfileChromeSessionKeySource(
+            directoryName: "Profile 19",
+            label: "Work — Profile 19"
+        )
+        var original = Profile(
+            id: profileID,
+            name: "Claude",
+            claudeSessionKey: "sk-ant-sid01-existing-session-key-value",
+            organizationId: "existing-org"
+        )
+        original.chromeSessionKeySource = source
+        try seedProfilesForTesting([original], in: store)
+        secrets.values[locator(profileID, .claudeSessionKey)] =
+            "sk-ant-sid01-existing-session-key-value"
+        store.saveActiveProfileId(profileID, for: .claude)
+        let manager = retain(ProfileManager(profileStore: store))
+        manager.loadProfiles()
+        let service = retain(ClaudeAPIService(profileManager: manager))
+
+        try service.saveSessionKey("sk-ant-sid01-existing-session-key-value")
+
+        XCTAssertEqual(manager.activeProfile?.chromeSessionKeySource, source)
+        XCTAssertEqual(manager.activeProfile?.organizationId, "existing-org")
+        let reloaded = try XCTUnwrap(
+            store.loadProfiles().first(where: { $0.id == profileID })
+        )
+        XCTAssertEqual(reloaded.chromeSessionKeySource, source)
     }
 
     @MainActor

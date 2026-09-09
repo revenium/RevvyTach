@@ -1286,11 +1286,69 @@ class ProfileManager: ObservableObject {
         return try profileStore.loadProfileCredentials(profileId)
     }
 
+    /// Saves a profile's credentials and, when the caller says where the
+    /// claude.ai session key came from, that origin as well, so the two can
+    /// never be persisted apart.
+    ///
+    /// The origin is written first and put back if the credential write
+    /// throws. That order is deliberate: the worst state a failure can leave
+    /// is the previous key still wearing its own origin. Writing the key
+    /// first would leave a new key wearing the origin of the key it replaced,
+    /// and an automatic re-read would then overwrite it from a browser
+    /// profile the user never pointed at this key.
     func saveCredentials(
         for profileId: UUID,
         credentials: ProfileCredentials,
         acceptingSessionOnly: Bool = false,
-        browserCredentialSave: Bool = false
+        browserCredentialSave: Bool = false,
+        chromeSessionKeySource: ChromeSessionKeySourceWrite = .unchanged
+    ) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == profileId })
+        else {
+            throw ProfileStoreError.profileNotFound(profileId)
+        }
+        guard case .set(let source) = chromeSessionKeySource else {
+            try persistCredentials(
+                for: profileId,
+                credentials: credentials,
+                acceptingSessionOnly: acceptingSessionOnly,
+                browserCredentialSave: browserCredentialSave
+            )
+            return
+        }
+        let previousSource = profiles[index].chromeSessionKeySource
+        try writeChromeSessionKeySource(source, for: profileId)
+        do {
+            try persistCredentials(
+                for: profileId,
+                credentials: credentials,
+                acceptingSessionOnly: acceptingSessionOnly,
+                browserCredentialSave: browserCredentialSave
+            )
+        } catch {
+            // The key this origin was recorded for was never stored, so the
+            // origin must not outlive the failed attempt.
+            do {
+                try writeChromeSessionKeySource(
+                    previousSource,
+                    for: profileId
+                )
+            } catch let rollbackError {
+                LoggingService.shared.logError(
+                    "ProfileManager.saveCredentials: The previous Chrome "
+                    + "session key origin could not be restored",
+                    error: rollbackError
+                )
+            }
+            throw error
+        }
+    }
+
+    private func persistCredentials(
+        for profileId: UUID,
+        credentials: ProfileCredentials,
+        acceptingSessionOnly: Bool,
+        browserCredentialSave: Bool
     ) throws {
         guard let index = profiles.firstIndex(where: { $0.id == profileId }) else {
             throw ProfileStoreError.profileNotFound(profileId)
@@ -1770,6 +1828,47 @@ class ProfileManager: ObservableObject {
         updateProfile(profile)
     }
 
+    /// Records which Chrome profile the stored claude.ai session key was
+    /// read from, or `nil` when the key did not come from Chrome.
+    ///
+    /// Always written alongside the key it describes, including the `nil`
+    /// case: a key typed by hand must not inherit the Chrome origin of the
+    /// key it replaced, or a later automatic re-read would overwrite it from
+    /// a browser profile the user never pointed at this key.
+    func updateChromeSessionKeySource(
+        _ source: ProfileChromeSessionKeySource?,
+        for profileId: UUID
+    ) {
+        do {
+            try writeChromeSessionKeySource(source, for: profileId)
+        } catch {
+            LoggingService.shared.logError(
+                "ProfileManager.updateChromeSessionKeySource: The Chrome "
+                + "session key origin was not written",
+                error: error
+            )
+        }
+    }
+
+    /// Writes that origin and reports a failure instead of logging it, so a
+    /// caller storing the key and its origin together can undo the half it
+    /// already wrote.
+    private func writeChromeSessionKeySource(
+        _ source: ProfileChromeSessionKeySource?,
+        for profileId: UUID
+    ) throws {
+        guard var profile = profiles.first(where: { $0.id == profileId })
+        else {
+            throw ProfileStoreError.profileNotFound(profileId)
+        }
+        guard profile.providerID == .claude else {
+            throw ProfileError.chromeSessionKeySourceNotApplicable(profileId)
+        }
+        guard profile.chromeSessionKeySource != source else { return }
+        profile.chromeSessionKeySource = source
+        try updateProfileThrowing(profile)
+    }
+
     /// Caches the organization the profile's CLI credential belongs to.
     ///
     /// The CLI login can belong to a different organization than the
@@ -1820,11 +1919,32 @@ class ProfileManager: ObservableObject {
 
 enum ProfileError: LocalizedError, Equatable {
     case cannotDeleteLastProfile
+    /// A Chrome origin describes a claude.ai session key, so it belongs to a
+    /// Claude profile and nowhere else.
+    case chromeSessionKeySourceNotApplicable(UUID)
 
     var errorDescription: String? {
         switch self {
         case .cannotDeleteLastProfile:
             return "Cannot delete the last profile. At least one profile is required."
+        case .chromeSessionKeySourceNotApplicable(let id):
+            return "Profile \(id.uuidString.prefix(8)) does not use a "
+                + "claude.ai session key."
         }
     }
+}
+
+// MARK: - ChromeSessionKeySourceWrite
+
+/// What a credential save should do with the record of which Chrome profile
+/// the claude.ai session key came from.
+///
+/// A caller that is not writing a session key has nothing to say about its
+/// origin, which is what `unchanged` means. A caller that *is* writing one
+/// must say where it came from, `nil` included: a hand-typed key that keeps
+/// the previous key's Chrome origin becomes eligible for an automatic
+/// re-read out of a browser profile the user never pointed at it.
+nonisolated enum ChromeSessionKeySourceWrite {
+    case unchanged
+    case set(ProfileChromeSessionKeySource?)
 }

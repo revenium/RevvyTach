@@ -50,6 +50,10 @@ struct SetupWizardState {
     var targetProfileName: String? = nil
     var launchedChromeProfileLabel: String? = nil
     var hasConfirmedChromeContext = false
+    /// The Chrome profile the key in this attempt was actually read from.
+    /// Set only by a Read from Chrome, and dropped by every other way the key
+    /// can change, so a hand-typed key never inherits a browser origin.
+    var chromeSessionKeySource: ProfileChromeSessionKeySource? = nil
     var terminalDetectionStatus: ClaudeCodeDetectionStatus = .idle
     var detectedTerminalCredentials: String? = nil
     var detectedTerminalAccountName: String? = nil
@@ -79,6 +83,10 @@ extension SetupWizardState {
         validationState = .idle
         testedOrganizations = []
         selectedOrgId = nil
+        // Cleared unconditionally. Only the Chrome read re-records it, right
+        // after calling this, so a key that arrived any other way cannot keep
+        // the previous key's browser origin and be re-read from it later.
+        chromeSessionKeySource = nil
         if clearTarget {
             claudeSetupTarget = nil
             targetProfileName = nil
@@ -1205,13 +1213,22 @@ struct EnterKeyStepSetup: View {
     /// confirmation. The confirmation itself is re-armed, because the key just
     /// changed and a confirmation earned for a previous key is not consent for
     /// this one.
-    private func adoptSessionKeyReadFromChrome(_ key: String) {
+    private func adoptSessionKeyReadFromChrome(
+        _ key: String,
+        from chromeProfile: LaunchedChromeProfile
+    ) {
         wizardState.sessionKey = key
         retireAttempt(
             clearKey: false,
             clearChromeContext: false,
             clearTarget: false,
             rearmChromeConfirmation: true
+        )
+        // After the retire, which clears the origin for every other way a key
+        // can arrive. This is the one path that has an origin to record.
+        wizardState.chromeSessionKeySource = ProfileChromeSessionKeySource(
+            directoryName: chromeProfile.directoryName,
+            label: chromeProfile.label
         )
         testConnection()
     }
@@ -1903,6 +1920,9 @@ struct ConfirmStepSetup: View {
         let selectedOrganization = wizardState.testedOrganizations.first(
             where: { $0.uuid == organizationID }
         )
+        // Captured with the key it describes, `nil` included: a key entered by
+        // hand must clear whatever origin the previous key had.
+        let chromeSource = wizardState.chromeSessionKeySource
         isSaving = true
 
         Task {
@@ -1923,7 +1943,8 @@ struct ConfirmStepSetup: View {
                                 ? wizardState.detectedTerminalAccountName
                                 : nil,
                         acceptSessionOnlyStorage: acceptSessionOnly,
-                        target: target
+                        target: target,
+                        chromeSessionKeySource: .set(chromeSource)
                     )
                 LoggingService.shared.log(
                     "SetupWizard: Updated profile setup preferences"

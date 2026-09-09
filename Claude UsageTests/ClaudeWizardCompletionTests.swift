@@ -77,6 +77,88 @@ final class ClaudeWizardCompletionTests: HostedAppTestCase {
         XCTAssertEqual(ClaudeSetupState.of(completed), .browserOnly)
     }
 
+    func testCompletionRecordsTheChromeProfileTheKeyCameFrom() async throws {
+        let context = try await makeContext()
+        let source = ProfileChromeSessionKeySource(
+            directoryName: "Profile 19",
+            label: "Work — Profile 19"
+        )
+
+        let completed = try await context.dependencies
+            .completeClaudeManualSetup(
+                sessionKey: "chrome-session",
+                organizationID: "browser-org",
+                autoStartSessionEnabled: false,
+                target: .existing(context.profile.id),
+                chromeSessionKeySource: .set(source)
+            )
+
+        // The origin is committed with the key, so the profile it comes back
+        // as already carries both.
+        XCTAssertEqual(completed.chromeSessionKeySource, source)
+        XCTAssertEqual(
+            context.manager.profiles.first?.chromeSessionKeySource,
+            source
+        )
+    }
+
+    func testHandEnteredCompletionClearsAPreviousChromeOrigin() async throws {
+        let context = try await makeContext()
+        context.manager.updateChromeSessionKeySource(
+            ProfileChromeSessionKeySource(
+                directoryName: "Profile 19",
+                label: "Work — Profile 19"
+            ),
+            for: context.profile.id
+        )
+
+        let completed = try await context.dependencies
+            .completeClaudeManualSetup(
+                sessionKey: "typed-session",
+                organizationID: "browser-org",
+                autoStartSessionEnabled: false,
+                target: .existing(context.profile.id),
+                chromeSessionKeySource: .set(nil)
+            )
+
+        // A key nobody read from Chrome must not inherit the origin of the
+        // key it replaced, or an automatic re-read would overwrite it.
+        XCTAssertNil(completed.chromeSessionKeySource)
+        XCTAssertNil(
+            context.manager.profiles.first?.chromeSessionKeySource
+        )
+    }
+
+    func testCompletionWithoutAnOriginArgumentClearsAPreviousChromeOrigin()
+        async throws
+    {
+        let context = try await makeContext()
+        context.manager.updateChromeSessionKeySource(
+            ProfileChromeSessionKeySource(
+                directoryName: "Profile 19",
+                label: "Work — Profile 19"
+            ),
+            for: context.profile.id
+        )
+
+        let completed = try await context.dependencies
+            .completeClaudeManualSetup(
+                sessionKey: "typed-session",
+                organizationID: "browser-org",
+                autoStartSessionEnabled: false,
+                target: .existing(context.profile.id)
+            )
+
+        // A caller that says nothing about the origin has not said the key
+        // came from Chrome, so the defaulted path must clear the stale record
+        // rather than leave the new key claiming a browser profile nobody
+        // read it from.
+        XCTAssertNil(completed.chromeSessionKeySource)
+        XCTAssertNil(
+            context.manager.profiles.first?.chromeSessionKeySource
+        )
+    }
+
     private struct Context {
         let manager: ProfileManager
         let profile: Profile

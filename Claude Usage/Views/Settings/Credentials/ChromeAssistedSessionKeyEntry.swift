@@ -250,6 +250,11 @@ nonisolated enum ChromeReadAvailabilityPolicy {
 /// been launched in this attempt, shows a consent sheet, and only then runs
 /// `ChromeCookieSessionKeyReader` off the main actor. Login databases, saved
 /// passwords and browser history are never read.
+///
+/// A successful read also records which Chrome profile it came from, so the
+/// app can re-read that one profile later when claude.ai stops accepting the
+/// copy — see `ChromeSessionKeyAutoReReader`. Nothing else is ever read, and
+/// no other Chrome profile ever is.
 struct ChromeAssistedSessionKeyEntry: View {
     @Binding var sessionKey: String
     let validationState: ValidationState
@@ -262,7 +267,12 @@ struct ChromeAssistedSessionKeyEntry: View {
     /// Adopts a key read from Chrome. Deliberately not `onSessionKeyChanged`:
     /// the adoption path has to keep the captured setup target and the
     /// Chrome-context confirmation gate, which a plain paste does not.
-    let onSessionKeyReadFromChrome: (String) -> Void
+    ///
+    /// The profile the key was read from travels with it, so the RevvyTach
+    /// profile can record where this key came from and read the same cookie
+    /// again after claude.ai revokes it. It is the profile the consent notice
+    /// named, never the picker's current selection.
+    let onSessionKeyReadFromChrome: (String, LaunchedChromeProfile) -> Void
 
     @State private var profiles: [ChromeProfile] = []
     @State private var selectedDirectoryName: String?
@@ -589,7 +599,7 @@ struct ChromeAssistedSessionKeyEntry: View {
         switch outcome {
         case .success(let key):
             readError = nil
-            onSessionKeyReadFromChrome(key)
+            onSessionKeyReadFromChrome(key, scopedProfile)
         case .failure(let error):
             readError = Self.message(for: error)
         }

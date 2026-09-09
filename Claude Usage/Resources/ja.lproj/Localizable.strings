@@ -246,6 +246,8 @@
 "notification.enabled.message" = "使用率75%、90%、95%の閾値とセッションリセット通知を受信します。";
 "notification.profile_auto_switched.title" = "プロファイルが自動切り替えされました";
 "notification.profile_auto_switched.message" = "%@ → %@ セッション制限に達したため";
+"notification.chrome_key_refreshed.title" = "Chrome からサインインを更新しました";
+"notification.chrome_key_refreshed.message" = "%@ が Chrome プロファイル %@ を使って再びサインインしました。";
 
 /* ==================== */
 /* MARK: - Auto-Switch Profile */
@@ -1275,7 +1277,7 @@
 "chrome_assisted.launch_failed" = "このプロファイルで Chrome を開けませんでした。プロファイルを選び直すか、別の方法を使用してください。";
 "chrome_assisted.launch_superseded" = "Chrome を開いている間にこの設定操作が変わったため、その起動は使用されませんでした。プロファイルを選んでもう一度開いてください。";
 "chrome_assisted.verify_account" = "Chrome プロファイル %@ を開きました。セッションキーを貼り付ける前に、Chrome で目的の Claude アカウントを目視で確認してください。";
-"chrome_assisted.no_extraction" = "プロファイルを開くだけでは何も読み取りません。セッションキーは、「Chrome から読み取る」を押して macOS の画面で許可した場合にのみ読み取られます。";
+"chrome_assisted.no_extraction" = "プロファイルを開くだけでは何も読み取りません。セッションキーは、最初は「Chrome から読み取る」を押して macOS の画面で許可した場合にのみ読み取られます。その後は、claude.ai がコピーを受け付けなくなるたびに、RevvyTach が同じ Chrome プロファイルから読み直します。";
 "chrome_assisted.embedded_fallback" = "代替手段：埋め込みブラウザでサインインします。";
 "chrome_assisted.validation_success" = "セッションキーを検証しました。%ld 件の組織が見つかりました。";
 "chrome_assisted.no_organizations" = "セッションキーは有効ですが、組織が見つかりませんでした。別のアカウントまたはキーを選択してください。";
@@ -1286,7 +1288,7 @@
 "chrome_assisted.read_button" = "Chrome から読み取る";
 "chrome_assisted.reading" = "読み取り中…";
 "chrome_assisted.read_consent_title" = "Chrome からセッションキーを読み取りますか？";
-"chrome_assisted.read_consent_body" = "このあと macOS がログインパスワードを求めます。許可すると、RevvyTach は Chrome のマスターキーそのものを受け取ります。これは Chrome 内のすべての Cookie と保存済みパスワードを解除できる鍵です。macOS はこの鍵を 1 つの Cookie に限定しません。限定しているのは RevvyTach 自身のコードだけです。\n\nRevvyTach は、この Chrome プロファイルの Cookie を一時的にすべて複製し、その複製から claude.ai のセッションキーだけを読み取って、複製をすぐに削除します。ほかには何も読み取らず、何も保持しません。\n\nmacOS は 2 回たずねます。どちらの画面にも RevvyTach と「Chrome Safe Storage」が表示されます。これは macOS が 1 つの許可を 2 段階で確認しているだけで、RevvyTach が 2 回読み取るわけではありません。両方で「許可」をクリックしてください。これは一度だけの許可で、次に読み取るときに macOS がまた確認します。「常に許可」はクリックしないでください。この許可には期限がなく、RevvyTach を削除したあとも有効なままです。\n\n許可はいつでも取り消せます。「キーチェーンアクセス」を開き、ログインキーチェーンで「Chrome Safe Storage」を探し、「アクセス制御」タブを開いて RevvyTach を削除してください。";
+"chrome_assisted.read_consent_body" = "このあと macOS がログインパスワードを求めます。許可すると、RevvyTach は Chrome のマスターキーそのものを受け取ります。これは Chrome 内のすべての Cookie と保存済みパスワードを解除できる鍵です。macOS はこの鍵を 1 つの Cookie に限定しません。限定しているのは RevvyTach 自身のコードだけです。\n\nRevvyTach は、この Chrome プロファイルの Cookie を一時的にすべて複製し、その複製から claude.ai のセッションキーだけを読み取って、複製をすぐに削除します。ほかには何も読み取らず、何も保持しません。 その後は、claude.ai がコピーを受け付けなくなるたびに、RevvyTach が同じ Chrome プロファイルから読み直します。\n\nmacOS は 2 回たずねます。どちらの画面にも RevvyTach と「Chrome Safe Storage」が表示されます。これは macOS が 1 つの許可を 2 段階で確認しているだけで、RevvyTach が 2 回読み取るわけではありません。両方で「許可」をクリックしてください。これは一度だけの許可で、次に読み取るときに macOS がまた確認します。「常に許可」はクリックしないでください。この許可には期限がなく、RevvyTach を削除したあとも有効なままです。\n\n許可はいつでも取り消せます。「キーチェーンアクセス」を開き、ログインキーチェーンで「Chrome Safe Storage」を探し、「アクセス制御」タブを開いて RevvyTach を削除してください。";
 "chrome_assisted.read_consent_continue" = "続ける";
 "chrome_assisted.read_scope_note" = "使用するのは、いま開いた Chrome プロファイルだけです：%@";
 "chrome_assisted.read_failed_generic" = "Chrome からセッションキーを読み取れませんでした。DevTools から手動でコピーして、下に貼り付けてください。";
