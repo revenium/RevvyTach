@@ -1,0 +1,287 @@
+//
+//  HealthStripAccountRowTests.swift
+//  Claude UsageTests
+//
+//  Created by Claude Code on 2026-09-08.
+//
+
+import AppKit
+import UsageCore
+import XCTest
+@testable import Claude_Usage
+
+/// The rows behind a left click on the health strip: which accounts are
+/// listed, in what order, and what each row says about one of them.
+@MainActor
+final class HealthStripAccountRowTests: XCTestCase {
+
+    private func usage(
+        session: Double?,
+        week: Double? = 20
+    ) -> ClaudeUsage {
+        var reading = ClaudeUsage.empty
+        reading.sessionResetTime = Date().addingTimeInterval(3_600)
+        if let session {
+            reading.sessionPercentage = session
+            reading.sessionPercentageAvailable = true
+        }
+        if let week {
+            reading.weeklyPercentage = week
+            reading.weeklyPercentageAvailable = true
+        }
+        return reading
+    }
+
+    private func claude(
+        _ name: String,
+        session: Double? = 40,
+        selected: Bool = true,
+        deleting: Bool = false
+    ) -> Profile {
+        var profile = Profile(name: name, isSelectedForDisplay: selected)
+        profile.claudeUsage = usage(session: session)
+        profile.deletionInProgress = deleting
+        return profile
+    }
+
+    private func codex(_ name: String) -> Profile {
+        Profile(
+            name: name,
+            providerConfiguration: .codex(CodexProfileConfiguration())
+        )
+    }
+
+    private func rows(
+        _ profiles: [Profile],
+        activeClaudeProfileID: UUID? = nil,
+        attention: [UUID: MenuBarAttentionSignal.Credential] = [:],
+        showRemaining: Bool = false,
+        showPaceMarker: Bool = false
+    ) -> [HealthStripAccountRow] {
+        HealthStripAccountRow.rows(
+            profiles: profiles,
+            snapshots: [:],
+            activeClaudeProfileID: activeClaudeProfileID,
+            attention: attention,
+            showRemaining: showRemaining,
+            showPaceMarker: showPaceMarker,
+            isActive: { $0.id == activeClaudeProfileID }
+        )
+    }
+
+    // MARK: - Row set
+
+    func testOnlyClaudeAccountsSelectedAndNotBeingDeletedAreListed() {
+        let shown = claude("Work")
+        let deselected = claude("Hidden", selected: false)
+        let deleting = claude("Going", deleting: true)
+        let codexAccount = codex("Codex")
+
+        let listed = rows([shown, deselected, deleting, codexAccount])
+
+        XCTAssertEqual(
+            listed.map(\.name),
+            ["Work"],
+            "The list must match what the strip draws, not the looser "
+                + "'selected for display' alone"
+        )
+    }
+
+    func testRowsKeepTheProfileListsOwnOrder() {
+        let profiles = ["A", "B", "C", "D"].map { claude($0) }
+
+        XCTAssertEqual(
+            rows(profiles).map(\.name),
+            ["A", "B", "C", "D"],
+            "Rows and bars must read left to right the same way"
+        )
+    }
+
+    func testAnEmptySelectionProducesNoRows() {
+        XCTAssertTrue(rows([claude("Hidden", selected: false)]).isEmpty)
+    }
+
+    // MARK: - What a row says
+
+    func testARowNamesBothWindowsAndTheirFigures() throws {
+        let profile = claude("Work", session: 83)
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertEqual(row.name, "Work")
+        XCTAssertFalse(row.windows.isEmpty)
+        XCTAssertTrue(row.valueText.contains("83"))
+        XCTAssertNotEqual(row.valueText, OverflowProfileRow.noReadingText)
+    }
+
+    func testAnAccountWithNoReadingCollapsesToASingleDash() throws {
+        var profile = claude("Work")
+        profile.claudeUsage = nil
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertEqual(
+            row.valueText,
+            OverflowProfileRow.noReadingText,
+            "Nothing read is one dash, never a reassuring zero"
+        )
+        XCTAssertTrue(
+            row.accessibilityValueText.contains(
+                ProviderUILocalization.text(
+                    "menubar.accessibility.state.no_data",
+                    fallback: "no usage data"
+                )
+            )
+        )
+    }
+
+    func testOneMissingWindowStillNamesBoth() throws {
+        var profile = claude("Work")
+        profile.claudeUsage = usage(session: nil, week: 55)
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertNotEqual(row.valueText, OverflowProfileRow.noReadingText)
+        XCTAssertTrue(
+            row.valueText.contains(OverflowProfileRow.noReadingText),
+            "The dash says which window is missing"
+        )
+    }
+
+    // MARK: - Flags
+
+    func testOnlyTheActiveAccountIsFlaggedActive() {
+        let first = claude("One")
+        let second = claude("Two")
+        let listed = rows([first, second], activeClaudeProfileID: second.id)
+
+        XCTAssertEqual(listed.map(\.isActive), [false, true])
+    }
+
+    func testTheAttentionFlagFollowsTheAccountItBelongsTo() {
+        let first = claude("One")
+        let second = claude("Two")
+        let listed = rows(
+            [first, second],
+            attention: [second.id: .claudeAI]
+        )
+
+        XCTAssertNil(listed[0].attention)
+        XCTAssertEqual(listed[1].attention, .claudeAI)
+    }
+
+    func testThePaceDotAppearsOnlyWhenThePaceMarkerIsOn() throws {
+        let profile = claude("Work", session: 60)
+
+        let without = try XCTUnwrap(
+            rows([profile], showPaceMarker: false).first
+        )
+        XCTAssertNil(without.paceStatus)
+
+        let with = try XCTUnwrap(
+            rows([profile], showPaceMarker: true).first
+        )
+        XCTAssertNotNil(
+            with.paceStatus,
+            "An account with a reading and an elapsed window has a pace"
+        )
+    }
+
+    // MARK: - canActivate
+
+    func testCanActivateFollowsThePresentationsOwnActions() throws {
+        let profile = claude("Work")
+
+        for isActive in [false, true] {
+            let listed = HealthStripAccountRow.rows(
+                profiles: [profile],
+                snapshots: [:],
+                activeClaudeProfileID: isActive ? profile.id : nil,
+                attention: [:],
+                showRemaining: false,
+                showPaceMarker: false,
+                isActive: { _ in isActive }
+            )
+            let row = try XCTUnwrap(listed.first)
+            let presentation = ProviderMenuPresentationBuilder.presentation(
+                profile: profile,
+                snapshot: nil,
+                now: Date(),
+                isActive: isActive
+            )
+            XCTAssertEqual(
+                row.canActivate,
+                presentation.actions.contains { $0.kind == .activate },
+                "Make Active must be offered on exactly the same terms the "
+                    + "context menu offers it, with isActive \(isActive)"
+            )
+        }
+    }
+
+    // MARK: - Row action labels
+
+    func testEveryRowActionHasALocalizedLabel() {
+        let openLabel = String(
+            format: ProviderUILocalization.text(
+                "menu.provider.open_profile",
+                fallback: "Open %@"
+            ),
+            "Work"
+        )
+        let labels = [
+            openLabel,
+            ProviderUILocalization.text(
+                "menu.provider.make_active",
+                fallback: "Make Active"
+            ),
+            ProviderUILocalization.text(
+                "common.refresh",
+                fallback: "Refresh"
+            ),
+            ProviderUILocalization.text(
+                "menubar.healthstrip.footer.refresh_all",
+                fallback: "Refresh All"
+            ),
+            ProviderUILocalization.text(
+                "menu.provider.manage_profiles",
+                fallback: "Manage Profiles…"
+            ),
+            ProviderUILocalization.text("common.quit", fallback: "Quit"),
+            ProviderUILocalization.text(
+                "menubar.healthstrip.header",
+                fallback: "Claude Accounts"
+            ),
+            ProviderUILocalization.text(
+                "menubar.healthstrip.row.active_badge",
+                fallback: "Active"
+            )
+        ]
+        for label in labels {
+            XCTAssertFalse(label.isEmpty)
+            XCTAssertFalse(
+                label.contains("menubar.") || label.contains("menu.provider"),
+                "A raw key reached the UI: \(label)"
+            )
+        }
+        XCTAssertTrue(openLabel.contains("Work"))
+    }
+
+    // MARK: - Popover sizing
+
+    func testTheContentHeightGrowsWithRowsThenCaps() {
+        let one = HealthStripAccountsView.contentHeight(rowCount: 1)
+        let four = HealthStripAccountsView.contentHeight(rowCount: 4)
+        let cap = HealthStripAccountsView.contentHeight(
+            rowCount: HealthStripAccountsView.maxVisibleRows
+        )
+
+        XCTAssertGreaterThan(four, one)
+        XCTAssertEqual(
+            HealthStripAccountsView.contentHeight(rowCount: 40),
+            cap,
+            "Rows past the cap scroll rather than growing the popover"
+        )
+        XCTAssertEqual(
+            HealthStripAccountsView.contentHeight(rowCount: 0),
+            one,
+            "An empty list still has a usable height"
+        )
+    }
+}
