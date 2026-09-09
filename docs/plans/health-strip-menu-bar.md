@@ -323,16 +323,25 @@ the lifecycle suite needs `HostedAppTestCase` (`HostedTestSupport.swift:29`).
    only their own cell; `profileID(atX:)` at both cell edges and `nil` in padding; order preserved.
 2. **`HealthStripNumbersTests`** — session-only over, week-only over, both under, exactly at
    threshold, unknown windows and `.never` never trigger, remaining mode does not flip the trigger,
-   hysteresis holds until 3 points below then releases, **and the map is pruned by
-   `reconcileMultiProfileItems` and cleared when the threshold setting changes**.
+   hysteresis holds until 3 points below then releases, **and the map is pruned in
+   `updateMultiProfileConfiguration`'s `reconciliation.idsToRemove` loop and cleared when the
+   threshold setting changes**. Not by `reconcileMultiProfileItems`: that symbol is a pure static
+   returning two `Set<UUID>`s, deliberately isolated from instance state, and cannot prune.
 3. **`HealthStripRenderTests`** — fill height tracks the display percentage; remaining mode inverts
-   it; unknown session draws the dash and no fill; **the numbers image lies fully inside the canvas
-   in both `showProfileLabel` states**, canvas height `max(22, ceil(image.height))`; the two
+   it; **both windows unknown** draws the dash and no fill, and one readable window is a reading;
+   **canvas height is exactly 22 in both `showProfileLabel` states** and the numbers image is
+   centred in it (a taller image is clipped, never allowed to resize the strip); the two
    credentials produce different images (`imageFingerprint`, `:2407`); active base only for the
-   active profile; bar and numbers use the same resolved usage when snapshot and profile disagree.
-4. **`HealthStripAccessibilityTests`** — tooltip names every listed profile; the label states each
-   session value or the localized no-data wording; the credential sentence comes from
-   `attentionStateText` and differs per credential; every row action button has a localized label.
+   active profile; bar and numbers use the same resolved usage when snapshot and profile disagree,
+   and a snapshot for a stale provider revision is ignored.
+4. **`HealthStripAccessibilityTests`** — tooltip names every listed profile; the label **names both
+   windows** and states each one's value or the localized no-data wording, because the bar's own
+   figure is whichever window is tighter and an unnamed number changes meaning between refreshes;
+   the credential sentence comes from `attentionStateText` and differs per credential. Row action
+   labels are covered by `HealthStripAccountRowViewTests` over
+   `HealthStripAccountRow.actions`, the list the row renders — `NSHostingView` vends no
+   accessibility children outside a real accessibility session, so walking the rendered row does
+   not work.
 5. **`HealthStripSettingsPersistenceTests`** — round-trip both settings; absent keys default to
    per-profile layout and 90; a stored 0 or unknown kind falls back to 90.
 6. **`HealthStripStatusItemTests`** (hosted) — **`hasValidStatusBar` is `true` with the strip item
@@ -363,7 +372,7 @@ their own items. Extend "When accounts don't fit" (`:60`): overflow does not app
 | Risk | Mitigation |
 |---|---|
 | Menu bar arrangement lost | `hasValidStatusBar` counts the strip; hide, never remove; no existing `autosaveName` changes |
-| Popover layout crash | `sizingOptions = []` plus explicit `popover.contentSize`; rows are a snapshot taken at open; every action closes the popover first, so content never mutates while shown |
+| Popover layout crash | Rows are a snapshot taken at open and every action closes the popover first, so content never mutates while shown — which is what makes `sizingOptions = .preferredContentSize` over a self-sizing view safe here, as it already is for the overflow list. The footer is pinned outside the `ScrollView`; only the row area is capped. Measured by `HealthStripAccountsViewLayoutTests` |
 | Right click hits the wrong account | Cell hit-test feeds `showContextMenu(identityOverride:)`; guarded event read |
 | Bar and number disagree | One snapshot-first resolution per profile, passed to both |
 | Strip width flapping | 3-point hysteresis, owned by `StatusBarUIManager`, pruned and cleared |
@@ -403,9 +412,11 @@ source and adopted as written.
    two exhaustive switches make a third enum case the riskier shape.
 2. Three blockers closed: `hasValidStatusBar` counts the strip item, Refresh All gets a fan-out
    route outside the captured-target router, right click hit-tests the cell via `identityOverride`.
-3. The popover uses the main popover's shape — `sizingOptions = []`, explicit `contentSize`, rows
-   snapshotted at open — because the crash was content-derived Auto Layout, not `sizePopover`.
+3. The popover uses the overflow list's shape — `.preferredContentSize` over a view that
+   self-sizes, with the footer pinned outside the scroll area, rows
+   snapshotted at open — because the crash was content-derived Auto Layout over content that
+   mutates while shown, which these rows never do.
 4. Bar and numbers read one snapshot-first source; hysteresis lives on `StatusBarUIManager`, pruned
    and cleared; row actions are always-present icon buttons, not hover-only controls.
-5. Eight test suites, 12 new localization keys across 9 locales, `menu.provider.open_profile`
+5. Eleven test suites, 14 new localization keys across 9 locales, `menu.provider.open_profile`
    reused, and nothing changes for anyone who leaves the setting off.

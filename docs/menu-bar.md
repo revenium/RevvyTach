@@ -65,9 +65,11 @@ active account. That menu appears under the left edge of the strip rather than u
 clicked, because macOS positions a menu from the whole item; the menu still belongs to the
 account you clicked.
 
-**Codex accounts keep their own items.** The strip draws Claude accounts only. Because the icon
-style setting then governs no Claude item at all, it is disabled while the strip is on, with a
-line saying it now applies to Codex accounts.
+**Codex accounts keep their own items.** The strip draws Claude accounts only. Two settings then
+govern no Claude item at all and are disabled while the strip is on, each saying it now applies to
+Codex accounts: the icon style picker, and Show Time Marker, which has nowhere to go on a 4-point
+bar. Show Week and the pace marker stay on, because both still shape the numbers drawn beside a
+busy account.
 
 ---
 
