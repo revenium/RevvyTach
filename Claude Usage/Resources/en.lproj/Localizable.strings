@@ -1411,6 +1411,7 @@
 "multiprofile.layout.per_profile" = "One item per account";
 "multiprofile.layout.health_strip" = "Health strip";
 "multiprofile.layout.description" = "Health strip draws one small bar per account in a single menu bar item.";
+"multiprofile.layout.health_strip_manager_hint" = "If a menu bar manager such as Thaw, Ice or Bartender hides the strip, unhide it there once.";
 "multiprofile.layout.icon_style_hint" = "Icon style applies to Codex accounts while Health strip is on.";
 "multiprofile.layout.time_marker_hint" = "Time marker applies to Codex accounts while Health strip is on.";
 "multiprofile.healthstrip.numbers_title" = "Show numbers for accounts above";

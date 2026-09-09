@@ -1396,6 +1396,7 @@
 "multiprofile.layout.per_profile" = "アカウントごとに1項目";
 "multiprofile.layout.health_strip" = "ヘルスストリップ";
 "multiprofile.layout.description" = "ヘルスストリップは、1つのメニューバー項目にアカウントごとの小さなバーを描画します。";
+"multiprofile.layout.health_strip_manager_hint" = "Thaw、Ice、Bartender などのメニューバー管理アプリがヘルスストリップを隠している場合は、そのアプリで一度表示に切り替えてください。";
 "multiprofile.layout.icon_style_hint" = "ヘルスストリップが有効な間、アイコンスタイルはCodexアカウントにのみ適用されます。";
 "multiprofile.layout.time_marker_hint" = "ヘルスストリップが有効な間、経過時間マーカーはCodexアカウントにのみ適用されます。";
 "multiprofile.healthstrip.numbers_title" = "数値を表示するしきい値";

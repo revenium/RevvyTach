@@ -1393,6 +1393,7 @@
 "multiprofile.layout.per_profile" = "每个账户一个项目";
 "multiprofile.layout.health_strip" = "健康条";
 "multiprofile.layout.description" = "健康条在单个菜单栏项目中为每个账户绘制一根细条。";
+"multiprofile.layout.health_strip_manager_hint" = "如果 Thaw、Ice 或 Bartender 等菜单栏管理工具隐藏了健康条，请在该工具中取消隐藏一次。";
 "multiprofile.layout.icon_style_hint" = "启用健康条时，图标样式仅适用于 Codex 账户。";
 "multiprofile.layout.time_marker_hint" = "启用健康条时，时间进度标记仅适用于 Codex 账户。";
 "multiprofile.healthstrip.numbers_title" = "显示数字的阈值";

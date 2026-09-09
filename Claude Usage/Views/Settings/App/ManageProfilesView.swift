@@ -200,6 +200,25 @@ struct ManageProfilesView: View {
                                 )
                                 .font(DesignTokens.Typography.caption)
                                 .foregroundColor(.secondary)
+
+                                // A menu bar manager sorts items by
+                                // identity, and the strip is one it has
+                                // never seen, so the first time it is
+                                // switched on the manager is likely to file
+                                // it away hidden. Without this line that
+                                // looks exactly like a broken feature.
+                                if multiLayout == .healthStrip {
+                                    Text(
+                                        "multiprofile.layout.health_strip_manager_hint"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(
+                                        horizontal: false,
+                                        vertical: true
+                                    )
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 

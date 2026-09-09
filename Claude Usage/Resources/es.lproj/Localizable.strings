@@ -1379,6 +1379,7 @@
 "multiprofile.layout.per_profile" = "Un elemento por cuenta";
 "multiprofile.layout.health_strip" = "Barra de estado";
 "multiprofile.layout.description" = "La barra de estado dibuja una pequeña barra por cuenta en un solo elemento de la barra de menús.";
+"multiprofile.layout.health_strip_manager_hint" = "Si un gestor de la barra de menús como Thaw, Ice o Bartender oculta la barra de estado, muéstrala allí una vez.";
 "multiprofile.layout.icon_style_hint" = "Con la barra de estado activada, el estilo de icono solo se aplica a las cuentas de Codex.";
 "multiprofile.layout.time_marker_hint" = "Con la barra de estado activada, el marcador de tiempo transcurrido solo se aplica a las cuentas de Codex.";
 "multiprofile.healthstrip.numbers_title" = "Mostrar números para cuentas a partir de";
