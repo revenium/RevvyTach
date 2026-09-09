@@ -501,6 +501,17 @@ final class ProviderUIDependencies {
         setupCompletionWriter()
     }
 
+    /// Completes a Claude setup by writing the browser session key, the
+    /// organization it belongs to, and an optional linked terminal sign-in.
+    ///
+    /// `chromeSessionKeySource` defaults to `.set(nil)` because this function
+    /// always writes a new `claudeSessionKey`, and a caller that says nothing
+    /// about where that key came from has not said it came from Chrome. The
+    /// fail-safe reading of silence is therefore "no Chrome origin": leaving
+    /// the previous key's origin in place would let an automatic re-read
+    /// overwrite the new key out of a browser profile the user never pointed
+    /// at it. A caller that genuinely wants the recorded origin preserved
+    /// across a key change has to pass `.unchanged` deliberately.
     @discardableResult
     func completeClaudeManualSetup(
         sessionKey: String,
@@ -510,16 +521,20 @@ final class ProviderUIDependencies {
         terminalAccountName: String? = nil,
         acceptSessionOnlyStorage: Bool = false,
         target: ClaudeManualSetupTarget = .compatibilityCurrent,
-        chromeSessionKeySource: ChromeSessionKeySourceWrite = .unchanged
+        chromeSessionKeySource: ChromeSessionKeySourceWrite = .set(nil)
     ) async throws -> Profile {
         let targetProfile = try resolvedClaudeManualSetupTarget(target)
         var profile = try requiredProfile(targetProfile.id)
         profile.claudeSessionKey = sessionKey
         profile.organizationId = organizationID
-        // Carried on the same profile record as the key it describes. Written
-        // afterwards instead, it could be skipped while the key survived, and
-        // a hand-typed key would keep the Chrome origin of the key it
-        // replaced.
+        // Carried on the same profile record as the key it describes. Both
+        // fields are only local struct assignments here, committed together by
+        // the single `updateProfileThrowing` call below, so the ordering is
+        // cosmetic and no partial write is possible at this call site. What
+        // matters is that the origin is written at all: a hand-typed key that
+        // kept the Chrome origin of the key it replaced would be eligible for
+        // an automatic re-read out of a browser profile the user never
+        // pointed at it.
         if case .set(let source) = chromeSessionKeySource {
             profile.chromeSessionKeySource = source
         }
