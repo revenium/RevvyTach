@@ -40,15 +40,25 @@ final class HealthStripRenderTests: XCTestCase {
             return nil
         }
         let rep = NSBitmapImageRep(cgImage: cgImage)
-        let scaleX = CGFloat(rep.pixelsWide) / image.size.width
-        let scaleY = CGFloat(rep.pixelsHigh) / image.size.height
-        let pixelX = Int((x * scaleX).rounded(.down))
-        // NSBitmapImageRep counts rows from the top.
-        let pixelY = Int(((image.size.height - y) * scaleY).rounded(.down))
-        guard pixelX >= 0, pixelX < rep.pixelsWide,
-              pixelY >= 0, pixelY < rep.pixelsHigh else {
+        guard rep.pixelsWide > 0, rep.pixelsHigh > 0 else {
             return nil
         }
+        let scaleX = CGFloat(rep.pixelsWide) / image.size.width
+        let scaleY = CGFloat(rep.pixelsHigh) / image.size.height
+        // A point exactly on the image's right or bottom edge scales to
+        // rep.pixelsWide / rep.pixelsHigh, one past the last valid index;
+        // clamp so a boundary sample reads the last row/column instead of
+        // silently missing (nil, treated as fully transparent) or, further
+        // out of range, going negative.
+        let pixelX = min(
+            max(Int((x * scaleX).rounded(.down)), 0),
+            rep.pixelsWide - 1
+        )
+        // NSBitmapImageRep counts rows from the top.
+        let pixelY = min(
+            max(Int(((image.size.height - y) * scaleY).rounded(.down)), 0),
+            rep.pixelsHigh - 1
+        )
         return rep.colorAt(x: pixelX, y: pixelY)?
             .usingColorSpace(.deviceRGB)
     }

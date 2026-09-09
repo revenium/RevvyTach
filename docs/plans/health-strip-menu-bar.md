@@ -146,9 +146,9 @@ Credits window in. Never the displayed figure (`tightestUsed`'s rule,
 **Hysteresis:** once shown, numbers stay until the account drops 3 points below the threshold —
 without it an account hovering at 90 widens and narrows the strip on every refresh, shifting every
 neighbouring app's item. State is `private var healthStripNumbersShown: [UUID: Bool]` on
-`StatusBarUIManager`: **never persisted**, pruned by the reconciliation that removes a profile's
-status item (`reconcileMultiProfileItems`, `:1043`), cleared wholesale when the threshold setting
-changes. Not on the SwiftUI view (resets every render), not keyed by index (transfers between
+`StatusBarUIManager`: **never persisted**, pruned in `updateMultiProfileConfiguration`'s
+`for profileID in reconciliation.idsToRemove` loop (`:1270`) when a profile's status item is
+removed, cleared wholesale when the threshold setting changes. Not on the SwiftUI view (resets every render), not keyed by index (transfers between
 accounts on reorder).
 
 **Placement: inline in the strip, beside that profile's own bar.** Giving a hot profile its own

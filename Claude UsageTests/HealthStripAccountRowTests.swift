@@ -349,4 +349,52 @@ final class HealthStripAccountRowTests: XCTestCase {
             "The stale action fired nothing"
         )
     }
+
+    /// Open is held to the same rule as Refresh and Make Active. It used to
+    /// hand the router's job over to the popover opener, which rebuilt the
+    /// identity from the live profile — so a row pressed after a credential
+    /// rotation showed the account that replaced the one on the row, while
+    /// the other two actions refused.
+    func testARowsCapturedRevisionRejectsOpenAfterReprovisioning() throws {
+        let profile = claude("Work")
+        let row = try XCTUnwrap(rows([profile]).first)
+        var live = [profile]
+        var opened: [ProviderStatusItemIdentity] = []
+        let router = ProviderCapturedTargetActionRouter(
+            profiles: { live },
+            sinks: .init(
+                openPopover: { target, _ in opened.append(target) },
+                detachPopover: { _, _ in },
+                refresh: { _, _ in },
+                activate: { _, _ in },
+                settings: { _, _, _ in },
+                quit: { _, _ in }
+            )
+        )
+
+        XCTAssertTrue(
+            router.route(.openPopover, target: row.identity),
+            "The unchanged account still opens from its row"
+        )
+        XCTAssertEqual(
+            opened,
+            [row.identity],
+            "and it opens exactly the account the row named"
+        )
+
+        var reprovisioned = profile
+        reprovisioned.providerRevision += 1
+        live = [reprovisioned]
+
+        XCTAssertFalse(
+            router.route(.openPopover, target: row.identity),
+            "A row built before the rotation must not open the account "
+                + "that replaced it"
+        )
+        XCTAssertEqual(
+            opened,
+            [row.identity],
+            "The stale Open showed nothing"
+        )
+    }
 }

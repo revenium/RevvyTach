@@ -2602,18 +2602,17 @@ class MenuBarManager: NSObject, ObservableObject {
     }
 
     /// Opens one profile's detail popover anchored to a button that is not
-    /// that profile's own status item — the overflow item, or the health
-    /// strip. Needs none of `setViewedProfile`'s hydration: every profile
-    /// reachable this way is already selected for display.
-    /// - Parameter checksBounce: Left on for the overflow list, whose
-    ///   behaviour is unchanged. The health strip turns it off: it collapses
-    ///   N accounts into one button, so its list is anchored to the same
-    ///   button a profile popover would be, and the 250 ms same-button guard
-    ///   would read a row's Open as a second click on the status item.
+    /// that profile's own status item — the overflow item. Needs none of
+    /// `setViewedProfile`'s hydration: every profile reachable this way is
+    /// already selected for display.
+    ///
+    /// The health strip does not come through here: its rows carry the
+    /// account as it stood when the list was built, so its Open is routed
+    /// through the captured-target router instead of re-deriving the
+    /// identity from the live profile.
     private func openProfilePopover(
         _ profileID: UUID,
-        anchoredTo button: NSStatusBarButton,
-        checksBounce: Bool = true
+        anchoredTo button: NSStatusBarButton
     ) {
         guard let profile = profileManager.profiles.first(where: {
             $0.id == profileID
@@ -2629,8 +2628,7 @@ class MenuBarManager: NSObject, ObservableObject {
         toggleValidatedPopover(
             from: button,
             target: identity,
-            profile: profile,
-            checksBounce: checksBounce
+            profile: profile
         )
     }
 
@@ -2713,10 +2711,22 @@ class MenuBarManager: NSObject, ObservableObject {
                 self?.closeHealthStripPopover()
                 guard let button = self?.statusBarUIManager?
                     .healthStripButton else { return }
-                self?.openProfilePopover(
-                    identity.profileID,
-                    anchoredTo: button,
-                    checksBounce: false
+                // Open goes through the same captured-target router as the
+                // other two row actions, so a row built before a credential
+                // rotation cannot open the account that replaced it. Only
+                // the destination differs: the strip's own button is the
+                // anchor, and a press inside the list is never a bounce.
+                self?.routeHealthStripRowAction(
+                    .openPopover,
+                    identity,
+                    openPopover: { [weak self] target, profile in
+                        self?.toggleValidatedPopover(
+                            from: button,
+                            target: target,
+                            profile: profile,
+                            checksBounce: false
+                        )
+                    }
                 )
             },
             onActivate: { [weak self] identity in
@@ -2770,16 +2780,22 @@ class MenuBarManager: NSObject, ObservableObject {
     /// keeps the same staleness check every status item action has: a
     /// profile deleted or re-provisioned while the list was open does
     /// nothing rather than acting on the wrong account.
+    /// - Parameter openPopover: Where `.openPopover` lands. Supplied only by
+    ///   the row's Open, which has to anchor the account's popover to the
+    ///   strip's own button; the router itself does nothing for that action.
     private func routeHealthStripRowAction(
         _ action: ProviderCapturedTargetActionRouter.Action,
-        _ target: ProviderStatusItemIdentity
+        _ target: ProviderStatusItemIdentity,
+        openPopover:
+            ProviderCapturedTargetActionRouter.TargetSink? = nil
     ) {
         guard profileManager.profiles.contains(where: {
             $0.id == target.profileID
         }) else {
             return
         }
-        let routed = capturedTargetRouter().route(action, target: target)
+        let routed = capturedTargetRouter(openPopover: openPopover)
+            .route(action, target: target)
         if !routed {
             LoggingService.shared.logWarning(
                 "Ignored health strip action for stale provider identity"
