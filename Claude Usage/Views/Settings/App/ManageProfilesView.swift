@@ -343,19 +343,40 @@ struct ManageProfilesView: View {
                             )
 
                             // Show Time Marker Toggle
-                            SettingToggle(
-                                title: "appearance.show_time_marker_title".localized,
-                                description: "appearance.show_time_marker_description".localized,
-                                isOn: Binding(
-                                    get: { profileManager.multiProfileConfig.showTimeMarker },
-                                    set: { showMarker in
-                                        var config = profileManager.multiProfileConfig
-                                        config.showTimeMarker = showMarker
-                                        profileManager.updateMultiProfileConfig(config)
-                                        MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
-                                    }
+                            VStack(
+                                alignment: .leading,
+                                spacing: DesignTokens.Spacing.extraSmall
+                            ) {
+                                SettingToggle(
+                                    title: "appearance.show_time_marker_title".localized,
+                                    description: "appearance.show_time_marker_description".localized,
+                                    isOn: Binding(
+                                        get: { profileManager.multiProfileConfig.showTimeMarker },
+                                        set: { showMarker in
+                                            var config = profileManager.multiProfileConfig
+                                            config.showTimeMarker = showMarker
+                                            profileManager.updateMultiProfileConfig(config)
+                                            MenuBarNotificationDelivery.enqueue(.multiProfileConfigChanged)
+                                        }
+                                    )
                                 )
-                            )
+                                .disabled(multiLayout == .healthStrip)
+
+                                // A 4pt bar has nowhere to put a time
+                                // marker, so in strip layout this governs
+                                // Codex items only — the same reason the
+                                // icon style picker above is disabled. Show
+                                // Week and the pace marker stay enabled:
+                                // both still shape the inline numbers.
+                                if multiLayout == .healthStrip {
+                                    Text(
+                                        "multiprofile.layout.icon_style_hint"
+                                            .localized
+                                    )
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundColor(.secondary)
+                                }
+                            }
 
                             // Pace Marker Toggle
                             SettingToggle(
