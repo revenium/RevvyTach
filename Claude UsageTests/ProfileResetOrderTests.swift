@@ -5,6 +5,7 @@
 //  Created by Codex on 2026-09-09.
 //
 
+import UsageCore
 import XCTest
 @testable import Claude_Usage
 
@@ -88,6 +89,34 @@ final class ProfileResetOrderTests: XCTestCase {
         XCTAssertEqual(
             ProfileResetOrder.sorted(profiles, snapshots: [:]).map(\.id),
             [firstID, secondID]
+        )
+    }
+
+    func testMatchingSnapshotWithoutUsageOverridesStaleProfileUsage() {
+        let staleProfile = profile("Stale", weeklyReset: 100)
+        let knownProfile = profile("Known", weeklyReset: 200)
+        let snapshot = PresentationSnapshot(
+            profileID: staleProfile.id,
+            profileName: staleProfile.name,
+            providerID: staleProfile.providerID,
+            providerRevision: staleProfile.providerRevision,
+            presentationEpoch: 1,
+            capabilities: ProviderCapabilities(),
+            configurationState: .ready,
+            report: nil,
+            claudeUsage: nil,
+            claudeAPIUsage: nil,
+            activity: .idle,
+            lastSuccessfulAt: nil,
+            currentFailure: nil
+        )
+
+        XCTAssertEqual(
+            ProfileResetOrder.sorted(
+                [staleProfile, knownProfile],
+                snapshots: [staleProfile.id: snapshot]
+            ).map(\.name),
+            ["Known", "Stale"]
         )
     }
 }

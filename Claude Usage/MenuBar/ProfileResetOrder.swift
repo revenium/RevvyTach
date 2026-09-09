@@ -57,13 +57,14 @@ enum ProfileResetOrder {
         for profile: Profile,
         snapshot: PresentationSnapshot?
     ) -> ClaudeUsage? {
-        let validSnapshot = snapshot.flatMap {
-            ProviderMenuPresentationBuilder.snapshotMatches(
-                profile: profile,
-                snapshot: $0
-            ) ? $0 : nil
+        guard let snapshot,
+              ProviderMenuPresentationBuilder.snapshotMatches(
+                  profile: profile,
+                  snapshot: snapshot
+              ) else {
+            return profile.claudeUsage
         }
-        return validSnapshot?.claudeUsage ?? profile.claudeUsage
+        return snapshot.claudeUsage
     }
 
     private static func comesBefore(_ lhs: Entry, _ rhs: Entry) -> Bool {
