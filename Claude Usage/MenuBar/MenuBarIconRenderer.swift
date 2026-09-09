@@ -2135,6 +2135,331 @@ struct MenuBarIconRenderer {
         return image
     }
 
+    // MARK: - Health Strip
+
+    /// One account's contribution to the health strip, resolved once by the
+    /// caller so the bar, the digits and the spoken label can never describe
+    /// different readings.
+    ///
+    /// `sessionDisplay` is the *displayed* session figure — used or
+    /// remaining, whichever the user asked for — and `nil` means no reading
+    /// was ever received. That single nil drives both the dash in place of a
+    /// fill and the "no usage data" wording, so the picture and the words
+    /// agree by construction rather than by discipline.
+    struct HealthStripProfileInput {
+        let profileID: UUID
+        let profileName: String
+        let sessionDisplay: Double?
+        let status: UsageStatusLevel
+        let showRemaining: Bool
+        let isActive: Bool
+        let attention: MenuBarAttentionSignal.Credential?
+        /// The already-rendered numbers image for this account, or nil when
+        /// it sits below the "show numbers" threshold.
+        let numbersImage: NSImage?
+
+        init(
+            profileID: UUID,
+            profileName: String,
+            sessionDisplay: Double?,
+            status: UsageStatusLevel,
+            showRemaining: Bool,
+            isActive: Bool = false,
+            attention: MenuBarAttentionSignal.Credential? = nil,
+            numbersImage: NSImage? = nil
+        ) {
+            self.profileID = profileID
+            self.profileName = profileName
+            self.sessionDisplay = sessionDisplay
+            self.status = status
+            self.showRemaining = showRemaining
+            self.isActive = isActive
+            self.attention = attention
+            self.numbersImage = numbersImage
+        }
+    }
+
+    /// The strip's image together with the geometry a click is resolved
+    /// against and the words spoken about it. Returned as one value for the
+    /// reason `ProfileMenuBarRender` is: an image and a label built in two
+    /// places drift.
+    struct HealthStripRender {
+        let image: NSImage
+        let cells: [HealthStripCell]
+        let tooltip: String
+        let accessibilityLabel: String
+    }
+
+    /// Draws every selected Claude account as one small vertical bar in a
+    /// single menu bar item.
+    func createHealthStrip(
+        profiles: [HealthStripProfileInput],
+        monochromeMode: Bool,
+        isDarkMode: Bool
+    ) -> HealthStripRender {
+        let cells = HealthStripLayout.cells(
+            for: profiles.map {
+                (id: $0.profileID, numbersWidth: $0.numbersImage?.size.width)
+            }
+        )
+        let width = HealthStripLayout.totalWidth(cells)
+        // `createMultiProfilePercentage` is taller with the profile label
+        // switched on than without it, so the canvas grows to whatever the
+        // tallest numbers image needs rather than clipping it.
+        let tallestNumbers = profiles
+            .compactMap { $0.numbersImage?.size.height }
+            .max() ?? 0
+        let height = HealthStripLayout.canvasHeight(
+            tallestNumbersHeight: tallestNumbers
+        )
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        let foreground = menuBarForegroundColor(isDarkMode: isDarkMode)
+
+        for (index, cell) in cells.enumerated() {
+            let input = profiles[index]
+            let trackRect = NSRect(
+                x: cell.minX,
+                y: HealthStripLayout.barBottom,
+                width: HealthStripLayout.barWidth,
+                height: HealthStripLayout.barHeight
+            )
+            let radius = HealthStripLayout.barWidth / 2
+            let track = NSBezierPath(
+                roundedRect: trackRect,
+                xRadius: radius,
+                yRadius: radius
+            )
+            foreground.withAlphaComponent(0.18).setFill()
+            track.fill()
+
+            if input.sessionDisplay == nil {
+                // No reading: a dimmed dash, never an empty bar. An empty
+                // bar is a measurement of zero, which is a different claim.
+                drawUnknownStripDash(in: trackRect, isDarkMode: isDarkMode)
+            } else {
+                let fill = HealthStripLayout.fillHeight(
+                    displayPercentage: input.sessionDisplay
+                )
+                if fill > 0 {
+                    NSGraphicsContext.saveGraphicsState()
+                    track.addClip()
+                    getColor(
+                        for: input.status,
+                        monochromeMode: monochromeMode,
+                        useSystemColor: false,
+                        isDarkMode: isDarkMode
+                    ).setFill()
+                    NSBezierPath(
+                        rect: NSRect(
+                            x: trackRect.minX,
+                            y: trackRect.minY,
+                            width: trackRect.width,
+                            height: fill
+                        )
+                    ).fill()
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+            }
+
+            if input.isActive {
+                // The strip's form of the active-profile underline: a short
+                // green base under this account's bar only, since one item
+                // now holds every account.
+                NSColor.systemGreen.setFill()
+                NSBezierPath(
+                    roundedRect: NSRect(
+                        x: cell.minX,
+                        y: 1,
+                        width: HealthStripLayout.barWidth,
+                        height: 2
+                    ),
+                    xRadius: 1,
+                    yRadius: 1
+                ).fill()
+            }
+
+            if let numbers = input.numbersImage {
+                // Centred on the bar's own span rather than sitting on the
+                // canvas floor, and clamped so a tall numbers image cannot
+                // spill outside the canvas and be clipped.
+                let y = HealthStripLayout.numbersOriginY(
+                    numbersHeight: numbers.size.height,
+                    canvasHeight: height
+                )
+                numbers.draw(
+                    at: NSPoint(
+                        x: cell.minX + HealthStripLayout.numbersOffsetX,
+                        y: y
+                    ),
+                    from: NSRect(origin: .zero, size: numbers.size),
+                    operation: .sourceOver,
+                    fraction: 1.0
+                )
+            }
+
+            if let attention = input.attention {
+                // Last within the cell, so it survives the fill, the base
+                // and the digits instead of being drawn over by them.
+                drawStripAttentionMarker(
+                    atX: cell.minX,
+                    y: HealthStripLayout.markerY,
+                    credential: attention,
+                    isDarkMode: isDarkMode
+                )
+            }
+        }
+
+        image.unlockFocus()
+        // Never template-rendered: macOS would flatten the status colours,
+        // the green active base and the punched hole in the claude.ai ring
+        // into one foreground colour, which is every distinction the strip
+        // makes.
+        image.isTemplate = false
+
+        let header = String(
+            format: ProviderUILocalization.text(
+                "menubar.healthstrip.accessibility_label",
+                fallback: "%@ Claude accounts"
+            ),
+            "\(profiles.count)"
+        )
+        var sentences: [String] = []
+        sentences.reserveCapacity(profiles.count)
+        for profile in profiles {
+            sentences.append(Self.healthStripAccountSentence(profile))
+        }
+        return HealthStripRender(
+            image: image,
+            cells: cells,
+            // One account per line on hover; one sentence for VoiceOver.
+            tooltip: ([header] + sentences).joined(separator: "\n"),
+            accessibilityLabel: ([header] + sentences)
+                .joined(separator: ", ")
+        )
+    }
+
+    /// What the strip says about one account, in the vocabulary the
+    /// per-account items already use — so nobody hears "no usage data" in
+    /// one layout and a fabricated "0% used" in the other.
+    static func healthStripAccountSentence(
+        _ input: HealthStripProfileInput
+    ) -> String {
+        let value: String
+        if let display = input.sessionDisplay {
+            value = "\(Int(display.rounded()))% "
+                + StatusBarUIManager.usageModeText(
+                    showRemaining: input.showRemaining
+                )
+        } else {
+            value = ProviderUILocalization.text(
+                "menubar.accessibility.state.no_data",
+                fallback: "no usage data"
+            )
+        }
+        return StatusBarUIManager.profileAccessibilityLabel(
+            "\(input.profileName), \(value)",
+            isActive: input.isActive,
+            attention: input.attention,
+            profileName: input.profileName
+        )
+    }
+
+    /// `drawUnknownDash` narrowed from 8pt to the strip's 4pt bar. Kept
+    /// separate rather than parameterized: the 8pt dash is calibrated to the
+    /// per-account icons' own track width, and widening this one would
+    /// overrun the 7pt pitch into the neighbouring account's bar.
+    private func drawUnknownStripDash(
+        in trackRect: NSRect,
+        isDarkMode: Bool
+    ) {
+        let dashSize = NSSize(
+            width: HealthStripLayout.barWidth,
+            height: 1.5
+        )
+        let dashRect = NSRect(
+            x: trackRect.midX - dashSize.width / 2,
+            y: trackRect.midY - dashSize.height / 2,
+            width: dashSize.width,
+            height: dashSize.height
+        )
+        menuBarForegroundColor(isDarkMode: isDarkMode)
+            .withAlphaComponent(0.55)
+            .setFill()
+        NSBezierPath(
+            roundedRect: dashRect,
+            xRadius: 0.75,
+            yRadius: 0.75
+        ).fill()
+    }
+
+    /// The attention marker, drawn straight into the strip's canvas above
+    /// one account's bar.
+    ///
+    /// Shares the SHAPES of `applyAttentionMarker` — a filled red disc for
+    /// the Claude Code sign-in, a `.clear`-punched hollow amber ring for the
+    /// claude.ai one — and must keep sharing them. Colour alone carries no
+    /// information for a red/green-colourblind viewer, and red-against-amber
+    /// is one of the pairs that goes first; solid-against-hollow survives
+    /// that and the 4pt size. The two must never collapse into one shape.
+    ///
+    /// The 5.5pt footprint (a 4pt marker plus its ±0.75 halo) is centred on
+    /// the 4pt bar inside the 7pt pitch, leaving 0.75pt of clearance each
+    /// side. At `y = 17` the halo runs 16.25 to 21.75: inside the 22pt
+    /// canvas, and clear of the bar top at 16.
+    ///
+    /// - Parameters:
+    ///   - atX: The left edge of this account's bar.
+    ///   - y: The marker's own bottom edge, not its centre.
+    private func drawStripAttentionMarker(
+        atX x: CGFloat,
+        y: CGFloat,
+        credential: MenuBarAttentionSignal.Credential,
+        isDarkMode: Bool
+    ) {
+        let diameter: CGFloat = 4
+        let markerRect = NSRect(
+            x: x + (HealthStripLayout.barWidth - diameter) / 2,
+            y: y,
+            width: diameter,
+            height: diameter
+        )
+        menuBarForegroundColor(isDarkMode: isDarkMode)
+            .withAlphaComponent(0.85)
+            .setFill()
+        NSBezierPath(
+            ovalIn: markerRect.insetBy(dx: -0.75, dy: -0.75)
+        ).fill()
+
+        switch credential {
+        case .claudeCode, .setupIncomplete:
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: markerRect).fill()
+        case .claudeAI:
+            // Punched rather than left unpainted, exactly as
+            // `applyAttentionMarker` does: whatever is underneath would
+            // otherwise show through and the ring would read as a fuzzy
+            // filled dot, which is the one distinction this exists to make.
+            if let context = NSGraphicsContext.current {
+                let previous = context.compositingOperation
+                context.compositingOperation = .clear
+                NSBezierPath(ovalIn: markerRect).fill()
+                context.compositingOperation = previous
+            }
+            let strokeWidth: CGFloat = 1
+            let ring = NSBezierPath(
+                ovalIn: markerRect.insetBy(
+                    dx: strokeWidth / 2,
+                    dy: strokeWidth / 2
+                )
+            )
+            ring.lineWidth = strokeWidth
+            NSColor.systemOrange.setStroke()
+            ring.stroke()
+        }
+    }
+
     // MARK: - Provider Badge
 
     /// Applies the user-selected provider badge to an already-rendered menu

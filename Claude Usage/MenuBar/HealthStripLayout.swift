@@ -51,6 +51,18 @@ nonisolated enum HealthStripLayout {
     /// Horizontal offset of the numbers image from the cell's left edge.
     static var numbersOffsetX: CGFloat { barWidth + numbersGap }
 
+    /// How much of the 12pt track is filled for a displayed percentage.
+    ///
+    /// The caller passes the *displayed* figure, so remaining mode reads
+    /// "a full bar means plenty left" exactly as the per-account icons do.
+    /// A nil figure means nothing was read, which is not a zero-height bar
+    /// but a dash — see `drawUnknownStripDash`.
+    static func fillHeight(displayPercentage: Double?) -> CGFloat {
+        guard let displayPercentage else { return 0 }
+        let clamped = min(max(displayPercentage, 0), 100)
+        return barHeight * CGFloat(clamped) / 100
+    }
+
     /// Lays the accounts out left to right in the order given, which is the
     /// profile list's own order.
     static func cells(
@@ -77,6 +89,32 @@ nonisolated enum HealthStripLayout {
             x += width
         }
         return cells
+    }
+
+    /// Canvas height for a strip whose tallest numbers image is
+    /// `tallestNumbersHeight`.
+    ///
+    /// `createMultiProfilePercentage` is taller with the profile label
+    /// switched on than without it, so the canvas grows to fit rather than
+    /// clipping the digits.
+    static func canvasHeight(tallestNumbersHeight: CGFloat) -> CGFloat {
+        max(baseCanvasHeight, ceil(tallestNumbersHeight))
+    }
+
+    /// Where a numbers image sits vertically: centred on the bar's own span
+    /// (4 to 16) rather than on the canvas floor, then clamped so it can
+    /// never be drawn partly outside the canvas and clipped.
+    ///
+    /// Floored to a whole point so the composite lands on pixel boundaries
+    /// instead of resampling the digits.
+    static func numbersOriginY(
+        numbersHeight: CGFloat,
+        canvasHeight: CGFloat
+    ) -> CGFloat {
+        let barMidY = barBottom + barHeight / 2
+        let centred = barMidY - numbersHeight / 2
+        let highest = max(0, canvasHeight - numbersHeight)
+        return min(max(0, centred), highest).rounded(.down)
     }
 
     /// Total canvas width: the padding at both ends plus every cell.
