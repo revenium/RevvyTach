@@ -1377,6 +1377,7 @@
 "multiprofile.layout.health_strip" = "Barre d'état";
 "multiprofile.layout.description" = "La barre d'état dessine une petite barre par compte dans un seul élément de la barre de menus.";
 "multiprofile.layout.icon_style_hint" = "Lorsque la barre d'état est active, le style d'icône s'applique uniquement aux comptes Codex.";
+"multiprofile.layout.time_marker_hint" = "Lorsque la barre d'état est active, le marqueur de temps écoulé s'applique uniquement aux comptes Codex.";
 "multiprofile.healthstrip.numbers_title" = "Afficher les chiffres pour les comptes à partir de";
 "multiprofile.healthstrip.numbers_never" = "Jamais";
 "multiprofile.healthstrip.numbers_suffix" = "% utilisé";

@@ -1373,6 +1373,7 @@
 "multiprofile.layout.health_strip" = "상태 바";
 "multiprofile.layout.description" = "상태 바는 메뉴 막대 항목 하나에 계정마다 작은 막대를 그립니다.";
 "multiprofile.layout.icon_style_hint" = "상태 바를 사용하는 동안 아이콘 스타일은 Codex 계정에만 적용됩니다.";
+"multiprofile.layout.time_marker_hint" = "상태 바를 사용하는 동안 경과 시간 마커는 Codex 계정에만 적용됩니다.";
 "multiprofile.healthstrip.numbers_title" = "숫자를 표시할 기준";
 "multiprofile.healthstrip.numbers_never" = "표시 안 함";
 "multiprofile.healthstrip.numbers_suffix" = "% 사용";

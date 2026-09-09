@@ -1397,6 +1397,7 @@
 "multiprofile.layout.health_strip" = "Barra de estado";
 "multiprofile.layout.description" = "A barra de estado desenha uma pequena barra por conta em um único item da barra de menus.";
 "multiprofile.layout.icon_style_hint" = "Com a barra de estado ativada, o estilo do ícone se aplica apenas às contas Codex.";
+"multiprofile.layout.time_marker_hint" = "Com a barra de estado ativada, o marcador de tempo se aplica apenas às contas Codex.";
 "multiprofile.healthstrip.numbers_title" = "Mostrar números para contas a partir de";
 "multiprofile.healthstrip.numbers_never" = "Nunca";
 "multiprofile.healthstrip.numbers_suffix" = "% usado";

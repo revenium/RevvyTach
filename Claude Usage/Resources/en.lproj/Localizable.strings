@@ -1412,6 +1412,7 @@
 "multiprofile.layout.health_strip" = "Health strip";
 "multiprofile.layout.description" = "Health strip draws one small bar per account in a single menu bar item.";
 "multiprofile.layout.icon_style_hint" = "Icon style applies to Codex accounts while Health strip is on.";
+"multiprofile.layout.time_marker_hint" = "Time marker applies to Codex accounts while Health strip is on.";
 "multiprofile.healthstrip.numbers_title" = "Show numbers for accounts above";
 "multiprofile.healthstrip.numbers_never" = "Never";
 "multiprofile.healthstrip.numbers_suffix" = "% used";

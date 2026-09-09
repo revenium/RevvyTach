@@ -365,12 +365,14 @@ struct ManageProfilesView: View {
                                 // A 4pt bar has nowhere to put a time
                                 // marker, so in strip layout this governs
                                 // Codex items only — the same reason the
-                                // icon style picker above is disabled. Show
+                                // icon style picker above is disabled, but
+                                // its own sentence: a line about the icon
+                                // style is false about this control. Show
                                 // Week and the pace marker stay enabled:
                                 // both still shape the inline numbers.
                                 if multiLayout == .healthStrip {
                                     Text(
-                                        "multiprofile.layout.icon_style_hint"
+                                        "multiprofile.layout.time_marker_hint"
                                             .localized
                                     )
                                     .font(DesignTokens.Typography.caption)

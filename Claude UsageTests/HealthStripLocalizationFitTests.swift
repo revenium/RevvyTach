@@ -219,6 +219,7 @@ final class HealthStripLocalizationFitTests: XCTestCase {
             "multiprofile.layout.health_strip",
             "multiprofile.layout.description",
             "multiprofile.layout.icon_style_hint",
+            "multiprofile.layout.time_marker_hint",
             "multiprofile.healthstrip.numbers_title",
             "multiprofile.healthstrip.numbers_never",
             "multiprofile.healthstrip.numbers_suffix",

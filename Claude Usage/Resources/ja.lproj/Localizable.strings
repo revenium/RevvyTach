@@ -1397,6 +1397,7 @@
 "multiprofile.layout.health_strip" = "ヘルスストリップ";
 "multiprofile.layout.description" = "ヘルスストリップは、1つのメニューバー項目にアカウントごとの小さなバーを描画します。";
 "multiprofile.layout.icon_style_hint" = "ヘルスストリップが有効な間、アイコンスタイルはCodexアカウントにのみ適用されます。";
+"multiprofile.layout.time_marker_hint" = "ヘルスストリップが有効な間、経過時間マーカーはCodexアカウントにのみ適用されます。";
 "multiprofile.healthstrip.numbers_title" = "数値を表示するしきい値";
 "multiprofile.healthstrip.numbers_never" = "表示しない";
 "multiprofile.healthstrip.numbers_suffix" = "% 使用";

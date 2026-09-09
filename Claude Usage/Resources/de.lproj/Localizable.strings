@@ -1397,6 +1397,7 @@
 "multiprofile.layout.health_strip" = "Zustandsleiste";
 "multiprofile.layout.description" = "Die Zustandsleiste zeichnet einen kleinen Balken pro Konto in einem einzigen Menüleisten-Symbol.";
 "multiprofile.layout.icon_style_hint" = "Bei aktivierter Zustandsleiste gilt der Icon-Stil nur für Codex-Konten.";
+"multiprofile.layout.time_marker_hint" = "Bei aktivierter Zustandsleiste gilt die Zeitverlaufsmarkierung nur für Codex-Konten.";
 "multiprofile.healthstrip.numbers_title" = "Zahlen anzeigen für Konten ab";
 "multiprofile.healthstrip.numbers_never" = "Nie";
 "multiprofile.healthstrip.numbers_suffix" = "% belegt";
