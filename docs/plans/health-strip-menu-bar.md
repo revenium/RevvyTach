@@ -1,7 +1,9 @@
 # Health strip menu bar mode — implementation plan
 
 Branch: `feat/health-strip-menu-bar` (base `origin/main` 3166e411). Opt-in; nothing changes for
-existing users. Revised against `health-strip-menu-bar.redteam-1.md`.
+existing users. Revised against `health-strip-menu-bar.redteam-1.md`, then against
+`health-strip-menu-bar.redteam-2.md` — §3, §5 and §6 below describe the behaviour that was
+actually built, which differs from the round-1 plan in five places, each marked **Round 2**.
 
 ## 1. Architecture decision
 
@@ -76,9 +78,11 @@ migration code.
 ## 3. Render math (1x points)
 
 **One data source.** `updateHealthStrip` resolves each profile's usage **once**, snapshot-first —
-`snapshot?.claudeUsage ?? profile.claudeUsage`, matching `claudeCatalog`
-(`ProviderAppearance.swift:870`), the overflow list and `attention(for:)`
-(`MenuBarManager.swift:3077`) — and feeds it to **both** the fill and the threshold. Not
+and feeds it to **both** the fill and the threshold. **Round 2: the snapshot is validated with
+`ProviderMenuPresentationBuilder.snapshotMatches(profile:snapshot:)` first**, then
+`profile.claudeUsage`, then `ClaudeUsage.empty`. An unvalidated read copies `attention(for:)`'s
+contract, not `claudeCatalog`'s, and would render the previous identity's numbers after a re-link
+or a credential rotation. Not
 `renderProfileMenuBar`'s `profile.claudeUsage ?? .empty` (`StatusBarUIManager.swift:1550`): a bar
 and the number beside it would then disagree whenever a snapshot leads the profile record.
 
@@ -89,12 +93,18 @@ Per profile, in profile-list order:
   `displayFraction = UsageStatusCalculator.getDisplayPercentage(usedPercentage:showRemaining:)/100`
   with `showRemaining = config.showRemainingPercentage` — so remaining mode reads "full bar = lots
   left", as `renderProfileMenuBar` does at `:1565`.
+  **Round 2: the figure is the TIGHTER readable window**,
+  `max(readableSessionPercentage, readableWeeklyPercentage)`, the rule `tightestUsed` already
+  states for the overflow list — not the session window alone. A session-only bar called an
+  account at 10% session and 85% week comfortable, and drew nothing at all for an account whose
+  session was unread and whose week was at 95%.
 - Colour: `UsageStatusCalculator.calculateStatus(usedPercentage:showRemaining:elapsedFraction:)`
   (elapsed passed only when `config.usePaceColoring`) → `getColor(for:monochromeMode:
   useSystemColor:isDarkMode:)` (`:2455`). No new colour vocabulary.
-- Unknown session (`!usage.sessionPercentageAvailable`): no fill; a 4 × 1.5 rounded dash at the
-  track's middle, foreground @ 0.55 — `drawUnknownDash` (`MenuBarIconRenderer.swift:794`) narrowed
-  from 8pt to the bar width. New `drawUnknownStripDash`; do not reuse the 8pt one.
+- **Round 2:** unknown — `readableSessionPercentage` and `readableWeeklyPercentage` **both** nil:
+  no fill; a 4 × 1.5 rounded dash at the track's middle, foreground @ 0.55 — `drawUnknownDash`
+  (`MenuBarIconRenderer.swift:794`) narrowed from 8pt to the bar width. New
+  `drawUnknownStripDash`; do not reuse the 8pt one. One readable window is a reading.
 - Active profile: 4 × 2 `systemGreen` rounded base at `y = 1` under its bar — the strip's form of
   `addGreenUnderline` (`StatusBarUIManager.swift:1484`), which underlines a whole image.
 - Attention: new `drawStripAttentionMarker(atX:y:credential:isDarkMode:)` sharing the *shapes* of
@@ -104,12 +114,17 @@ Per profile, in profile-list order:
   pitch, so 0.75pt clearance per side. `markerY = 17` puts the halo's top at 21.75, inside the 22pt
   canvas, and its bottom at 16.25, clear of the bar top at 16. The 1x "ring reads as a lighter dot"
   tradeoff is already documented at `:2239`; the tooltip and label name the credential regardless.
-- Numbers (§4): `createMultiProfilePercentage(...)` is called unchanged and composited at
-  `x = cell.minX + 6`, **vertically centred on the bar's span (y = 4…16)**, not bottom-aligned. Its
-  height is `textSize.height + 11` with the profile label on and `textSize.height` alone with it
-  off (`:2064-2069`), so canvas height is `max(22, ceil(numbersImage.height))` and the image is
-  clamped inside it. Reusing the renderer keeps the digits, the " · ", the critical underline, the
-  pace dot and the 3-char name identical to today's `.percentage` style.
+- Numbers (§4): `createMultiProfilePercentage(...)` is called at `x = cell.minX + 6` with the
+  argument shape the existing call site uses — **non-optional display figures plus an
+  `unknownWindows` set** (`StatusBarUIManager.swift:1686-1700`), because its week gate is
+  `if let weekPct` and a nil week would drop the week entirely instead of drawing its dimmed dash.
+  Reusing the renderer keeps the digits, the " · ", the critical underline, the pace dot and the
+  3-char name identical to today's `.percentage` style.
+  **Round 2: the canvas is always 22pt.** Its height is a run time text measurement that can land
+  at 23, and nothing in this app pins a menu bar height or an image scaling mode, so a taller
+  image would leave `NSButtonCell` to scale the whole strip down — blurring every bar and moving
+  the cell positions the click hit test reads. The image is centred in the 22pt canvas and clipped
+  if it ever exceeds it (`HealthStripLayout.numbersOriginY`).
 
 Widths: `cell.width = 4 + 3` normally, `4 + 2 + numbersWidth + 3` with numbers. Eight plain
 accounts = `1 + 8*7 + 1 = 58pt`, against roughly 470pt today.
@@ -152,15 +167,18 @@ VoiceOver behaviour and cannot do the two-line name-over-numbers layout 8 of 9 l
 the strip draws (`StatusBarUIManager.swift:948`, `:1061`), not `updateAllStatusBarIcons`'s looser
 `isSelectedForDisplay` alone (`MenuBarManager.swift:2994`).
 
-**Sizing — the crash was content-derived Auto Layout, not `sizePopover`.**
-`createContentViewController` (`MenuBarManager.swift:2131-2152`) records it: `sizingOptions =
-.preferredContentSize` builds constraints from the content's ideal size, so a content change
-re-invalidates layout inside AppKit's constraint-update pass. `sizePopover` (`:2161`), which
-assigns `popover.contentSize` outright, is the *safe* path. Use the main popover's shape:
+**Sizing — Round 2: use the overflow list's shape, not the main popover's.** The crash was
+content-derived Auto Layout over content that *mutates while shown*
+(`MenuBarManager.swift:2131-2152`). These rows are a snapshot taken at open and never mutate, which
+is what `toggleOverflowPopover` already relies on (`:2561`). A hand-computed height would have to
+guess the tallest locale's row and, guessing low, would clip the footer that carries the only Quit
+and Manage Profiles the strip offers.
 
-- `hostingController.sizingOptions = []`.
-- `popover.contentSize = NSSize(width: PopoverDesign.width, height: h)`, `h` derived from the row
-  count and capped; rows past the cap scroll inside a `ScrollView`.
+- `hostingController.sizingOptions = .preferredContentSize`, over a view that self-sizes with
+  `.fixedSize(horizontal: false, vertical: true)` at `.frame(width: PopoverDesign.width)`.
+- The **footer is pinned outside the `ScrollView`**; only the row list scrolls, capped at
+  `HealthStripAccountsView.scrollMaxHeight` (360pt, a height not a row count, since row height
+  differs between locales).
 - `behavior = .transient`, `animates = false`, own `NSPopover`, `closePopoverOrWindow()` first —
   the second-popover shape of `toggleOverflowPopover` (`:2539`).
 - **Rows are a value snapshot taken at open**, and **any row action closes the popover first**, so
@@ -189,13 +207,27 @@ Open reuses `selectOverflowProfile(_:)` (`:2580`), generalized to
 `openProfilePopover(_ profileID: UUID, anchoredTo button: NSStatusBarButton)`; it writes
 `clickedProfileId` via `toggleValidatedPopover` (`:2346`) and needs none of `setViewedProfile`'s
 hydration (`:1037`), since every strip row is already selected for display.
+**Round 2: it passes `checksBounce: false`.** The strip collapses N buttons into one, so the
+accounts list is anchored to the same button a profile popover would be, and
+`shouldSuppressPopoverOpen`'s 250 ms same-button guard — written for a second click on a status
+item — would silently swallow a row's Open.
 
 **Right click** cannot stay on the unchanged path: `showContextMenu(for:)` (`:2751`) resolves one
 identity per button (`statusIdentity(for:)`, `StatusBarUIManager.swift:793`) and the strip is one
 button for N accounts, so every cell would target the active profile. Give it
-`identityOverride: ProviderStatusItemIdentity?`; the strip branch in `togglePopover` (`:2282`)
-resolves the cell via `healthStripProfileID(at:)`, reads the event through a guarded
-`if let event = NSApp.currentEvent`, and falls back to the active profile on a padding hit.
+`identityOverride: ProviderStatusItemIdentity?`; the strip branch resolves the cell, reads the
+event through a guarded `if let event = NSApp.currentEvent`, and falls back to the active profile
+on a padding hit.
+
+**Round 2, two corrections.** The strip branch must sit **above** `togglePopover`'s context-menu
+dispatch, which is its first statement and returns unconditionally — placed where the overflow
+branch is, it is dead code for right clicks. And the hit test must **convert coordinates**: cells
+are laid out in the image's space, a click arrives in the button's, and a status item button is
+wider than its image and centres it. Measured on a real item that inset is about one 7pt cell
+pitch, so without the conversion cell *n* resolves as cell *n−1*.
+`healthStripProfileID(for: NSEvent)` owns the whole chain. Accepted cosmetic cost: the menu pops
+under the strip's left edge rather than under the cell, because `showContextMenu` positions from
+the whole button (`:2799`).
 
 ## 6. Files and functions to touch
 
@@ -206,7 +238,7 @@ resolves the cell via `healthStripProfileID(at:)`, reads the event through a gua
 | `Shared/Storage/DataStore.swift:154-213` | `save/loadMenuBarMultiLayout`, `save/loadHealthStripNumbersThreshold`, same shape |
 | `MenuBar/HealthStripLayout.swift` | new, pure |
 | `MenuBar/MenuBarIconRenderer.swift` | add `createHealthStrip`, `drawUnknownStripDash`, `drawStripAttentionMarker`; reuse `createMultiProfilePercentage` `:1979` and `getColor` `:2455` unchanged |
-| `MenuBar/StatusBarUIManager.swift` | `multiLayout`; `healthStripStatusItem` (autosave `claude-usage-tracker.healthstrip`); `healthStripNumbersShown`; `setupMultiProfile` `:941` and `updateMultiProfileConfiguration` `:1055` partition by provider and layout; `currentOverflowPlan` `:1174` skipped; `updateOverflowItem` `:1354` hides; split the non-Claude half of `updateProviderMultiProfileButtons` `:1909` into `updateNonClaudeMultiProfileButtons`; new `updateHealthStrip`, `isHealthStripButton`, `healthStripProfileID(at:)`; **`hasValidStatusBar` `:2069`**, **`autosaveName(for sender:)` `:800`** and **`profileId(for sender:)` `:2102`** must all recognise the strip button; `reconcileMultiProfileItems` `:1043` prunes hysteresis; `cleanup` `:872` releases the strip under the same terminating rule |
+| `MenuBar/StatusBarUIManager.swift` | `multiLayout`; `healthStripStatusItem` (autosave `claude-usage-tracker.healthstrip`); `healthStripNumbersShown`; `setupMultiProfile` `:941` and `updateMultiProfileConfiguration` `:1055` partition by provider and layout; `currentOverflowPlan` `:1174` skipped; `updateOverflowItem` `:1354` hides; split the non-Claude half of `updateProviderMultiProfileButtons` `:1909` into `updateNonClaudeMultiProfileButtons`; new `updateHealthStrip`, `isHealthStripButton`, `healthStripProfileID(for:)` / `(atButtonX:)`; **`hasValidStatusBar` `:2069`**, **`autosaveName(for sender:)` `:800`** and **`profileId(for sender:)` `:2102`** must all recognise the strip button; **Round 2:** the hysteresis map is pruned in `updateMultiProfileConfiguration`'s `for profileID in reconciliation.idsToRemove` loop `:1084` — `reconcileMultiProfileItems` `:1043` is a pure static with no instance state and cannot prune; `cleanup` `:872` releases the strip under the same terminating rule |
 | `MenuBar/MenuBarManager.swift` | `updateAllStatusBarIcons` `:2988` branches on layout; `setupMultiProfileMode` `:4003` / `updateMultiProfileDisplay` `:4030` read the layout from `DataStore` (safe there — `:4008` already reads the overflow mode); `togglePopover` `:2282` routes the strip; **`showContextMenu` `:2751` gains `identityOverride`**; new `toggleHealthStripPopover`, `openProfilePopover`, `refreshAllSelectedProfilesFromUI`; **all four overflow-recompute entry points gain the same per-profile-items guard: `handleScreenChange` `:3962`, `scheduleOverflowRecompute` `:3988`, `handleFrontmostAppChange` `:3834`, `handleMenuBarManagerActivityChange` `:3937`** |
 | `MenuBar/Components/HealthStripAccountsView.swift` | new |
 | `Views/Settings/App/ManageProfilesView.swift` | §7 |
@@ -223,6 +255,14 @@ discards every saved position. It must return `true` when `healthStripStatusItem
 (`isVisible = false`), so switching layouts back restores saved positions instead of minting fresh
 items; `itemWidth(for:)` (`:1273`) already credits a hidden item zero width. **Codex keeps its own
 visible items**, painted by `updateNonClaudeMultiProfileButtons`.
+
+**Round 2, two lifecycle rules.** The strip item is created once and thereafter only **hidden**
+when the layout is `.perProfileItems`, mirroring `updateOverflowItem` (`:1359-1374`) — removing it
+would delete its saved `NSStatusItem Preferred Position` and mint a fresh item at the end of the
+bar on every toggle, which for a Thaw or Ice user is a lost arrangement each time. It is also
+hidden whenever the Claude row set is **empty**, so deselecting every Claude account while keeping
+a Codex one cannot leave a 2pt sliver opening an accounts list with no accounts; the existing
+default-logo placeholder (`:948-969`) still covers a fully empty selection.
 
 Data flow: refresh → `updateAllStatusBarIcons()` → layout branch → `updateHealthStrip(profiles:
 config:threshold:activeClaudeProfileID:attention:snapshots:now:)` → `createHealthStrip` →
