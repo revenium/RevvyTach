@@ -31,7 +31,76 @@ struct HealthStripAccountRow: Identifiable, Equatable {
     let canActivate: Bool
 }
 
+/// One of the three things a row lets you do to an account.
+///
+/// A value, not three hand-written buttons, so the set the row renders and
+/// the set a test can inspect are the same list. SwiftUI vends no
+/// accessibility tree from a hosted view outside a real accessibility
+/// session, so walking the rendered row is not available; this is.
+struct HealthStripRowAction: Identifiable, Equatable {
+    enum Kind: Hashable {
+        case makeActive
+        case refresh
+        case open
+    }
+
+    let kind: Kind
+    let systemName: String
+    let label: String
+
+    var id: Kind { kind }
+}
+
 extension HealthStripAccountRow {
+    /// "Open <account>", the label shared by the name column and the last
+    /// icon button, which do the same thing.
+    var openLabel: String {
+        String(
+            format: ProviderUILocalization.text(
+                "menu.provider.open_profile",
+                fallback: "Open %@"
+            ),
+            name
+        )
+    }
+
+    /// The row's action buttons, in the order they are drawn. Make Active is
+    /// absent only for the account that is already active — the same terms
+    /// the context menu offers it on.
+    var actions: [HealthStripRowAction] {
+        var actions: [HealthStripRowAction] = []
+        if canActivate {
+            actions.append(
+                HealthStripRowAction(
+                    kind: .makeActive,
+                    systemName: "checkmark.circle",
+                    label: ProviderUILocalization.text(
+                        "menu.provider.make_active",
+                        fallback: "Make Active"
+                    )
+                )
+            )
+        }
+        actions.append(
+            HealthStripRowAction(
+                kind: .refresh,
+                systemName: "arrow.clockwise",
+                label: ProviderUILocalization.text(
+                    "common.refresh",
+                    fallback: "Refresh"
+                )
+            )
+        )
+        actions.append(
+            HealthStripRowAction(
+                kind: .open,
+                systemName: "chevron.right",
+                label: openLabel
+            )
+        )
+        return actions
+    }
+
     private var windowRow: OverflowProfileRow {
         OverflowProfileRow(id: id, name: name, windows: windows)
     }
@@ -246,7 +315,11 @@ struct HealthStripAccountsView: View {
 /// nested inside an outer button break hit testing, so the name and numbers
 /// column carries the "Open" affordance and the three icon buttons sit
 /// beside it.
-private struct HealthStripAccountRowView: View {
+/// Internal rather than private so a test can host one row on its own and
+/// walk its accessibility tree: the three action buttons being present, and
+/// labelled, is a promise about this view that no localization lookup can
+/// stand in for.
+struct HealthStripAccountRowView: View {
     let row: HealthStripAccountRow
     let onOpen: () -> Void
     let onActivate: () -> Void
@@ -294,29 +367,9 @@ private struct HealthStripAccountRowView: View {
             .accessibilityLabel(openLabel)
 
             HStack(spacing: HealthStripAccountsView.actionSpacing) {
-                if row.canActivate {
-                    actionButton(
-                        systemName: "checkmark.circle",
-                        label: ProviderUILocalization.text(
-                            "menu.provider.make_active",
-                            fallback: "Make Active"
-                        ),
-                        action: onActivate
-                    )
+                ForEach(row.actions) { action in
+                    actionButton(action)
                 }
-                actionButton(
-                    systemName: "arrow.clockwise",
-                    label: ProviderUILocalization.text(
-                        "common.refresh",
-                        fallback: "Refresh"
-                    ),
-                    action: onRefresh
-                )
-                actionButton(
-                    systemName: "chevron.right",
-                    label: openLabel,
-                    action: onOpen
-                )
             }
             .frame(
                 width: HealthStripAccountsView.actionColumnWidth,
@@ -337,26 +390,24 @@ private struct HealthStripAccountRowView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var openLabel: String {
-        String(
-            format: ProviderUILocalization.text(
-                "menu.provider.open_profile",
-                fallback: "Open %@"
-            ),
-            row.name
-        )
-    }
+    private var openLabel: String { row.openLabel }
 
     /// Always in the view and in the accessibility tree; hover changes only
     /// the opacity. A control that appears on hover is a control a keyboard
     /// or VoiceOver user does not have.
     private func actionButton(
-        systemName: String,
-        label: String,
-        action: @escaping () -> Void
+        _ action: HealthStripRowAction
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
+        let handler: () -> Void = {
+            switch action.kind {
+            case .makeActive: return onActivate
+            case .refresh: return onRefresh
+            case .open: return onOpen
+            }
+        }()
+        let label = action.label
+        return Button(action: handler) {
+            Image(systemName: action.systemName)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(
                     width: HealthStripAccountsView.actionButtonSize,

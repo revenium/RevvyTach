@@ -265,14 +265,13 @@ final class HealthStripAccountRowTests: XCTestCase {
 
     // MARK: - Popover sizing
 
-    /// The popover self-sizes; only the row list is capped, and it scrolls
-    /// past the cap. Every account still gets a row, so nothing is dropped
-    /// from the list to make it fit.
+    /// Every account gets a row however many there are; nothing is dropped
+    /// from the list to make it fit. The popover's own height is measured in
+    /// `HealthStripAccountsViewLayoutTests`.
     func testEveryAccountGetsARowHoweverManyThereAre() {
         let many = (0..<20).map { claude("Account \($0)") }
 
         XCTAssertEqual(rows(many).count, 20)
-        XCTAssertGreaterThan(HealthStripAccountsView.scrollMaxHeight, 0)
     }
 
     /// The bounce guard that makes a second click on a status item close the
