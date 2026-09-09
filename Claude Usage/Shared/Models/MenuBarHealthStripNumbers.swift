@@ -28,6 +28,25 @@ nonisolated enum MenuBarHealthStripNumbersThreshold: Equatable {
     /// The levels offered in Settings.
     static let selectablePercents = [80, 90, 95]
 
+    /// Snaps a stored percentage to the nearest level Settings actually
+    /// offers, so the picker and the loader always agree on one value.
+    ///
+    /// A stored value outside `selectablePercents` — written by an external
+    /// `defaults write` or a future build with different levels — would
+    /// otherwise render correctly but leave the menu-style `Picker` with no
+    /// matching `.tag`, so it draws blank. Ties resolve to the higher
+    /// percent, so the app shows numbers less often rather than more often.
+    static func nearestSelectablePercent(to percent: Int) -> Int {
+        selectablePercents.min { lhs, rhs in
+            let lhsDistance = abs(lhs - percent)
+            let rhsDistance = abs(rhs - percent)
+            if lhsDistance == rhsDistance {
+                return lhs > rhs
+            }
+            return lhsDistance < rhsDistance
+        } ?? defaultPercent
+    }
+
     /// How far below the threshold an account has to fall before its numbers
     /// disappear again. Without this an account hovering at the threshold
     /// widens and narrows the strip on every refresh, shifting every

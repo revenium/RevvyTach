@@ -16,7 +16,11 @@ import UsageCore
 /// status item already renders, so this list never becomes a second source
 /// of truth for "what is this account at".
 struct HealthStripAccountRow: Identifiable, Equatable {
-    let id: UUID
+    /// The account as it stood when the list was built. Carried on the row so
+    /// an action fired after a credential rotation bumped the account's
+    /// provider revision is rejected, rather than landing on the account that
+    /// replaced it.
+    let identity: ProviderStatusItemIdentity
     let name: String
     /// The account's leading two usage windows, in the shape the overflow
     /// list already speaks.
@@ -29,6 +33,8 @@ struct HealthStripAccountRow: Identifiable, Equatable {
     /// False when this account cannot be made active right now — the same
     /// answer the context menu reaches through `presentation.actions`.
     let canActivate: Bool
+
+    var id: UUID { identity.profileID }
 }
 
 /// One of the three things a row lets you do to an account.
@@ -165,7 +171,12 @@ extension HealthStripAccountRow {
                     )
                 }()
                 return HealthStripAccountRow(
-                    id: profile.id,
+                    identity: ProviderStatusItemIdentity(
+                        profileID: profile.id,
+                        providerID: profile.providerID,
+                        providerRevision: profile.providerRevision,
+                        metricID: nil
+                    ),
                     name: profile.name,
                     windows: metrics.map {
                         OverflowProfileRow.Window(
@@ -196,9 +207,9 @@ extension HealthStripAccountRow {
 /// layout that 8 of the 9 shipped locales need.
 struct HealthStripAccountsView: View {
     let rows: [HealthStripAccountRow]
-    let onOpen: (UUID) -> Void
-    let onActivate: (UUID) -> Void
-    let onRefresh: (UUID) -> Void
+    let onOpen: (ProviderStatusItemIdentity) -> Void
+    let onActivate: (ProviderStatusItemIdentity) -> Void
+    let onRefresh: (ProviderStatusItemIdentity) -> Void
     let onRefreshAll: () -> Void
     let onManageProfiles: () -> Void
     let onQuit: () -> Void
@@ -253,9 +264,9 @@ struct HealthStripAccountsView: View {
                     ForEach(rows) { row in
                         HealthStripAccountRowView(
                             row: row,
-                            onOpen: { onOpen(row.id) },
-                            onActivate: { onActivate(row.id) },
-                            onRefresh: { onRefresh(row.id) }
+                            onOpen: { onOpen(row.identity) },
+                            onActivate: { onActivate(row.identity) },
+                            onRefresh: { onRefresh(row.identity) }
                         )
                     }
                 }

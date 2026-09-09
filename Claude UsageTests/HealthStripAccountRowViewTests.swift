@@ -29,7 +29,12 @@ final class HealthStripAccountRowViewTests: XCTestCase {
         canActivate: Bool
     ) -> HealthStripAccountRow {
         HealthStripAccountRow(
-            id: UUID(),
+            identity: ProviderStatusItemIdentity(
+                profileID: UUID(),
+                providerID: .claude,
+                providerRevision: 0,
+                metricID: nil
+            ),
             name: name,
             windows: [
                 OverflowProfileRow.Window(

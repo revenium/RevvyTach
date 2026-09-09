@@ -298,4 +298,55 @@ final class HealthStripAccountRowTests: XCTestCase {
             "but Open from inside the list must always show the account"
         )
     }
+
+    // MARK: - Captured identity
+
+    /// A row carries the account exactly as it stood when the list was
+    /// built, so an action pressed after a credential rotation
+    /// re-provisioned that account is refused instead of landing on the
+    /// replacement. Deriving the identity from the live profile at press
+    /// time made the router's revision check compare a value with itself,
+    /// which can never fail.
+    func testARowsCapturedRevisionRejectsAnActionAfterReprovisioning()
+        throws
+    {
+        let profile = claude("Work")
+        let row = try XCTUnwrap(rows([profile]).first)
+        var live = [profile]
+        var refreshed: [UUID] = []
+        let router = ProviderCapturedTargetActionRouter(
+            profiles: { live },
+            sinks: .init(
+                openPopover: { _, _ in },
+                detachPopover: { _, _ in },
+                refresh: { target, _ in
+                    refreshed.append(target.profileID)
+                },
+                activate: { _, _ in },
+                settings: { _, _, _ in },
+                quit: { _, _ in }
+            )
+        )
+
+        XCTAssertTrue(
+            router.route(.refresh, target: row.identity),
+            "The unchanged account still takes the row's action"
+        )
+        XCTAssertEqual(refreshed, [profile.id])
+
+        var reprovisioned = profile
+        reprovisioned.providerRevision += 1
+        live = [reprovisioned]
+
+        XCTAssertFalse(
+            router.route(.refresh, target: row.identity),
+            "A row built before the rotation must not act on the account "
+                + "that replaced it"
+        )
+        XCTAssertEqual(
+            refreshed,
+            [profile.id],
+            "The stale action fired nothing"
+        )
+    }
 }

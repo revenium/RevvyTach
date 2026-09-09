@@ -303,7 +303,8 @@ class DataStore: StorageProvider {
             )
             return .percent(
                 stored > 0
-                    ? stored
+                    ? MenuBarHealthStripNumbersThreshold
+                        .nearestSelectablePercent(to: stored)
                     : MenuBarHealthStripNumbersThreshold.defaultPercent
             )
         }

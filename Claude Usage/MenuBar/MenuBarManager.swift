@@ -2709,23 +2709,23 @@ class MenuBarManager: NSObject, ObservableObject {
         )
         let view = HealthStripAccountsView(
             rows: rows,
-            onOpen: { [weak self] profileID in
+            onOpen: { [weak self] identity in
                 self?.closeHealthStripPopover()
                 guard let button = self?.statusBarUIManager?
                     .healthStripButton else { return }
                 self?.openProfilePopover(
-                    profileID,
+                    identity.profileID,
                     anchoredTo: button,
                     checksBounce: false
                 )
             },
-            onActivate: { [weak self] profileID in
+            onActivate: { [weak self] identity in
                 self?.closeHealthStripPopover()
-                self?.routeHealthStripRowAction(.activate, profileID)
+                self?.routeHealthStripRowAction(.activate, identity)
             },
-            onRefresh: { [weak self] profileID in
+            onRefresh: { [weak self] identity in
                 self?.closeHealthStripPopover()
-                self?.routeHealthStripRowAction(.refresh, profileID)
+                self?.routeHealthStripRowAction(.refresh, identity)
             },
             onRefreshAll: { [weak self] in
                 self?.closeHealthStripPopover()
@@ -2772,22 +2772,14 @@ class MenuBarManager: NSObject, ObservableObject {
     /// nothing rather than acting on the wrong account.
     private func routeHealthStripRowAction(
         _ action: ProviderCapturedTargetActionRouter.Action,
-        _ profileID: UUID
+        _ target: ProviderStatusItemIdentity
     ) {
-        guard let profile = profileManager.profiles.first(where: {
-            $0.id == profileID
+        guard profileManager.profiles.contains(where: {
+            $0.id == target.profileID
         }) else {
             return
         }
-        let routed = capturedTargetRouter().route(
-            action,
-            target: ProviderStatusItemIdentity(
-                profileID: profile.id,
-                providerID: profile.providerID,
-                providerRevision: profile.providerRevision,
-                metricID: nil
-            )
-        )
+        let routed = capturedTargetRouter().route(action, target: target)
         if !routed {
             LoggingService.shared.logWarning(
                 "Ignored health strip action for stale provider identity"

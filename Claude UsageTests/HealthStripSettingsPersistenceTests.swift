@@ -119,6 +119,41 @@ final class HealthStripSettingsPersistenceTests: XCTestCase {
         )
     }
 
+    func testStoredPercentOutsideSelectableSetSnapsToNearestSelectable() {
+        defaults.set("percent", forKey: "menuBarHealthStripNumbersKind")
+
+        // 91 is equidistant from nowhere in {80, 90, 95}: it is 1 away from
+        // 90, so it must land there rather than blanking the Settings picker,
+        // which only offers 80/90/95 tags.
+        defaults.set(91, forKey: "menuBarHealthStripNumbersPercent")
+        XCTAssertEqual(
+            DataStore.healthStripNumbersThreshold(in: defaults),
+            .percent(90)
+        )
+
+        // Each selectable value must load unchanged.
+        for selectable in MenuBarHealthStripNumbersThreshold
+            .selectablePercents {
+            defaults.set(
+                selectable,
+                forKey: "menuBarHealthStripNumbersPercent"
+            )
+            XCTAssertEqual(
+                DataStore.healthStripNumbersThreshold(in: defaults),
+                .percent(selectable)
+            )
+        }
+
+        // A tie between two selectable levels (85 is 5 from both 80 and 90)
+        // resolves to the higher one, so the app shows numbers less often
+        // rather than more often.
+        defaults.set(85, forKey: "menuBarHealthStripNumbersPercent")
+        XCTAssertEqual(
+            DataStore.healthStripNumbersThreshold(in: defaults),
+            .percent(90)
+        )
+    }
+
     func testUnrecognizedStoredKindFallsBackToDefaultPercent() {
         defaults.set(
             "some-future-kind",

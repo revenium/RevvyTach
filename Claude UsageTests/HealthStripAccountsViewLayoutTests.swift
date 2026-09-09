@@ -25,7 +25,12 @@ final class HealthStripAccountsViewLayoutTests: XCTestCase {
     private func rows(_ count: Int) -> [HealthStripAccountRow] {
         (0..<count).map { index in
             HealthStripAccountRow(
-                id: UUID(),
+                identity: ProviderStatusItemIdentity(
+                    profileID: UUID(),
+                    providerID: .claude,
+                    providerRevision: 0,
+                    metricID: nil
+                ),
                 name: "Account \(index)",
                 windows: [
                     OverflowProfileRow.Window(
