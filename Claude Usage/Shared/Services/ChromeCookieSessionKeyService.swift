@@ -2,9 +2,17 @@
 //  ChromeCookieSessionKeyService.swift
 //  Claude Usage
 //
-//  Reads the claude.ai `sessionKey` cookie out of one Chrome profile, and
-//  only ever after the user has explicitly pressed "Read from Chrome" and
-//  approved the macOS prompt that follows.
+//  Reads the claude.ai `sessionKey` cookie out of one Chrome profile.
+//
+//  The first read is always the user's: they press "Read from Chrome", name
+//  the profile, and approve the macOS prompt that follows. That read records
+//  the Chrome profile on the RevvyTach profile, and from then on the app may
+//  read that same profile again on its own — but only that one, and only when
+//  claude.ai has refused the copy it was given. Every `claude /login` inside
+//  that Chrome profile revokes the copy, so without the re-read the sign-in
+//  simply dies and waits for someone to notice. See
+//  `ChromeSessionKeyAutoReReader` for the rule that governs it, and the
+//  consent copy in `chrome_assisted.read_consent_body`, which says so.
 //
 //  Three properties are load-bearing and must survive every future edit:
 //

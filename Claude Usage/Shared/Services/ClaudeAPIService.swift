@@ -149,6 +149,28 @@ class ClaudeAPIService: APIServiceProtocol {
             self.knownPersonalExtraUsageIssue = knownPersonalExtraUsageIssue
         }
 
+        /// The same request with a different claude.ai session key.
+        ///
+        /// Used only after an automatic re-read from Chrome has replaced a
+        /// revoked key: the source, the terminal token and the profile
+        /// identity all still describe this refresh, and only the browser
+        /// credential moved. Re-capturing from the profile instead would
+        /// re-run the whole terminal-login preparation for a change that has
+        /// nothing to do with it.
+        func replacingBrowserSessionKey(
+            _ sessionKey: String
+        ) -> CapturedUsageRequest {
+            CapturedUsageRequest(
+                source: source,
+                sessionKey: sessionKey,
+                organizationID: organizationID,
+                oauthAccessToken: oauthAccessToken,
+                checkOverage: checkOverage,
+                profileID: profileID,
+                knownPersonalExtraUsageIssue: knownPersonalExtraUsageIssue
+            )
+        }
+
         func capturesOAuthToken(_ candidate: String) -> Bool {
             oauthAccessToken == candidate
         }

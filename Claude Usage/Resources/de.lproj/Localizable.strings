@@ -232,6 +232,8 @@
 "notification.enabled.message" = "Sie erhalten jetzt Warnungen bei Nutzungsschwellen von 75%, 90% und 95%, sowie Sitzungszurücksetzungsbenachrichtigungen.";
 "notification.profile_auto_switched.title" = "Profil automatisch gewechselt";
 "notification.profile_auto_switched.message" = "%@ → %@ wegen erreichtem Sitzungslimit";
+"notification.chrome_key_refreshed.title" = "Anmeldung aus Chrome aktualisiert";
+"notification.chrome_key_refreshed.message" = "%@ wurde über das Chrome-Profil %@ erneut angemeldet.";
 
 /* ==================== */
 /* MARK: - Auto-Switch Profile */
@@ -1275,7 +1277,7 @@
 "chrome_assisted.launch_failed" = "Chrome konnte nicht mit diesem Profil geöffnet werden. Wählen Sie ein Profil und versuchen Sie es erneut, oder verwenden Sie eine Alternative.";
 "chrome_assisted.launch_superseded" = "Dieser Einrichtungsversuch hat sich geändert, während Chrome geöffnet wurde, daher wurde dieser Start nicht verwendet. Wählen Sie ein Profil und öffnen Sie es erneut.";
 "chrome_assisted.verify_account" = "Chrome-Profil %@ wurde geöffnet. Prüfen Sie vor dem Einfügen eines Sitzungsschlüssels visuell das gewünschte Claude-Konto in Chrome.";
-"chrome_assisted.no_extraction" = "Beim Öffnen eines Profils wird nichts gelesen. Ein Sitzungsschlüssel wird nur gelesen, wenn Sie auf „Aus Chrome auslesen“ klicken und die macOS-Meldung bestätigen.";
+"chrome_assisted.no_extraction" = "Beim Öffnen eines Profils wird nichts gelesen. Ein Sitzungsschlüssel wird zum ersten Mal nur gelesen, wenn Sie auf „Aus Chrome auslesen“ klicken und die macOS-Meldung bestätigen. Danach liest RevvyTach ihn erneut aus demselben Chrome-Profil, sobald claude.ai die Kopie nicht mehr akzeptiert.";
 "chrome_assisted.embedded_fallback" = "Alternative: Melden Sie sich stattdessen im eingebetteten Browser an.";
 "chrome_assisted.validation_success" = "Sitzungsschlüssel validiert. %ld Organisation(en) gefunden.";
 "chrome_assisted.no_organizations" = "Der Sitzungsschlüssel ist gültig, aber es wurden keine Organisationen gefunden. Wählen Sie ein anderes Konto oder einen anderen Schlüssel.";
@@ -1286,7 +1288,7 @@
 "chrome_assisted.read_button" = "Aus Chrome auslesen";
 "chrome_assisted.reading" = "Wird gelesen …";
 "chrome_assisted.read_consent_title" = "Sitzungsschlüssel aus Chrome auslesen?";
-"chrome_assisted.read_consent_body" = "macOS fragt gleich nach Ihrem Anmeldekennwort. Wenn Sie zustimmen, erhält RevvyTach den Hauptschlüssel von Chrome – denselben Schlüssel, der jedes Cookie und jedes in Chrome gespeicherte Passwort entsperrt. macOS beschränkt diesen Schlüssel nicht auf ein einzelnes Cookie. Das tut nur der Code von RevvyTach selbst.\n\nRevvyTach legt kurz eine private Kopie der Cookies dieses Chrome-Profils an – aller Cookies, nicht nur eines –, liest den Sitzungsschlüssel von claude.ai aus dieser Kopie und löscht die Kopie sofort wieder. Mehr wird nicht gelesen, und nichts davon wird behalten.\n\nmacOS fragt zweimal, und in beiden Meldungen stehen RevvyTach und „Chrome Safe Storage“. Das ist macOS, das eine einzige Freigabe in zwei Schritten bestätigt, nicht RevvyTach, das zweimal liest. Klicken Sie beide Male auf „Erlauben“ – das gilt nur einmal, macOS fragt beim nächsten Auslesen erneut. Klicken Sie nicht auf „Immer erlauben“: Diese Freigabe läuft nie ab und gilt auch weiter, nachdem Sie RevvyTach gelöscht haben.\n\nSie können sie jederzeit zurücknehmen. Öffnen Sie die Schlüsselbundverwaltung, suchen Sie „Chrome Safe Storage“ in Ihrem Anmeldeschlüsselbund, öffnen Sie den Tab „Zugriffskontrolle“ und entfernen Sie RevvyTach.";
+"chrome_assisted.read_consent_body" = "macOS fragt gleich nach Ihrem Anmeldekennwort. Wenn Sie zustimmen, erhält RevvyTach den Hauptschlüssel von Chrome – denselben Schlüssel, der jedes Cookie und jedes in Chrome gespeicherte Passwort entsperrt. macOS beschränkt diesen Schlüssel nicht auf ein einzelnes Cookie. Das tut nur der Code von RevvyTach selbst.\n\nRevvyTach legt kurz eine private Kopie der Cookies dieses Chrome-Profils an – aller Cookies, nicht nur eines –, liest den Sitzungsschlüssel von claude.ai aus dieser Kopie und löscht die Kopie sofort wieder. Mehr wird nicht gelesen, und nichts davon wird behalten. Danach liest RevvyTach ihn erneut aus demselben Chrome-Profil, sobald claude.ai die Kopie nicht mehr akzeptiert.\n\nmacOS fragt zweimal, und in beiden Meldungen stehen RevvyTach und „Chrome Safe Storage“. Das ist macOS, das eine einzige Freigabe in zwei Schritten bestätigt, nicht RevvyTach, das zweimal liest. Klicken Sie beide Male auf „Erlauben“ – das gilt nur einmal, macOS fragt beim nächsten Auslesen erneut. Klicken Sie nicht auf „Immer erlauben“: Diese Freigabe läuft nie ab und gilt auch weiter, nachdem Sie RevvyTach gelöscht haben.\n\nSie können sie jederzeit zurücknehmen. Öffnen Sie die Schlüsselbundverwaltung, suchen Sie „Chrome Safe Storage“ in Ihrem Anmeldeschlüsselbund, öffnen Sie den Tab „Zugriffskontrolle“ und entfernen Sie RevvyTach.";
 "chrome_assisted.read_consent_continue" = "Fortfahren";
 "chrome_assisted.read_scope_note" = "Verwendet wird nur das Chrome-Profil, das Sie gerade geöffnet haben: %@";
 "chrome_assisted.read_failed_generic" = "Der Sitzungsschlüssel konnte nicht aus Chrome gelesen werden. Kopieren Sie ihn bitte manuell aus den DevTools und fügen Sie ihn unten ein.";

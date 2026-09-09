@@ -1770,6 +1770,26 @@ class ProfileManager: ObservableObject {
         updateProfile(profile)
     }
 
+    /// Records which Chrome profile the stored claude.ai session key was
+    /// read from, or `nil` when the key did not come from Chrome.
+    ///
+    /// Always written alongside the key it describes, including the `nil`
+    /// case: a key typed by hand must not inherit the Chrome origin of the
+    /// key it replaced, or a later automatic re-read would overwrite it from
+    /// a browser profile the user never pointed at this key.
+    func updateChromeSessionKeySource(
+        _ source: ProfileChromeSessionKeySource?,
+        for profileId: UUID
+    ) {
+        guard var profile = profiles.first(where: { $0.id == profileId }),
+              profile.providerID == .claude else {
+            return
+        }
+        guard profile.chromeSessionKeySource != source else { return }
+        profile.chromeSessionKeySource = source
+        updateProfile(profile)
+    }
+
     /// Caches the organization the profile's CLI credential belongs to.
     ///
     /// The CLI login can belong to a different organization than the

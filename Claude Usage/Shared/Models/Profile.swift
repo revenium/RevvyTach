@@ -72,6 +72,15 @@ struct Profile: Codable, Identifiable, Equatable {
     /// existed; callers must not substitute unrelated activity timestamps.
     var claudeBrowserCredentialSavedAt: Date?
 
+    /// The Chrome profile the stored claude.ai session key was read from.
+    ///
+    /// Set only by a successful Read from Chrome, and cleared whenever the
+    /// key is replaced by one that did not come from there. Its one job is to
+    /// let the app re-read the same cookie after claude.ai revokes the copy,
+    /// which every `claude /login` in that Chrome profile does. `nil` on every
+    /// profile set up before this existed, and on every key entered by hand.
+    var chromeSessionKeySource: ProfileChromeSessionKeySource?
+
     /// Legacy plaintext secrets from an older on-disk profile.
     ///
     /// Inbound only, and deliberately asymmetric: `decode` still reads it so
@@ -123,6 +132,7 @@ struct Profile: Codable, Identifiable, Equatable {
         createdAt: Date = Date(),
         lastUsedAt: Date = Date(),
         claudeBrowserCredentialSavedAt: Date? = nil,
+        chromeSessionKeySource: ProfileChromeSessionKeySource? = nil,
         credentialMigrationRetry: ProfileCredentialMigrationRetry = .init(),
         currentUsageMigrationRetry: ProfileCurrentUsage? = nil,
         deletionInProgress: Bool = false
@@ -155,6 +165,7 @@ struct Profile: Codable, Identifiable, Equatable {
         self.lastUsedAt = lastUsedAt
         self.claudeBrowserCredentialSavedAt =
             claudeBrowserCredentialSavedAt
+        self.chromeSessionKeySource = chromeSessionKeySource
         self.credentialMigrationRetry = credentialMigrationRetry
         self.currentUsageMigrationRetry = currentUsageMigrationRetry
         self.deletionInProgress = deletionInProgress
@@ -188,6 +199,7 @@ struct Profile: Codable, Identifiable, Equatable {
         case createdAt
         case lastUsedAt
         case claudeBrowserCredentialSavedAt
+        case chromeSessionKeySource
         case credentialMigrationRetry
         case currentUsageMigrationRetry
         case deletionInProgress
@@ -275,6 +287,12 @@ struct Profile: Codable, Identifiable, Equatable {
             Date.self,
             forKey: .claudeBrowserCredentialSavedAt
         )
+        // Absent on every profile written before this field existed, and
+        // absent again the moment a key is entered by hand.
+        chromeSessionKeySource = try container.decodeIfPresent(
+            ProfileChromeSessionKeySource.self,
+            forKey: .chromeSessionKeySource
+        )
         deletionInProgress = try container.decodeIfPresent(
             Bool.self,
             forKey: .deletionInProgress
@@ -353,6 +371,10 @@ struct Profile: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(
             claudeBrowserCredentialSavedAt,
             forKey: .claudeBrowserCredentialSavedAt
+        )
+        try container.encodeIfPresent(
+            chromeSessionKeySource,
+            forKey: .chromeSessionKeySource
         )
         if deletionInProgress {
             try container.encode(true, forKey: .deletionInProgress)
@@ -443,6 +465,7 @@ struct Profile: Codable, Identifiable, Equatable {
             || apiOrganizationId != nil
             || apiSessionKeyExpiry != nil
             || claudeBrowserCredentialSavedAt != nil
+            || chromeSessionKeySource != nil
             || cliCredentialsJSON != nil
             || cliOrganizationId != nil
             || hasCliAccount

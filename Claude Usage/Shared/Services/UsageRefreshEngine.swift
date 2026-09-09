@@ -1198,6 +1198,8 @@ final class UsageRefreshRuntime {
         featureAvailability: UsageProviderFeatureAvailability =
             .production,
         codexProviderFactory: CodexProviderFactory? = nil,
+        reReader: ChromeSessionKeyAutoReReader =
+            ChromeSessionKeyAutoReReader.shared,
         now: @escaping @Sendable () -> Date = Date.init,
         batchObserver: UsageRefreshEngine.BatchObserver? = nil
     ) -> UsageRefreshRuntime {
@@ -1244,8 +1246,11 @@ final class UsageRefreshRuntime {
                 return CapturedClaudeProviderRequest(
                     coreFetch: {
                         let coreRequest = try await preparedCoreRequest.value()
-                        return try await apiService.fetchUsageData(
-                            using: coreRequest
+                        return try await ClaudeBrowserSignInRecovery.fetch(
+                            using: coreRequest,
+                            profile: profile,
+                            apiService: apiService,
+                            reReader: reReader
                         )
                     },
                     apiFetch: apiFetch

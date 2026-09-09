@@ -167,6 +167,8 @@
 "notification.enabled.message" = "Ahora recibirás alertas en los umbrales de uso del 75%, 90% y 95%, además de notificaciones de reinicio de sesión.";
 "notification.profile_auto_switched.title" = "Perfil cambiado automáticamente";
 "notification.profile_auto_switched.message" = "%@ → %@ por límite de sesión alcanzado";
+"notification.chrome_key_refreshed.title" = "Sesión actualizada desde Chrome";
+"notification.chrome_key_refreshed.message" = "Se ha vuelto a iniciar la sesión de %@ con el perfil de Chrome %@.";
 
 /* ==================== */
 /* MARK: - Auto-Switch Profile */
@@ -1258,7 +1260,7 @@
 "chrome_assisted.launch_failed" = "No se pudo abrir Chrome con ese perfil. Elige un perfil e inténtalo de nuevo, o usa una alternativa.";
 "chrome_assisted.launch_superseded" = "Este intento de configuración cambió mientras se abría Chrome, así que esa apertura no se usó. Elige un perfil y ábrelo de nuevo.";
 "chrome_assisted.verify_account" = "Se abrió el perfil de Chrome %@. Verifica visualmente la cuenta de Claude deseada en Chrome antes de pegar una clave de sesión.";
-"chrome_assisted.no_extraction" = "Abrir un perfil no lee nada. Solo se lee una clave de sesión si pulsas «Leer desde Chrome» y apruebas el aviso de macOS.";
+"chrome_assisted.no_extraction" = "Abrir un perfil no lee nada. Una clave de sesión solo se lee por primera vez si pulsas «Leer desde Chrome» y apruebas el aviso de macOS. Después, RevvyTach vuelve a leerla del mismo perfil de Chrome cuando claude.ai deja de aceptar la copia.";
 "chrome_assisted.embedded_fallback" = "Alternativa: inicia sesión con el navegador integrado.";
 "chrome_assisted.validation_success" = "Clave de sesión validada. Se encontraron %ld organización(es).";
 "chrome_assisted.no_organizations" = "La clave de sesión es válida, pero no se encontraron organizaciones. Elige otra cuenta o clave.";
@@ -1269,7 +1271,7 @@
 "chrome_assisted.read_button" = "Leer desde Chrome";
 "chrome_assisted.reading" = "Leyendo…";
 "chrome_assisted.read_consent_title" = "¿Leer tu clave de sesión desde Chrome?";
-"chrome_assisted.read_consent_body" = "macOS va a pedirte tu contraseña de inicio de sesión. Si la apruebas, RevvyTach recibe la clave maestra de Chrome: la misma clave que abre todas las cookies y todas las contraseñas guardadas en Chrome. macOS no limita esa clave a una sola cookie. Solo lo hace el propio código de RevvyTach.\n\nRevvyTach hace una copia privada y breve de las cookies de este perfil de Chrome —de todas, no solo de una—, lee de esa copia la clave de sesión de claude.ai y borra la copia enseguida. No lee nada más ni conserva nada más.\n\nmacOS pregunta dos veces, y los dos avisos mencionan RevvyTach y «Chrome Safe Storage». Es macOS confirmando un único permiso en dos pasos, no RevvyTach leyendo dos veces. Haz clic en «Permitir» en los dos: es un permiso de una sola vez y macOS volverá a preguntar la próxima vez. No hagas clic en «Permitir siempre»: ese permiso no caduca nunca y sigue vigente incluso después de que borres RevvyTach.\n\nPuedes retirarlo cuando quieras. Abre Acceso a Llaveros, busca «Chrome Safe Storage» en tu llavero de inicio de sesión, abre la pestaña «Control de acceso» y elimina RevvyTach.";
+"chrome_assisted.read_consent_body" = "macOS va a pedirte tu contraseña de inicio de sesión. Si la apruebas, RevvyTach recibe la clave maestra de Chrome: la misma clave que abre todas las cookies y todas las contraseñas guardadas en Chrome. macOS no limita esa clave a una sola cookie. Solo lo hace el propio código de RevvyTach.\n\nRevvyTach hace una copia privada y breve de las cookies de este perfil de Chrome —de todas, no solo de una—, lee de esa copia la clave de sesión de claude.ai y borra la copia enseguida. No lee nada más ni conserva nada más. Después, RevvyTach vuelve a leerla del mismo perfil de Chrome cuando claude.ai deja de aceptar la copia.\n\nmacOS pregunta dos veces, y los dos avisos mencionan RevvyTach y «Chrome Safe Storage». Es macOS confirmando un único permiso en dos pasos, no RevvyTach leyendo dos veces. Haz clic en «Permitir» en los dos: es un permiso de una sola vez y macOS volverá a preguntar la próxima vez. No hagas clic en «Permitir siempre»: ese permiso no caduca nunca y sigue vigente incluso después de que borres RevvyTach.\n\nPuedes retirarlo cuando quieras. Abre Acceso a Llaveros, busca «Chrome Safe Storage» en tu llavero de inicio de sesión, abre la pestaña «Control de acceso» y elimina RevvyTach.";
 "chrome_assisted.read_consent_continue" = "Continuar";
 "chrome_assisted.read_scope_note" = "Solo se usa el perfil de Chrome que acabas de abrir: %@";
 "chrome_assisted.read_failed_generic" = "No se pudo leer la clave de sesión desde Chrome. Cópiala manualmente desde DevTools y pégala abajo.";
