@@ -113,7 +113,7 @@ extension HealthStripAccountRow {
 
     /// One visible line per usage window, including its reset when known, or
     /// a single dash when nothing was read.
-    var valueLines: [String] {
+    func valueLines(now: Date = Date()) -> [String] {
         guard windows.contains(where: { $0.percentageText != nil }) else {
             return [OverflowProfileRow.noReadingText]
         }
@@ -130,10 +130,12 @@ extension HealthStripAccountRow {
             )
             return value + " · " + String(
                 format: reset,
-                resetTime.resetTimeString()
+                resetTime.resetTimeString(from: now)
             )
         }
     }
+
+    var valueLines: [String] { valueLines() }
 
     /// Kept as a model-level summary for tests and non-view callers. The
     /// card renders `valueLines` separately rather than embedding newlines in
@@ -141,7 +143,7 @@ extension HealthStripAccountRow {
     var valueText: String { valueLines.joined(separator: "\n") }
 
     /// The spoken form of the same thing, including each usable reset time.
-    var accessibilityValueText: String {
+    func accessibilityValueText(now: Date = Date()) -> String {
         guard windows.contains(where: { $0.percentageText != nil }) else {
             return windowRow.accessibilityValueText
         }
@@ -161,12 +163,14 @@ extension HealthStripAccountRow {
             if let resetTime = window.resetTime {
                 text += ", " + String(
                     format: resetFormat,
-                    resetTime.resetTimeString()
+                    resetTime.resetTimeString(from: now)
                 )
             }
             return text
         }.joined(separator: ", ")
     }
+
+    var accessibilityValueText: String { accessibilityValueText() }
 
     /// Builds the list the strip's popover shows.
     ///
@@ -333,12 +337,12 @@ struct HealthStripAccountsView: View {
     var body: some View {
         TimelineView(
             .periodic(from: .now, by: Self.clockRefreshInterval)
-        ) { _ in
-            content
+        ) { context in
+            content(now: context.date)
         }
     }
 
-    private var content: some View {
+    private func content(now: Date) -> some View {
         VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
             PopoverSectionHeader(
                 title: ProviderUILocalization.text(
@@ -354,6 +358,7 @@ struct HealthStripAccountsView: View {
                     ForEach(rows) { row in
                         HealthStripAccountRowView(
                             row: row,
+                            now: now,
                             onOpen: { onOpen(row.identity) },
                             onActivate: { onActivate(row.identity) },
                             onRefresh: { onRefresh(row.identity) }
@@ -422,6 +427,7 @@ struct HealthStripAccountsView: View {
 /// stand in for.
 struct HealthStripAccountRowView: View {
     let row: HealthStripAccountRow
+    var now: Date = Date()
     let onOpen: () -> Void
     let onActivate: () -> Void
     let onRefresh: () -> Void
@@ -458,7 +464,7 @@ struct HealthStripAccountRowView: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(
-                            Array(row.valueLines.enumerated()),
+                            Array(row.valueLines(now: now).enumerated()),
                             id: \.offset
                         ) { _, line in
                             Text(line)
@@ -473,7 +479,7 @@ struct HealthStripAccountRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(openLabel)
-            .accessibilityValue(row.accessibilityValueText)
+            .accessibilityValue(row.accessibilityValueText(now: now))
 
             HStack(spacing: HealthStripAccountsView.actionSpacing) {
                 ForEach(row.actions) { action in

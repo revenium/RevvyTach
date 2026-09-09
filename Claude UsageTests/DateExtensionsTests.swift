@@ -94,6 +94,47 @@ final class DateExtensionsTests: XCTestCase {
         XCTAssertEqual(result, "< 1m")
     }
 
+    func testResetTimeStringUsesProvidedNowAcrossMidnight() {
+        let timezone = TimeZone(secondsFromGMT: 0)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        let reset = calendar.date(
+            from: DateComponents(
+                year: 2026,
+                month: 9,
+                day: 10,
+                hour: 8
+            )
+        )!
+        let beforeMidnight = calendar.date(
+            from: DateComponents(
+                year: 2026,
+                month: 9,
+                day: 9,
+                hour: 23,
+                minute: 59
+            )
+        )!
+        let afterMidnight = calendar.date(
+            from: DateComponents(
+                year: 2026,
+                month: 9,
+                day: 10,
+                hour: 0,
+                minute: 1
+            )
+        )!
+
+        XCTAssertTrue(
+            reset.resetTimeString(from: beforeMidnight, timezone: timezone)
+                .hasPrefix("Tomorrow ")
+        )
+        XCTAssertTrue(
+            reset.resetTimeString(from: afterMidnight, timezone: timezone)
+                .hasPrefix("Today ")
+        )
+    }
+
     // MARK: - Helpers
 
     private func createDate(year: Int, month: Int, day: Int, hour: Int) -> Date {

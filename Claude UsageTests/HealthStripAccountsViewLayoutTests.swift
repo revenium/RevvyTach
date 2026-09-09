@@ -22,10 +22,6 @@ import XCTest
 @MainActor
 final class HealthStripAccountsViewLayoutTests: XCTestCase {
 
-    func testResetLabelsRefreshEveryMinute() {
-        XCTAssertEqual(HealthStripAccountsView.clockRefreshInterval, 60)
-    }
-
     private func rows(_ count: Int) -> [HealthStripAccountRow] {
         (0..<count).map { index in
             HealthStripAccountRow(

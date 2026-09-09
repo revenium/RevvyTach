@@ -147,6 +147,63 @@ final class HealthStripAccountRowTests: XCTestCase {
         )
     }
 
+    func testResetLabelChangesFromTomorrowToTodayAcrossMidnight() throws {
+        let calendar = Calendar.current
+        let beforeMidnight = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 9,
+                    day: 9,
+                    hour: 23,
+                    minute: 59
+                )
+            )
+        )
+        let afterMidnight = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 9,
+                    day: 10,
+                    hour: 0,
+                    minute: 1
+                )
+            )
+        )
+        let reset = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 9,
+                    day: 10,
+                    hour: 8
+                )
+            )
+        )
+        var profile = claude("Work")
+        profile.claudeUsage = usage(
+            session: 42,
+            week: nil,
+            sessionReset: reset
+        )
+        let row = try XCTUnwrap(rows([profile]).first)
+
+        XCTAssertTrue(
+            row.valueLines(now: beforeMidnight)[0].contains("Tomorrow")
+        )
+        XCTAssertTrue(
+            row.valueLines(now: afterMidnight)[0].contains("Today")
+        )
+        XCTAssertTrue(
+            row.accessibilityValueText(now: beforeMidnight)
+                .contains("Tomorrow")
+        )
+        XCTAssertTrue(
+            row.accessibilityValueText(now: afterMidnight).contains("Today")
+        )
+    }
+
     func testWeeklyResetIsOmittedWhenWeeklyReadingIsUnavailable() throws {
         var reading = usage(session: 42, week: nil)
         reading.weeklyResetTime = Date().addingTimeInterval(72 * 3_600)

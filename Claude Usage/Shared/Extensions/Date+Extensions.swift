@@ -59,15 +59,20 @@ extension Date {
 
     /// Returns a formatted reset time string (e.g., "Today 3:59am" or "Oct 28, 12:59pm")
     func resetTimeString(from now: Date = Date(), timezone: TimeZone = .current) -> String {
-        let calendar = Calendar.current
+        var calendar = Calendar.current
+        calendar.timeZone = timezone
         let formatter = DateFormatter()
         formatter.timeZone = timezone
         let use24h = SharedDataStore.shared.uses24HourTime()
         let timeFmt = use24h ? "HH:mm" : "h:mma"
 
-        if calendar.isDateInToday(self) {
+        if calendar.isDate(self, inSameDayAs: now) {
             formatter.dateFormat = "'Today' \(timeFmt)"
-        } else if calendar.isDateInTomorrow(self) {
+        } else if let tomorrow = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: now
+        ), calendar.isDate(self, inSameDayAs: tomorrow) {
             formatter.dateFormat = "'Tomorrow' \(timeFmt)"
         } else {
             formatter.dateFormat = "MMM d, \(timeFmt)"
