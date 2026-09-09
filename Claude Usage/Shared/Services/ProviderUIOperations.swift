@@ -509,12 +509,20 @@ final class ProviderUIDependencies {
         terminalCredentialsJSON: String? = nil,
         terminalAccountName: String? = nil,
         acceptSessionOnlyStorage: Bool = false,
-        target: ClaudeManualSetupTarget = .compatibilityCurrent
+        target: ClaudeManualSetupTarget = .compatibilityCurrent,
+        chromeSessionKeySource: ChromeSessionKeySourceWrite = .unchanged
     ) async throws -> Profile {
         let targetProfile = try resolvedClaudeManualSetupTarget(target)
         var profile = try requiredProfile(targetProfile.id)
         profile.claudeSessionKey = sessionKey
         profile.organizationId = organizationID
+        // Carried on the same profile record as the key it describes. Written
+        // afterwards instead, it could be skipped while the key survived, and
+        // a hand-typed key would keep the Chrome origin of the key it
+        // replaced.
+        if case .set(let source) = chromeSessionKeySource {
+            profile.chromeSessionKeySource = source
+        }
         let shouldAttemptTerminalLink = terminalCredentialsJSON != nil
         let validatedTerminalCredentials = terminalCredentialsJSON.flatMap {
             ClaudeCodeSyncService.carriesLogin($0) ? $0 : nil

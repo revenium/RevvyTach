@@ -876,7 +876,8 @@ struct ConfirmStep: View {
                     for: target.id,
                     credentials: creds,
                     acceptingSessionOnly: acceptSessionOnly,
-                    browserCredentialSave: true
+                    browserCredentialSave: true,
+                    chromeSessionKeySource: .set(chromeSource)
                 )
 
                 await MainActor.run {
@@ -889,11 +890,6 @@ struct ConfirmStep: View {
                     }
                     // Reset circuit breaker on successful credential save
                     ErrorRecovery.shared.recordSuccess(for: .api)
-
-                    ProfileManager.shared.updateChromeSessionKeySource(
-                        chromeSource,
-                        for: target.id
-                    )
 
                     if let selectedOrganization {
                         ProfileManager.shared.updateOrganizationName(

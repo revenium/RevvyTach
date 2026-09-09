@@ -447,10 +447,11 @@ class ClaudeAPIService: APIServiceProtocol {
             }
 
             // Check if key actually changed (for smart org clearing)
+            let existingKey = profileManager.activeClaudeProfile?.claudeSessionKey
+            let keyChanged = (existingKey != validatedKey)
             var shouldClearOrg = true
             if preserveOrgIfUnchanged {
-                let existingKey = profileManager.activeClaudeProfile?.claudeSessionKey
-                shouldClearOrg = (existingKey != validatedKey)
+                shouldClearOrg = keyChanged
             }
 
             // Save to active profile
@@ -459,7 +460,18 @@ class ClaudeAPIService: APIServiceProtocol {
             if shouldClearOrg {
                 credentials.organizationId = nil
             }
-            try profileManager.saveCredentials(for: profileId, credentials: credentials)
+            // A key arriving here did not come from a recorded Read from
+            // Chrome, so a replacement must not inherit the previous key's
+            // browser origin. Left in place, that origin would make this key
+            // eligible for an automatic re-read that overwrites it from a
+            // Chrome profile the user never associated with it. A key that is
+            // unchanged is still the key its recorded origin describes, so
+            // that origin is left alone.
+            try profileManager.saveCredentials(
+                for: profileId,
+                credentials: credentials,
+                chromeSessionKeySource: keyChanged ? .set(nil) : .unchanged
+            )
 
             LoggingService.shared.log("Session key saved to active profile")
 

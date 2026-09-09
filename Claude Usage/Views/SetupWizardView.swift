@@ -1943,7 +1943,8 @@ struct ConfirmStepSetup: View {
                                 ? wizardState.detectedTerminalAccountName
                                 : nil,
                         acceptSessionOnlyStorage: acceptSessionOnly,
-                        target: target
+                        target: target,
+                        chromeSessionKeySource: .set(chromeSource)
                     )
                 LoggingService.shared.log(
                     "SetupWizard: Updated profile setup preferences"
@@ -1961,12 +1962,6 @@ struct ConfirmStepSetup: View {
                     }
                     // Reset circuit breaker on successful credential save
                     ErrorRecovery.shared.recordSuccess(for: .api)
-
-                    dependencies.profileManager
-                        .updateChromeSessionKeySource(
-                            chromeSource,
-                            for: completedProfile.id
-                        )
 
                     if let selectedOrganization {
                         dependencies.profileManager.updateOrganizationName(
