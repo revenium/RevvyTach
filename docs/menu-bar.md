@@ -4,6 +4,7 @@ What the app puts in your menu bar, how it behaves when you're tracking more acc
 and how it interacts with menu bar managers.
 
 - [Display modes](#display-modes)
+- [Health strip](#health-strip)
 - [Icon styles and appearance](#icon-styles-and-appearance)
 - [When accounts don't fit](#when-accounts-dont-fit)
 - [Menu bar managers](#menu-bar-managers)
@@ -20,6 +21,7 @@ Settings → **Manage Profiles** → display mode.
 |---|---|
 | **Single** | One item, showing the active profile |
 | **Multi** | One item per selected profile, all visible at once |
+| **Multi, health strip** | One item holding every selected Claude account as a small bar |
 
 In multi mode each profile carries its own icon style, color mode, and refresh interval, and
 clicking any item opens that profile's usage. Clicking never changes which profile is active —
@@ -27,6 +29,42 @@ see [viewing vs. activating](multi-account-cli.md#the-model).
 
 An item can also show more than one metric at a time — session, weekly, and API usage as
 separate icons.
+
+---
+
+## Health strip
+
+Settings → **Manage Profiles** → **Menu bar layout** → **Health strip**. Off by default; nothing
+changes until you switch it on.
+
+Instead of one item per account, every selected Claude account becomes a small vertical bar
+inside a single menu bar item. Eight accounts come to about 58 points of menu bar, against
+roughly 470 for eight separate items.
+
+**What a bar means.** Each bar's fill is that account's session figure, coloured by the same
+thresholds every other icon uses. In remaining mode a full bar means plenty left, exactly as the
+per-account icons read. An account with no reading at all shows a dimmed dash across the middle
+of its track rather than an empty bar — an empty bar would be a measurement of zero, which is a
+different claim. The active account gets a short green base under its bar, and an account whose
+sign-in needs attention gets a mark above it: a filled red dot for the Claude Code sign-in, a
+hollow amber ring for the claude.ai one.
+
+**Numbers.** A busy account also spells out its figures beside its own bar, in the same form the
+Percentage icon style uses. Settings → **Show numbers for accounts above** picks the level: 80,
+90, 95, or Never. The trigger is the used percentage of the session or weekly window, whichever
+is higher, whatever the display is set to show. Once shown, the numbers stay until the account
+falls three full points below the level, so an account hovering at the threshold does not widen
+and narrow the strip on every refresh.
+
+**Clicking.** A left click opens a list of every account on the strip, each row naming the
+account, both usage windows, whether it is active and whether a sign-in needs attention. Each
+row carries Make Active, Refresh and Open; the footer carries Refresh All, Manage Profiles and
+Quit. A right click on a bar opens that account's own menu — the bar under the pointer, not the
+active account.
+
+**Codex accounts keep their own items.** The strip draws Claude accounts only. Because the icon
+style setting then governs no Claude item at all, it is disabled while the strip is on, with a
+line saying it now applies to Codex accounts.
 
 ---
 
@@ -80,6 +118,10 @@ marker all move it, so a profile crossing 99% → 100% genuinely resizes itself.
 
 Collapsing is immediate; re-expanding requires a full item's worth of slack, so the bar doesn't
 oscillate at the boundary.
+
+**Overflow does not apply in [health strip](#health-strip) layout.** The strip is one item
+however many accounts it holds, so there is nothing to collapse; the overflow controls are
+disabled while it is on, and automatic mode's menu bar measurements are skipped entirely.
 
 ---
 

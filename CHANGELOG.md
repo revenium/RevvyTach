@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A health strip: every Claude account as one small bar, in one menu bar
+  item.** Tracking eight accounts used to mean eight menu bar items, and about
+  470 points of a menu bar that does not warn you before it starts hiding
+  things. Settings → Manage Profiles → **Menu bar layout** → **Health strip**
+  draws each account as a 4-point vertical bar instead, coloured the same way
+  every other icon is. Eight accounts come to about 58 points.
+
+  An account with no reading shows a dash rather than an empty bar, because an
+  empty bar would claim it measured zero. The active account gets a green base
+  under its bar, and a broken sign-in gets a mark above it — a filled red dot
+  for the Claude Code sign-in, a hollow amber ring for the claude.ai one. A
+  busy account also spells out its numbers beside its own bar, at a level you
+  pick: 80, 90, 95, or never.
+
+  Clicking the strip opens a list of the accounts on it, each row with Make
+  Active, Refresh and Open, and a footer with Refresh All, Manage Profiles and
+  Quit. Right-clicking a bar opens that account's own menu. Codex accounts keep
+  their own items. The strip is off until you switch it on, and switching back
+  restores your menu bar arrangement rather than rebuilding it.
+
 - **Read your Claude session key straight out of Chrome.** Setting up a Claude
   account used to mean opening DevTools, finding the `sessionKey` cookie by
   hand, and pasting a long string across. Once you have opened your account in
