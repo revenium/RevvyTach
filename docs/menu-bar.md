@@ -65,6 +65,14 @@ active account. That menu appears under the left edge of the strip rather than u
 clicked, because macOS positions a menu from the whole item; the menu still belongs to the
 account you clicked.
 
+**If you run a menu bar manager, the strip starts hidden.** Ice, Bartender, Thaw and the rest
+sort items by identity, and the strip is a new one they have never seen — so the first time you
+turn it on, the manager is likely to file it in its hidden section and park it off-screen. The
+symptom is a strip that exists but never appears: nothing draws in the menu bar, and macOS never
+records a position for it. Drag it out of the hidden section once, in the manager's own settings,
+and it stays put. Verified on Thaw: the item sat at x = −4495 until it was moved to the visible
+section, after which macOS placed it normally and it has stayed there.
+
 **Codex accounts keep their own items.** The strip draws Claude accounts only. Two settings then
 govern no Claude item at all and are disabled while the strip is on, each saying it now applies to
 Codex accounts: the icon style picker, and Show Time Marker, which has nowhere to go on a 4-point
