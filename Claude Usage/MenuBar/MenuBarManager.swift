@@ -2351,7 +2351,8 @@ class MenuBarManager: NSObject, ObservableObject {
     private func toggleValidatedPopover(
         from button: NSStatusBarButton,
         target: ProviderStatusItemIdentity,
-        profile: Profile
+        profile: Profile,
+        checksBounce: Bool = true
     ) {
         // In multi-profile mode, determine which profile was clicked
         if statusBarUIManager?.isInMultiProfileMode == true,
@@ -2415,7 +2416,8 @@ class MenuBarManager: NSObject, ObservableObject {
                 if Self.shouldSuppressPopoverOpen(
                     button: button,
                     lastButton: lastPopoverCloseButton,
-                    lastCloseDate: lastPopoverCloseDate
+                    lastCloseDate: lastPopoverCloseDate,
+                    checksBounce: checksBounce
                 ) {
                     return
                 }
@@ -2621,7 +2623,11 @@ class MenuBarManager: NSObject, ObservableObject {
         toggleValidatedPopover(
             from: button,
             target: identity,
-            profile: profile
+            profile: profile,
+            // This runs from a press inside a popover that has just closed
+            // itself, on the same button. The bounce guard would read that as
+            // a double click on the status item and silently do nothing.
+            checksBounce: false
         )
     }
 
@@ -2673,9 +2679,13 @@ class MenuBarManager: NSObject, ObservableObject {
     ///
     /// The rows are a value snapshot taken here, at open, and every row
     /// action closes this popover before doing anything — so the content can
-    /// never mutate while it is on screen. That, plus `sizingOptions = []`
-    /// and an explicit `contentSize`, is the shape the main popover settled
-    /// on after a content-derived Auto Layout crash.
+    /// never mutate while it is on screen. That is what makes the main
+    /// popover's Auto Layout crash impossible here, and it is why this keeps
+    /// the shape the overflow list already uses: a self-sizing view under
+    /// `sizingOptions = .preferredContentSize`. A hand-computed height would
+    /// have to guess the tallest locale's row, and guessing low would clip
+    /// the footer that carries the only Quit and Manage Profiles the strip
+    /// offers.
     private func toggleHealthStripPopover(from button: NSStatusBarButton) {
         if let healthStripPopover, healthStripPopover.isShown {
             healthStripPopover.performClose(nil)
@@ -2734,18 +2744,12 @@ class MenuBarManager: NSObject, ObservableObject {
             }
         )
         let hostingController = NSHostingController(rootView: view)
-        hostingController.sizingOptions = []
+        hostingController.sizingOptions = .preferredContentSize
 
         let newPopover = NSPopover()
         newPopover.behavior = .transient
         newPopover.animates = false
         newPopover.contentViewController = hostingController
-        newPopover.contentSize = NSSize(
-            width: PopoverDesign.width,
-            height: HealthStripAccountsView.contentHeight(
-                rowCount: rows.count
-            )
-        )
         NSApp.activate(ignoringOtherApps: true)
         newPopover.show(
             relativeTo: button.bounds,
@@ -2806,12 +2810,24 @@ class MenuBarManager: NSObject, ObservableObject {
         eventType == .rightMouseUp
     }
 
+    /// Swallows a click that reopens the popover on the same status item
+    /// within a quarter second of closing it, which is how a second click on
+    /// a status item reads as "close" rather than "close then open".
+    ///
+    /// `checksBounce` exists for the health strip. Its accounts list is
+    /// anchored to the same button a profile popover would be, so closing the
+    /// list and pressing a row's Open inside 250 ms looks exactly like that
+    /// double click and would silently do nothing — a guard written for a
+    /// status-item click eating an in-popover button press. A press inside
+    /// the popover is never a bounce, so that path opts out.
     static func shouldSuppressPopoverOpen(
         button: AnyObject,
         lastButton: AnyObject?,
         lastCloseDate: Date,
-        now: Date = Date()
+        now: Date = Date(),
+        checksBounce: Bool = true
     ) -> Bool {
+        guard checksBounce else { return false }
         guard let lastButton, button === lastButton else { return false }
         return now.timeIntervalSince(lastCloseDate) < 0.25
     }

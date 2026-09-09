@@ -265,23 +265,38 @@ final class HealthStripAccountRowTests: XCTestCase {
 
     // MARK: - Popover sizing
 
-    func testTheContentHeightGrowsWithRowsThenCaps() {
-        let one = HealthStripAccountsView.contentHeight(rowCount: 1)
-        let four = HealthStripAccountsView.contentHeight(rowCount: 4)
-        let cap = HealthStripAccountsView.contentHeight(
-            rowCount: HealthStripAccountsView.maxVisibleRows
-        )
+    /// The popover self-sizes; only the row list is capped, and it scrolls
+    /// past the cap. Every account still gets a row, so nothing is dropped
+    /// from the list to make it fit.
+    func testEveryAccountGetsARowHoweverManyThereAre() {
+        let many = (0..<20).map { claude("Account \($0)") }
 
-        XCTAssertGreaterThan(four, one)
-        XCTAssertEqual(
-            HealthStripAccountsView.contentHeight(rowCount: 40),
-            cap,
-            "Rows past the cap scroll rather than growing the popover"
+        XCTAssertEqual(rows(many).count, 20)
+        XCTAssertGreaterThan(HealthStripAccountsView.scrollMaxHeight, 0)
+    }
+
+    /// The bounce guard that makes a second click on a status item close the
+    /// popover must not eat a press inside one. Opening the strip's list and
+    /// then pressing a row's Open is the same button within 250 ms.
+    func testTheBounceGuardIsSkippedForAPressInsideThePopover() {
+        let button = NSStatusBarButton()
+
+        XCTAssertTrue(
+            MenuBarManager.shouldSuppressPopoverOpen(
+                button: button,
+                lastButton: button,
+                lastCloseDate: Date()
+            ),
+            "A second click on the status item still closes the popover"
         )
-        XCTAssertEqual(
-            HealthStripAccountsView.contentHeight(rowCount: 0),
-            one,
-            "An empty list still has a usable height"
+        XCTAssertFalse(
+            MenuBarManager.shouldSuppressPopoverOpen(
+                button: button,
+                lastButton: button,
+                lastCloseDate: Date(),
+                checksBounce: false
+            ),
+            "but Open from inside the list must always show the account"
         )
     }
 }

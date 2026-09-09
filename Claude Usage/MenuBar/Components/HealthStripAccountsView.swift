@@ -134,14 +134,13 @@ struct HealthStripAccountsView: View {
     let onManageProfiles: () -> Void
     let onQuit: () -> Void
 
-    /// Height of one row, including its own vertical padding.
-    static let rowHeight: CGFloat = 46
     static let rowSpacing: CGFloat = 4
-    /// Rows past this many scroll rather than growing the popover past a
-    /// sensible height.
-    static let maxVisibleRows = 8
-    private static let headerHeight: CGFloat = 16
-    private static let footerHeight: CGFloat = 30
+
+    /// The list scrolls past this height rather than growing the popover
+    /// without limit. A cap in points, not in rows: row height is a text
+    /// measurement that differs between locales, so counting rows would clip
+    /// exactly where the rows are tallest.
+    static let scrollMaxHeight: CGFloat = 360
 
     /// Size of one action icon button, the space between them, and the
     /// width the whole cluster takes out of a row.
@@ -169,25 +168,6 @@ struct HealthStripAccountsView: View {
             - 2 * 8
             - actionColumnWidth
 
-    /// The popover's content height for a given number of accounts.
-    ///
-    /// Computed here and assigned to `NSPopover.contentSize` outright.
-    /// Deriving the size from the content instead — `sizingOptions =
-    /// .preferredContentSize` — builds Auto Layout constraints from the
-    /// content's ideal size, so a content change re-invalidates layout
-    /// inside AppKit's own constraint-update pass. That was the crash.
-    static func contentHeight(rowCount: Int) -> CGFloat {
-        let visible = min(max(rowCount, 1), maxVisibleRows)
-        let list = CGFloat(visible) * rowHeight
-            + CGFloat(max(visible - 1, 0)) * rowSpacing
-        return PopoverDesign.outerInset * 2
-            + headerHeight
-            + PopoverDesign.sectionSpacing
-            + list
-            + PopoverDesign.sectionSpacing
-            + footerHeight
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
             PopoverSectionHeader(
@@ -196,7 +176,10 @@ struct HealthStripAccountsView: View {
                     fallback: "Claude Accounts"
                 )
             )
-            ScrollView(.vertical, showsIndicators: rows.count > Self.maxVisibleRows) {
+            // The rows scroll; the footer below does not. It carries the
+            // only Quit and Manage Profiles the strip offers, so it must
+            // never be the thing that goes below the fold.
+            ScrollView(.vertical) {
                 VStack(spacing: Self.rowSpacing) {
                     ForEach(rows) { row in
                         HealthStripAccountRowView(
@@ -208,6 +191,7 @@ struct HealthStripAccountsView: View {
                     }
                 }
             }
+            .frame(maxHeight: Self.scrollMaxHeight)
             Divider()
             HStack(spacing: 12) {
                 footerButton(
@@ -235,6 +219,11 @@ struct HealthStripAccountsView: View {
             }
         }
         .padding(PopoverDesign.outerInset)
+        // Self-sizing vertically, the shape the overflow list already uses
+        // with `sizingOptions = .preferredContentSize`. A hand-computed
+        // height would have to guess the tallest locale's row, and guessing
+        // low clips the footer.
+        .fixedSize(horizontal: false, vertical: true)
         .frame(width: PopoverDesign.width)
     }
 
