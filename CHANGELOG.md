@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-09-13
+
+### Fixed
+
+- **A Claude Code login on an account nobody is using now says it has
+  expired, instead of vaguely "isn't working."** RevvyTach also stops
+  retrying that dead login twice a minute against Claude Code's own lock,
+  still picks up a fresh sign-in without needing a restart, and never
+  re-sends a refresh token it has already spent. (#113)
+
 ## [4.3.0] - 2026-09-12
 
 ### Added
