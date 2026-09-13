@@ -868,6 +868,68 @@ class ClaudeAPIService: APIServiceProtocol {
     /// already consumed; only a replacement login may clear this verdict.
     private var indeterminateCLILogins: Set<Int> = []
 
+    /// Refresh tokens this run has sent and must never send again, keyed by
+    /// the token's own hash and paired with the answer they got: `.expired`
+    /// for `invalid_grant`, `.indeterminate` for an exchange that ended
+    /// without a knowable answer after dispatch.
+    ///
+    /// The two sets above are keyed by the whole credential blob, and a blob
+    /// is not a login. The same refresh token routinely turns up in
+    /// different bytes: renewing an account backed by a credentials file
+    /// hands the profile the renewed blob as-is but writes `claudeAiOauth`
+    /// back re-serialized next to that file's other keys, so the profile's
+    /// copy and the file's copy carry identical tokens and different hashes.
+    /// A verdict filed under one blob then says nothing about the other, and
+    /// the other was sent a second time — a token that may already have been
+    /// rotated, which is how a live login gets turned into `invalid_grant`.
+    ///
+    /// It also closes the cancelled-caller gap. The blob verdicts are
+    /// recorded by whoever was waiting on the exchange, and a caller that
+    /// stopped waiting records nothing; this is recorded inside the shielded
+    /// exchange itself, which finishes whether anyone is still waiting or not.
+    ///
+    /// Never cleared: a refresh token is single-use, and a new sign-in or a
+    /// renewal always carries a different one. Memory only, like every other
+    /// verdict here, so it dies with the process along with its random hash
+    /// seed.
+    private var unsendableRefreshTokens: [
+        Int: ClaudeCLITokenRefresher.RefreshFailure
+    ] = [:]
+
+    /// What this run already knows about renewing a credential: refused,
+    /// unanswered, or nothing. Checked against the blob's own verdicts first
+    /// and then against the refresh token it carries, so the same login in
+    /// different bytes gets the same answer.
+    private func knownRefreshFailure(
+        for credentialsJSON: String
+    ) -> ClaudeCLITokenRefresher.RefreshFailure? {
+        let fingerprint = credentialsJSON.hashValue
+        if expiredCLILogins.contains(fingerprint) { return .expired }
+        if indeterminateCLILogins.contains(fingerprint) { return .indeterminate }
+        guard let refreshToken = ClaudeCLITokenRefresher.refreshToken(
+            in: credentialsJSON
+        ) else { return nil }
+        return unsendableRefreshTokens[refreshToken.hashValue]
+    }
+
+    /// Files a refusal or an unanswered exchange under a credential blob,
+    /// which is where the readers that word the notice look for it.
+    private func recordRefreshFailure(
+        _ failure: ClaudeCLITokenRefresher.RefreshFailure,
+        for credentialsJSON: String
+    ) {
+        switch failure {
+        case .expired:
+            expiredCLILogins.insert(credentialsJSON.hashValue)
+        case .indeterminate:
+            indeterminateCLILogins.insert(credentialsJSON.hashValue)
+        case .unavailable:
+            // A transient failure is retried on the next tick by design, so
+            // there is nothing to remember.
+            break
+        }
+    }
+
     /// Names a refusal to take the refresh lock, for the log line.
     private static func describeLockFailure(_ error: Error) -> String {
         switch error {
@@ -1522,9 +1584,40 @@ class ClaudeAPIService: APIServiceProtocol {
         // credential returned early forever, and the notice's promise that
         // signing back in was enough was false for exactly the credentials
         // it was shown for.
-        guard !expiredCLILogins.contains(fingerprint),
-              !indeterminateCLILogins.contains(fingerprint) else {
-            return await adoptLiveCLILogin(
+        //
+        // This is also the one check every token spend passes, so it asks
+        // about the refresh token as well as the blob: the same login in
+        // different bytes, or one whose caller stopped waiting before it could
+        // record a verdict, must not be sent a second time.
+        if let known = knownRefreshFailure(for: credentialsJSON) {
+            // A hit found only through the refresh token is filed under this
+            // blob too, so the notice's wording and the carry in
+            // `renewTheStoresOwnCopy` can see it.
+            recordRefreshFailure(known, for: credentialsJSON)
+            // Read before adopting, which stamps the attempt it throttles.
+            let lookedRecently = adoptionAttemptIsThrottled(
+                profileID: profile.id,
+                stale: credentialsJSON
+            )
+            if let adopted = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal
+            ) {
+                return adopted
+            }
+            // Adoption declines a login that has already expired, and a
+            // `/login` the app did not look at in time — a quick sign-in
+            // before the Mac slept overnight — is exactly that. Without this
+            // the account stayed "sign in again" until a restart, however
+            // many times the person signed in. The store's copy carries a
+            // refresh token this credential never had, so it gets the same
+            // single, locked renewal any superseded copy gets, on the same
+            // throttle adoption already keeps.
+            guard !lookedRecently, !renewingTheStoresOwnCopy else {
+                return nil
+            }
+            return await renewTheStoresOwnCopy(
                 for: profile,
                 replacing: credentialsJSON,
                 logNoBrowserRenewal: logNoBrowserRenewal
@@ -1611,6 +1704,13 @@ class ClaudeAPIService: APIServiceProtocol {
     /// account still owns its refresh token under R2, and the read-only
     /// answer there — asleep — is unchanged.
     ///
+    /// Two roads lead here: the store moving on under the lock, and a
+    /// credential already recorded as dead whose adoption found the store
+    /// holding an expired login. The second is how a sign-in that expired
+    /// before the app looked still gets renewed, and it is also why this
+    /// checks what is already known about the store's copy before doing
+    /// anything that takes a lock.
+    ///
     /// Re-entering `usableCLICredential` rather than calling the refresh
     /// directly is deliberate: the store's copy deserves the same treatment
     /// any presented credential gets — the not-yet-due shortcut, the missing
@@ -1648,10 +1748,54 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         guard let live,
-              live != stale,
               ClaudeCodeSyncService.carriesLogin(live),
-              ClaudeCLITokenRefresher.refreshToken(in: live) != nil
+              let liveRefreshToken = ClaudeCLITokenRefresher.refreshToken(
+                  in: live
+              )
         else { return nil }
+
+        // The store is holding our own login again — back in its item after
+        // a profile switch, or the same token in the store's own bytes. Any
+        // dead verdict on our copy was then borrowed from a different login
+        // that has since left the store, not earned: a refresh token this
+        // run actually sent is always in `unsendableRefreshTokens`, and this
+        // one is not. Left in place it said "expired, sign in again" until a
+        // restart about a token nobody had tried. Retiring it hands the next
+        // refresh back to the ordinary locked, compared, spend-once path.
+        let staleFingerprint = stale.hashValue
+        if liveRefreshToken == ClaudeCLITokenRefresher.refreshToken(in: stale),
+           unsendableRefreshTokens[liveRefreshToken.hashValue] == nil,
+           expiredCLILogins.contains(staleFingerprint)
+            || indeterminateCLILogins.contains(staleFingerprint) {
+            expiredCLILogins.remove(staleFingerprint)
+            indeterminateCLILogins.remove(staleFingerprint)
+            LoggingService.shared.logDebug(
+                "Claude Code's store for profile '\(profile.name)' holds this "
+                + "app's own login again, whose refresh token was never "
+                + "sent; dropping the verdict it inherited so the next "
+                + "refresh can renew it."
+            )
+            return nil
+        }
+
+        guard live != stale else { return nil }
+
+        // The store's copy was already refused or left unanswered. Renewing
+        // it again cannot help and would take Claude Code's lock to find that
+        // out — twice a minute, on an account nobody is using, for as long
+        // as the app ran. The verdict is carried onto our copy instead, which
+        // is the copy the notice is worded from.
+        if let known = knownRefreshFailure(for: live) {
+            recordRefreshFailure(known, for: stale)
+            LoggingService.shared.logDebug(
+                "Claude Code's own login for profile '\(profile.name)' has "
+                + "moved past this app's copy, but that login was already "
+                + (known == .expired ? "refused" : "left unanswered")
+                + "; not renewing it again until Claude Code is signed in "
+                + "again."
+            )
+            return nil
+        }
 
         LoggingService.shared.log(
             "Claude Code's own login for profile '\(profile.name)' has moved "
@@ -1661,12 +1805,47 @@ class ClaudeAPIService: APIServiceProtocol {
             + "came from."
         )
 
-        return await usableCLICredential(
+        let renewed = await usableCLICredential(
             for: profile,
             credentialsJSON: live,
             logNoBrowserRenewal: logNoBrowserRenewal,
             renewingTheStoresOwnCopy: true
         )
+        if renewed == nil {
+            carryRenewalVerdicts(from: live, onto: stale)
+        }
+        return renewed
+    }
+
+    /// Copies what the retry learned about the store's copy onto ours.
+    ///
+    /// The retry files its verdict under the store's copy, because that is
+    /// what it presented. Every reader that words the notice looks under our
+    /// copy, because that is what the profile presents. Without this the
+    /// lookup missed, a refused login read as "isn't working" instead of
+    /// "has expired, sign in again", and with nothing filed under our copy
+    /// every later refresh took the lock and walked this whole path again.
+    ///
+    /// Every verdict is copied, not the first one found: the readers apply
+    /// their own order, so our copy is worded exactly as the store's would
+    /// be. The postponed and asleep ones do not stick — each call clears them
+    /// for the credential it is handed. A transient failure has no record at
+    /// all, so it is retried as it always was.
+    private func carryRenewalVerdicts(from live: String, onto stale: String) {
+        let from = live.hashValue
+        let onto = stale.hashValue
+        if expiredCLILogins.contains(from) {
+            expiredCLILogins.insert(onto)
+        }
+        if indeterminateCLILogins.contains(from) {
+            indeterminateCLILogins.insert(onto)
+        }
+        if deferredCLILogins.contains(from) {
+            deferredCLILogins.insert(onto)
+        }
+        if let since = asleepCLILogins[from] {
+            asleepCLILogins[onto] = since
+        }
     }
 
     /// Records that a credential was left alone, and when it ran out.
@@ -1848,6 +2027,14 @@ class ClaudeAPIService: APIServiceProtocol {
             )
         else {
             if case .failed(let failure) = outcome {
+                // Recorded here rather than by the caller, because this runs
+                // whether or not anyone is still waiting for it.
+                if failure == .expired || failure == .indeterminate,
+                   let refreshToken = ClaudeCLITokenRefresher.refreshToken(
+                       in: credentialsJSON
+                   ) {
+                    unsendableRefreshTokens[refreshToken.hashValue] = failure
+                }
                 return .failed(failure)
             }
             return .failed(.unavailable)
@@ -1925,6 +2112,26 @@ class ClaudeAPIService: APIServiceProtocol {
             credentialsJSON: refreshed,
             accessToken: accessToken
         )
+    }
+
+    /// Whether this profile already looked at the live login for this stale
+    /// credential within the retry interval.
+    ///
+    /// Reads the throttle without stamping it, so a caller can learn whether
+    /// a look is due before `adoptLiveCLILogin` records the one it takes.
+    private func adoptionAttemptIsThrottled(
+        profileID: UUID,
+        stale: String
+    ) -> Bool {
+        let key = AdoptionAttemptKey(
+            profileID: profileID,
+            credentialFingerprint: stale.hashValue
+        )
+        guard let lastAttempt = liveCLILoginAdoptionAttempts[key] else {
+            return false
+        }
+        return Date().timeIntervalSince(lastAttempt)
+            < liveCLILoginAdoptionRetryInterval
     }
 
     /// Adopts the login Claude Code itself is holding, when the app's own
@@ -2024,16 +2231,16 @@ class ClaudeAPIService: APIServiceProtocol {
             return nil
         }
 
-        let key = AdoptionAttemptKey(
-            profileID: profile.id,
-            credentialFingerprint: stale.hashValue
-        )
         if !ignoringRetryThrottle,
-           let lastAttempt = liveCLILoginAdoptionAttempts[key],
-           Date().timeIntervalSince(lastAttempt) < liveCLILoginAdoptionRetryInterval {
+           adoptionAttemptIsThrottled(profileID: profile.id, stale: stale) {
             return nil
         }
-        liveCLILoginAdoptionAttempts[key] = Date()
+        liveCLILoginAdoptionAttempts[
+            AdoptionAttemptKey(
+                profileID: profile.id,
+                credentialFingerprint: stale.hashValue
+            )
+        ] = Date()
 
         let live: String?
         do {

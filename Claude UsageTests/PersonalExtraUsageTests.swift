@@ -1862,6 +1862,509 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    /// The account that found this, on 2026-09-13: idle, its store's copy
+    /// newer than ours and expired, and that copy's refresh token refused
+    /// with `invalid_grant`. The refusal was filed under the store's copy and
+    /// looked up under ours, so the notice said the sign-in "isn't working"
+    /// instead of that it had expired and needed signing in again — the one
+    /// instruction that fixes it. Nothing was filed under our copy either, so
+    /// the next refresh walked the whole path again.
+    func testARefusedRetryOfTheStoresOwnCopyIsReportedAsExpiredAndNotRetried()
+        async throws
+    {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let first = try await fetchMemberUsage(scene)
+        let second = try await fetchMemberUsage(scene)
+
+        XCTAssertEqual(
+            first.personalExtraUsageIssue,
+            .signInExpired,
+            "a login the server refused is expired, and the notice has to "
+                + "say so to name the fix"
+        )
+        XCTAssertEqual(second.personalExtraUsageIssue, .signInExpired)
+        XCTAssertEqual(
+            tokenRequestCount,
+            1,
+            "a refused refresh token cannot succeed on a second try: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    /// The other half of the same defect. The refresh after a refused retry
+    /// used to take Claude Code's `.oauth_refresh.lock` again and read the
+    /// store three times to arrive back at the same answer, twice a minute
+    /// for as long as the app ran — a lock a `claude` starting on that
+    /// account could collide with. Once the store's copy is known to be
+    /// refused there is nothing a lock could change, so none is taken.
+    ///
+    /// The read count is exact on purpose. Two reads is one look at whether
+    /// the account was signed in again and one at what the store now holds;
+    /// a third means the known-refused copy was handed back into the renewal
+    /// path to be turned away there.
+    func testASecondRefreshAfterARefusedRetryTakesNoLock() async throws {
+        let scene = try makeDeadIdleLoginScene()
+        // Every refresh gets its look at the store, so what is counted below
+        // is the path itself rather than the throttle standing in front of it.
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(
+            scene.store.locks,
+            2,
+            "the first refresh locks once for our copy and once for the "
+                + "store's"
+        )
+        let readsBefore = scene.store.reads
+
+        let second = try await fetchMemberUsage(scene)
+
+        XCTAssertEqual(second.personalExtraUsageIssue, .signInExpired)
+        XCTAssertEqual(
+            scene.store.locks,
+            2,
+            "no lock may be taken to rediscover a refusal already on record"
+        )
+        XCTAssertEqual(scene.store.reads - readsBefore, 2)
+        XCTAssertEqual(tokenRequestCount, 1)
+    }
+
+    /// What the person actually sees. The Health strip marker appeared in
+    /// both versions, because any broken Claude Code sign-in raises it; the
+    /// banner under it is what carried the wrong instruction. Run the way a
+    /// browser-backed profile really refreshes — prepare the terminal
+    /// sign-in, then fetch — which walks the renewal path twice per tick.
+    func testADeadIdleLoginRaisesTheClaudeCodeMarkerWithTheExpiredWording()
+        async throws
+    {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        for tick in 1...2 {
+            let request = try await scene.service
+                .captureUsageRequestPreparingTerminalSignIn(for: scene.profile)
+            XCTAssertEqual(request.source, .claudeAI)
+            let usage = try await scene.service.fetchUsageData(using: request)
+
+            XCTAssertEqual(
+                usage.personalExtraUsageIssue,
+                .signInExpired,
+                "tick \(tick)"
+            )
+            XCTAssertEqual(
+                LegacyPopoverBanner.CLISignInProblem(
+                    usage.personalExtraUsageIssue
+                ),
+                .expired,
+                "the banner must ask for a new sign-in, not call the sign-in "
+                    + "broken (tick \(tick))"
+            )
+            XCTAssertEqual(
+                MenuBarAttentionSignal.attention(
+                    cliSignInIssue: usage.personalExtraUsageIssue,
+                    credentialFailureStreak: 0,
+                    healthStatus: ClaudeUsageProviderAdapter.accountHealth(
+                        from: usage,
+                        base: ProviderHealth(status: .healthy, checkedAt: Date())
+                    ).status
+                ),
+                .claudeCode,
+                "tick \(tick)"
+            )
+        }
+
+        XCTAssertEqual(
+            scene.store.locks,
+            2,
+            "only the very first pass may lock; every later pass already "
+                + "knows the answer"
+        )
+        XCTAssertEqual(tokenRequestCount, 1)
+    }
+
+    /// Recording the verdict on our copy must not stand between the account
+    /// and the sign-in that fixes it. A `/login` the app finds still fresh is
+    /// simply adopted, as before, with nothing spent and no lock taken.
+    func testSigningInAgainAfterARefusedStoreCopyRetryRecovers() async throws {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let dead = try await fetchMemberUsage(scene)
+        XCTAssertEqual(dead.personalExtraUsageIssue, .signInExpired)
+        let locksBefore = scene.store.locks
+
+        let signedIn = Self.signInAgainJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        scene.store.copy = signedIn
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        let recovered = try await fetchMemberUsage(scene)
+
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+        XCTAssertTrue(
+            scene.renewals.writes.contains {
+                $0.json == signedIn && $0.rotatedFrom == nil
+            },
+            "a new sign-in is adopted as-is and claims no rotation"
+        )
+        XCTAssertEqual(scene.store.locks, locksBefore)
+        XCTAssertEqual(tokenRequestCount, 1)
+    }
+
+    /// The recovery the fix could have broken. Someone signs in again, the
+    /// Mac sleeps before the app looks, and by morning that new login has
+    /// expired too. Adoption declines an expired login, so with a verdict
+    /// sitting on our copy the account said "sign in again" for the rest of
+    /// the run however many times the person did. The new login carries a
+    /// refresh token nobody has sent, so it gets the one locked renewal any
+    /// superseded copy gets, measured against the store it came from.
+    func testANewSignInThatExpiredBeforeTheAppLookedIsStillRenewed()
+        async throws
+    {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+
+        let dead = try await fetchMemberUsage(scene)
+        XCTAssertEqual(dead.personalExtraUsageIssue, .signInExpired)
+        // Read before the stub is re-installed, which starts a new count.
+        XCTAssertEqual(tokenRequestCount, 1)
+        let locksBefore = scene.store.locks
+
+        let expiredSignIn = Self.signInAgainJSON(expiresAt: 1_000)
+        scene.store.copy = expiredSignIn
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let renewed = try await fetchMemberUsage(scene)
+
+        XCTAssertNil(renewed.personalExtraUsageIssue)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertEqual(scene.store.locks - locksBefore, 1)
+        let write = try XCTUnwrap(
+            scene.renewals.writes.first { $0.json.contains("renewed-access") }
+        )
+        XCTAssertEqual(
+            write.rotatedFrom,
+            expiredSignIn,
+            "the spent token is the new sign-in's own, so that is what the "
+                + "write-back has to measure the store against"
+        )
+    }
+
+    /// An exchange that timed out after dispatch may already have rotated
+    /// the token, so it is never replayed — and that has to hold for the
+    /// token, not only for the bytes it arrived in. Here the store hands the
+    /// same login back with one unrelated key added, the way a store that
+    /// re-serializes its own file does.
+    func testAStoreCopyCarryingAnUnansweredRefreshTokenIsNeverSentAgain()
+        async throws
+    {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            transportErrors: [
+                ClaudeCLITokenRefresher.tokenEndpoint: .timedOut
+            ]
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let unanswered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(unanswered.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(tokenRequestCount, 1)
+        let locksBefore = scene.store.locks
+
+        scene.store.copy = Self.rewrittenByItsStore(
+            Self.liveLoginJSON(expiresAt: 1_000)
+        )
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        let second = try await fetchMemberUsage(scene)
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            1,
+            "a refresh token that may already be spent must never be sent "
+                + "again, whatever bytes it arrives in: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(scene.store.locks, locksBefore)
+        XCTAssertEqual(second.personalExtraUsageIssue, .signInUnusable)
+    }
+
+    /// The guarantee a running `claude` depends on survives the dead state.
+    /// If someone starts `claude` on the account after the verdict was
+    /// recorded, the refresh token belongs to that process again, and the
+    /// answer is asleep with nothing locked and nothing sent.
+    func testADeadIdleLoginThatBecomesLiveIsStillNeverRenewed() async throws {
+        let scene = try makeDeadIdleLoginScene()
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        _ = try await fetchMemberUsage(scene)
+        let locksBefore = scene.store.locks
+
+        scene.service.accountIsInUse = { _ in true }
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        let live = try await fetchMemberUsage(scene)
+
+        XCTAssertEqual(live.personalExtraUsageIssue, .signInAsleep)
+        XCTAssertEqual(scene.store.locks, locksBefore)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    /// A verdict our copy borrowed from the store's copy is about that other
+    /// login, and it must not outlive the other login's stay in the store.
+    /// When the store holds our own login again — a profile switch writes it
+    /// back — our refresh token has never been sent, and the account must
+    /// get the ordinary locked, compared, spend-once renewal rather than an
+    /// "expired" nobody established.
+    func testABorrowedExpiredVerdictIsRetiredWhenTheStoreHoldsTheAppsOwnLoginAgain()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+
+        let dead = try await fetchMemberUsage(scene)
+        XCTAssertEqual(dead.personalExtraUsageIssue, .signInExpired)
+        XCTAssertEqual(tokenRequestCount, 1)
+
+        scene.store.copy = stored
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let locksBefore = scene.store.locks
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(
+            tokenRequestCount,
+            0,
+            "the refresh that notices the store holds our login only drops "
+                + "the borrowed verdict"
+        )
+        XCTAssertEqual(scene.store.locks, locksBefore)
+
+        let renewed = try await fetchMemberUsage(scene)
+
+        XCTAssertNil(renewed.personalExtraUsageIssue)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertEqual(scene.store.locks - locksBefore, 1)
+        let write = try XCTUnwrap(
+            scene.renewals.writes.first { $0.json.contains("renewed-access") }
+        )
+        XCTAssertEqual(write.rotatedFrom, stored)
+    }
+
+    /// Carrying a verdict is for answers, not for a failed attempt. A 503
+    /// from the token endpoint says nothing about the store's copy, so it is
+    /// neither reported as expired nor remembered, and the next refresh asks
+    /// again — which is the behavior every transient failure has always had.
+    func testATransientFailureRenewingTheStoresOwnCopyIsRetriedNotCarried()
+        async throws
+    {
+        let scene = try makeDeadIdleLoginScene()
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 503,
+            tokenRefreshErrorCode: "service_unavailable"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let first = try await fetchMemberUsage(scene)
+        let second = try await fetchMemberUsage(scene)
+
+        XCTAssertNotEqual(first.personalExtraUsageIssue, .signInExpired)
+        XCTAssertNotEqual(second.personalExtraUsageIssue, .signInExpired)
+        XCTAssertEqual(
+            tokenRequestCount,
+            2,
+            "a server that was briefly unavailable must be asked again: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+    }
+
+    /// The double send the dead-verdict renewal could otherwise open. Our
+    /// own copy's exchange times out after dispatch, then the store hands
+    /// back the same tokens in different bytes — what an account backed by a
+    /// credentials file looks like once its store re-serializes the login
+    /// next to its other keys. Keyed on the blob, that looked like a login
+    /// nobody had tried, and the possibly-rotated token went out again.
+    func testTheSameRefreshTokenInDifferentBytesIsNeverSentTwice() async throws {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            transportErrors: [
+                ClaudeCLITokenRefresher.tokenEndpoint: .timedOut
+            ]
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let unanswered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(unanswered.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(tokenRequestCount, 1)
+        let locksBefore = scene.store.locks
+
+        scene.store.copy = Self.rewrittenByItsStore(stored)
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        for refresh in 2...3 {
+            let usage = try await fetchMemberUsage(scene)
+            XCTAssertEqual(
+                usage.personalExtraUsageIssue,
+                .signInUnusable,
+                "refresh \(refresh)"
+            )
+        }
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            1,
+            "the same refresh token must never be sent twice: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(scene.store.locks, locksBefore)
+    }
+
+    /// The same promise when nobody was left waiting for the answer. The
+    /// verdict on a blob is recorded by the caller, and a caller the app
+    /// cancelled mid-exchange records nothing, so the next refresh found no
+    /// verdict and sent the token again. What the exchange itself records
+    /// does not depend on who is still listening.
+    func testAnUnansweredRefreshTokenIsNeverSentAgainAfterItsCallerWasCancelled()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        let refreshStarted = expectation(description: "token refresh started")
+        // A second send is the defect under test. It has to reach the count
+        // assertion below rather than crash the run on a second fulfill.
+        refreshStarted.assertForOverFulfill = false
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            transportErrors: [
+                ClaudeCLITokenRefresher.tokenEndpoint: .timedOut
+            ],
+            holdTokenRefreshResponse: true,
+            onTokenRefreshStarted: { refreshStarted.fulfill() }
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let cancelledWaitEnded = expectation(
+            description: "cancelled reading stopped waiting"
+        )
+        let cancelledReading = Task { @MainActor in
+            defer { cancelledWaitEnded.fulfill() }
+            return try await self.fetchMemberUsage(scene)
+        }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+        cancelledReading.cancel()
+        await fulfillment(of: [cancelledWaitEnded], timeout: 2)
+        StubClaudeEndpointsURLProtocol.releaseTokenRefreshResponse()
+        _ = try? await cancelledReading.value
+
+        // The exchange carries on without its caller. It releases Claude
+        // Code's lock only after it has recorded its answer, so the lock
+        // disappearing is the moment that answer exists.
+        let deadline = Date().addingTimeInterval(5)
+        while FileManager.default.fileExists(atPath: scene.store.lockPath),
+              Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: scene.store.lockPath),
+            "the abandoned exchange never finished"
+        )
+        XCTAssertEqual(tokenRequestCount, 1)
+
+        _ = try await fetchMemberUsage(scene)
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            1,
+            "an exchange nobody waited for still counts as sent: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(scene.store.locks, 1)
+    }
+
+    /// Terminal-only accounts were caught in the same lock loop, even though
+    /// they have no browser fallback to word a notice on. The first cycle
+    /// locks for both copies; the second has nothing left to learn.
+    func testATerminalOnlyDeadIdleLoginTakesNoLockOnTheNextCycle()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let profile = terminalOnlyProfile(credentialsJSON: stored)
+        let store = makeIsolatedProfileStore()
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(stored, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        retained.append(manager)
+        retained.append(store)
+        let scene = makeDeadIdleLoginScene(
+            profile: profile,
+            manager: manager,
+            store: store,
+            storeCopy: Self.liveLoginJSON(expiresAt: 1_000)
+        )
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        for _ in 0..<2 {
+            do {
+                _ = try await scene.service
+                    .captureUsageRequestPreparingTerminalSignIn(for: profile)
+                XCTFail("a refused login leaves nothing to fetch with")
+            } catch let error as AppError {
+                XCTAssertEqual(error.code, .sessionKeyNotFound)
+            }
+        }
+
+        XCTAssertEqual(scene.store.locks, 2)
+        XCTAssertEqual(tokenRequestCount, 1)
+    }
+
     /// A store that cannot be read is not permission to spend. Answering
     /// "unchanged" there spent the token and then hit the compare-and-swap,
     /// which fails closed on the same unreadable item — so the token was
@@ -5288,6 +5791,139 @@ final class PersonalExtraUsageTests: XCTestCase {
         "refreshToken":"live-refresh-token","expiresAt":\(expiresAt),\
         "scopes":["user:inference"],"subscriptionType":"max"}}
         """
+    }
+
+    /// A third login, distinct from both of the above: what Claude Code's
+    /// store holds after someone signs in to the account again.
+    private static func signInAgainJSON(expiresAt: Double) -> String {
+        """
+        {"claudeAiOauth":{"accessToken":"relogin-access-token",\
+        "refreshToken":"relogin-refresh-token","expiresAt":\(expiresAt),\
+        "scopes":["user:inference"],"subscriptionType":"max"}}
+        """
+    }
+
+    /// The same login in different bytes: its tokens untouched, with one
+    /// unrelated top-level key beside them, the way a credentials file keeps
+    /// `mcpOAuth` next to `claudeAiOauth` when the store rewrites it.
+    private static func rewrittenByItsStore(_ credentialsJSON: String) -> String {
+        String(credentialsJSON.dropLast()) + #","mcpOAuth":{}}"#
+    }
+
+    /// Claude Code's store as one idle account's tests stage it: what the
+    /// store holds, how often it was read, and how often its refresh lock
+    /// was taken.
+    private nonisolated final class StagedClaudeCodeStore {
+        var copy: String
+        var reads = 0
+        var locks = 0
+        let lockPath: String
+
+        init(copy: String, lockPath: String) {
+            self.copy = copy
+            self.lockPath = lockPath
+        }
+    }
+
+    private struct DeadIdleLoginScene {
+        let profile: Profile
+        let service: ClaudeAPIService
+        let renewals: RenewedCredentialRecorder
+        let store: StagedClaudeCodeStore
+    }
+
+    /// The idle account from PRODUCT-3329: a browser-backed profile whose
+    /// stored copy has expired, beside a store whose copy has moved past it
+    /// and expired as well.
+    private func makeDeadIdleLoginScene(
+        stored: String? = nil,
+        storeCopy: String? = nil
+    ) throws -> DeadIdleLoginScene {
+        let profileID = UUID()
+        let profileStore = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: stored ?? Self.credentialsJSON(expiresAt: 1_000),
+            in: profileStore
+        )
+        let manager = ProfileManager(profileStore: profileStore)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(profileStore)
+        return makeDeadIdleLoginScene(
+            profile: profile,
+            manager: manager,
+            store: profileStore,
+            storeCopy: storeCopy ?? Self.liveLoginJSON(expiresAt: 1_000)
+        )
+    }
+
+    private func makeDeadIdleLoginScene(
+        profile: Profile,
+        manager: ProfileManager,
+        store profileStore: ProfileStore,
+        storeCopy: String
+    ) -> DeadIdleLoginScene {
+        let configurationDirectory = makeIsolatedClaudeConfigurationDirectory()
+        let staged = StagedClaudeCodeStore(
+            copy: storeCopy,
+            lockPath: configurationDirectory
+                .appendingPathComponent(ClaudeCodeSyncService.refreshLockName)
+                .path
+        )
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: profileStore,
+            systemCredentials: {
+                staged.reads += 1
+                return staged.copy
+            },
+            renewals: renewals,
+            accountIsInUse: { _ in false }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: configurationDirectory,
+            storeComparison: { snapshot, _ in
+                snapshot == staged.copy ? .unchanged : .movedOn
+            }
+        )
+        // Wrapped only after the locks above are installed: that call
+        // replaces `acquireRefreshLock`, and a counter wrapped before it would
+        // be thrown away and count nothing.
+        let acquire = service.acquireRefreshLock
+        service.acquireRefreshLock = { accountName in
+            staged.locks += 1
+            return try acquire(accountName)
+        }
+        return DeadIdleLoginScene(
+            profile: profile,
+            service: service,
+            renewals: renewals,
+            store: staged
+        )
+    }
+
+    private func fetchMemberUsage(
+        _ scene: DeadIdleLoginScene
+    ) async throws -> ClaudeUsage {
+        try await scene.service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: scene.profile
+        )
+    }
+
+    /// Requests that reached the token endpoint since the stub was last
+    /// installed.
+    private var tokenRequestCount: Int {
+        StubClaudeEndpointsURLProtocol.requestedURLs.filter {
+            $0 == ClaudeCLITokenRefresher.tokenEndpoint
+        }.count
     }
 
     /// The snapshot a profile can be left holding after Claude Code rotated
