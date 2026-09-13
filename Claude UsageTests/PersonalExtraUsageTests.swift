@@ -1299,6 +1299,173 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    // MARK: - Never spend a refresh token another process is relying on
+
+    /// The bug this whole change exists for. A `claude` process holds its
+    /// account's refresh token in memory; Anthropic rotates that token on
+    /// every use, so the moment this app spends it the running process is
+    /// holding a token the server has retired. Its next renewal comes back
+    /// `invalid_grant`, Claude Code blanks its own Keychain item, and the
+    /// person is told to sign in to an account they never signed out of.
+    ///
+    /// So for a live account the app reads instead of spending: Claude Code
+    /// keeps that login fresh for as long as it is running.
+    func testALiveAccountIsReadRatherThanRefreshed() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals,
+            accountIsInUse: { _ in true }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(usage.personalCostUsed, 0)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "A refresh token owned by a running claude must never be spent: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+    }
+
+    /// The calm state. A live account whose token has run down, with nothing
+    /// better in the store, is asleep — not expired. Nothing was spent and
+    /// the server was never asked, so "your sign-in expired" would be a
+    /// guess, and a wrong one: that account is signed in and working in the
+    /// terminal the person is looking at.
+    func testALiveAccountWithNothingLeftToReadIsReportedAsAsleep()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { nil },
+            renewals: renewals,
+            accountIsInUse: { _ in true }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .signInAsleep)
+        XCTAssertEqual(
+            usage.claudeCodeAsleepSince,
+            Date(timeIntervalSince1970: 1_000),
+            "the calm wording names the time the token ran out"
+        )
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertTrue(renewals.writes.isEmpty)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            }
+        )
+    }
+
+    /// The verdict must not become a blanket excuse. An idle account whose
+    /// renewal the server actually refused is still an expired sign-in, and
+    /// saying "asleep" there would hide a login that genuinely needs
+    /// attention.
+    func testAnIdleAccountRefusedByTheServerIsStillExpiredNotAsleep()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { nil },
+            renewals: RenewedCredentialRecorder(),
+            accountIsInUse: { _ in false }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .signInExpired)
+        XCTAssertNil(usage.claudeCodeAsleepSince)
+    }
+
     /// A genuinely signed-out account must still be reported as expired —
     /// this fix must not paper over a real expiry.
     func testAGenuinelySignedOutAccountStillReportsExpired() async throws {
@@ -1941,35 +2108,60 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
-    /// The per-account credentials file is not kept current the way the
-    /// Keychain is — Claude Code can leave a stale copy sitting in
-    /// `~/.claude-accounts/<account>/.credentials.json` for weeks after the
-    /// Keychain item for the same account has moved on to a fresh login.
-    /// The file used to win the fallback chain on JSON validity and a login
-    /// shape alone, so on a machine where these files exist and are stale,
-    /// every profile linked to those accounts showed a sign-in notice while
-    /// a valid login sat one step down the chain in the Keychain. The same
-    /// code on a machine with no such files behaved correctly, which is why
-    /// this hid for so long — nothing exercised the case where the file
-    /// exists, parses, and looks like a login, but is simply too old.
-    func testAnExpiredCredentialsFileDoesNotPreemptTheKeychain() {
-        let sync = ClaudeCodeSyncService.shared
-
-        let expired = Self.credentialsJSON(expiresAt: 1_000)
-        XCTAssertFalse(sync.fileLoginPreemptsKeychain(expired))
-
-        let future = Self.credentialsJSON(
+    /// Contract change: the credentials file no longer competes with the
+    /// Keychain on freshness, so there is no "may this file pre-empt the
+    /// Keychain" question left to answer. The file is read only when the
+    /// Keychain has no item at all, exactly as Claude Code reads it, and the
+    /// classification of one Keychain document is what decides everything.
+    ///
+    /// This test used to assert the freshness comparison that predicate
+    /// made. That comparison is gone rather than inverted: whichever program
+    /// holds the newer token no longer matters once both read the same store
+    /// in the same order.
+    func testAKeychainDocumentIsClassifiedTheWayClaudeCodeClassifiesIt() {
+        let login = Self.credentialsJSON(
             expiresAt: Date()
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        XCTAssertTrue(sync.fileLoginPreemptsKeychain(future))
+        XCTAssertEqual(
+            ClaudeCodeSyncService.classifyKeychainDocument(login),
+            .login(login)
+        )
 
-        let mcpOnly = #"{"mcpOAuth":{"some-server":{"accessToken":"x"}}}"#
-        XCTAssertFalse(sync.fileLoginPreemptsKeychain(mcpOnly))
+        // An expired login is still a login. Claude Code hands it to the
+        // refresh path rather than treating the account as signed out, and
+        // so must we — the alternative resurrects a file behind it.
+        let expired = Self.credentialsJSON(expiresAt: 1_000)
+        XCTAssertEqual(
+            ClaudeCodeSyncService.classifyKeychainDocument(expired),
+            .login(expired)
+        )
 
+        // The shape Claude Code writes when it retires a dead refresh
+        // token. It means "signed out", and the file behind it must not be
+        // consulted.
         let blankToken = #"{"claudeAiOauth":{"accessToken":""}}"#
-        XCTAssertFalse(sync.fileLoginPreemptsKeychain(blankToken))
+        XCTAssertEqual(
+            ClaudeCodeSyncService.classifyKeychainDocument(blankToken),
+            .loggedOut
+        )
+
+        // No Claude Code record here at all — an MCP-only store. Claude
+        // Code falls through to the file for this, and so do we.
+        let mcpOnly = #"{"mcpOAuth":{"some-server":{"accessToken":"x"}}}"#
+        XCTAssertEqual(
+            ClaudeCodeSyncService.classifyKeychainDocument(mcpOnly),
+            .noItem
+        )
+
+        // Bytes that will not parse. Claude Code's own keychain read wraps
+        // the parse in a try/catch and answers null, which sends it to the
+        // file.
+        XCTAssertEqual(
+            ClaudeCodeSyncService.classifyKeychainDocument("{not json"),
+            .noItem
+        )
     }
 
     // MARK: - Importing a login that carries no token
@@ -4106,6 +4298,13 @@ final class PersonalExtraUsageTests: XCTestCase {
             renewals: renewals
         )
         let profile = try seededProfile(profileID)
+        // Contract change: renewal now starts five minutes before expiry,
+        // the way Claude Code's does, so a credential 2.5 seconds from
+        // expiry is already due. This test is about an answer surviving a
+        // rotation, not about when one starts, and no suite can wait five
+        // minutes for the boundary — so the lead time is put back to zero
+        // and the original timing is preserved.
+        service.cliRefreshLeadTime = 0
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,

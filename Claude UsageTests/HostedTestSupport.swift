@@ -431,7 +431,12 @@ func makeIsolatedClaudeAPIService(
     store: ProfileStore,
     systemCredentials: @escaping () throws -> String? = { nil },
     renewals: RenewedCredentialRecorder? = nil,
-    loggingService: LoggingService = .shared
+    loggingService: LoggingService = .shared,
+    /// Whether a `claude` process is using the profile's linked account.
+    /// Defaults to "nobody is", because the real answer is a scan of the
+    /// developer's own machine and a suite whose result depends on whether
+    /// a terminal happens to be open is not a suite.
+    accountIsInUse: @escaping (String?) -> Bool = { _ in false }
 ) -> ClaudeAPIService {
     let cliSync = ClaudeCodeSyncService(
         profileStore: store,
@@ -442,7 +447,7 @@ func makeIsolatedClaudeAPIService(
         systemCredentialsReader: { nil },
         securityRunner: UnreachableSecurityRunner()
     )
-    return ClaudeAPIService(
+    let service = ClaudeAPIService(
         profileManager: profileManager,
         systemCredentialsReader: systemCredentials,
         // Captures `cliSync` and `renewals`, which is what keeps them alive
@@ -461,6 +466,8 @@ func makeIsolatedClaudeAPIService(
         },
         loggingService: loggingService
     )
+    service.accountIsInUse = accountIsInUse
+    return service
 }
 
 /// Records the renewed credentials a `ClaudeAPIService` handed to its

@@ -1406,3 +1406,14 @@
 "menubar.healthstrip.header" = "Claude 账户";
 "menubar.healthstrip.footer.refresh_all" = "全部刷新";
 "menubar.healthstrip.row.active_badge" = "活动";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "这是您组织的总计。此处关联的 Claude Code 登录自 %@ 起处于休眠状态。下次使用 Claude Code 时会自动唤醒。";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "这是您组织的总计。此处关联的 Claude Code 登录处于休眠状态。下次使用 Claude Code 时会自动唤醒。";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "此处关联的 Claude Code 登录自 %@ 起处于休眠状态。下次使用 Claude Code 时会自动唤醒。";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "此处关联的 Claude Code 登录处于休眠状态。下次使用 Claude Code 时会自动唤醒。";
+"cli.login_asleep_title" = "登录已休眠";
+"cli.login_asleep_explain" = "此账户的令牌已于 %@ 过期。Claude Code 正在使用该账户并自行续期登录，因此这里无需任何操作。";
+"cli.login_asleep_explain_untimed" = "此账户的令牌已过期。Claude Code 正在使用该账户并自行续期登录，因此这里无需任何操作。";

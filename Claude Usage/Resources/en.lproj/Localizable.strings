@@ -1424,3 +1424,14 @@
 "menubar.healthstrip.header" = "Claude Accounts";
 "menubar.healthstrip.footer.refresh_all" = "Refresh All";
 "menubar.healthstrip.row.active_badge" = "Active";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "This is your organization's total. The Claude Code sign-in linked here has been asleep since %@. It wakes by itself the next time you use Claude Code.";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "This is your organization's total. The Claude Code sign-in linked here is asleep. It wakes by itself the next time you use Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "The Claude Code sign-in linked here has been asleep since %@. It wakes by itself the next time you use Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "The Claude Code sign-in linked here is asleep. It wakes by itself the next time you use Claude Code.";
+"cli.login_asleep_title" = "Sign-in asleep";
+"cli.login_asleep_explain" = "This account's token ran out at %@. Claude Code is using the account right now and renews its own sign-in, so there is nothing to do here.";
+"cli.login_asleep_explain_untimed" = "This account's token has run out. Claude Code is using the account right now and renews its own sign-in, so there is nothing to do here.";

@@ -74,7 +74,14 @@ enum LegacyPopoverBanner: Equatable {
             case .signInUnusable:
                 self = .unusable
             case .notLinked, .differentOrganization,
-                 .temporarilyUnavailable, .claudeAccountUnresolved, nil:
+                 .temporarilyUnavailable, .claudeAccountUnresolved,
+                 .signInAsleep, nil:
+                // `.signInAsleep` deliberately raises no banner. The
+                // account is signed in; its token has simply run down while
+                // this app kept its hands off a refresh token a running
+                // `claude` still owns. A top-of-popover alarm there would be
+                // the app manufacturing the very "sign in again" demand the
+                // whole fix exists to stop it causing.
                 return nil
             }
         }

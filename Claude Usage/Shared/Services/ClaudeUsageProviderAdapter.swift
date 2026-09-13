@@ -239,12 +239,18 @@ enum ClaudeUsageProviderAdapter {
         case .signInExpired, .signInHasNoToken, .signInUnusable,
              .claudeAccountUnresolved:
             return degraded(.authenticationRequired)
-        case .temporarilyUnavailable:
+        case .temporarilyUnavailable, .signInAsleep:
             // A reading that did not arrive this time, with nothing said or
             // implied about the credential. Classified the same way the
             // organization-scoped miss below is, rather than as an
             // authentication problem: reporting it as one would put a
             // sign-in complaint on a profile whose sign-in is fine.
+            //
+            // `.signInAsleep` belongs here for the same reason and one
+            // stronger: the account is signed in — often signed in and in
+            // use in a terminal at this very moment — and nothing was asked
+            // of the server. `.authenticationRequired` would be a complaint
+            // about a credential nobody has established is broken.
             return degraded(.optionalUsageUnavailable)
         case .notLinked, .differentOrganization, nil:
             break
