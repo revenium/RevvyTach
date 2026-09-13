@@ -104,9 +104,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   touching its token. Accounts with a live session are read-only: RevvyTach
   adopts the token Claude Code already renewed, or reports the account as
   asleep until it does. Idle accounts are renewed under the same lock files
-  Claude Code uses (`.oauth_refresh.lock` and `.storage-write.lock`), written
-  to the Keychain only, and only if the stored token is still the one
-  RevvyTach read. (#111)
+  Claude Code uses (`.oauth_refresh.lock` and `.storage-write.lock`), and only
+  if the stored token is still the one RevvyTach read. Keychain-backed
+  accounts get no credentials-file write; existing file-only accounts have
+  that file updated in place. (#111)
 
 ## [4.2.0] - 2026-08-29
 
