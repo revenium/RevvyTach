@@ -693,7 +693,23 @@ struct ClaudeAccountView: View {
 
             if hasCredentials, isStoredLoginExpired(profileID: profileID) {
                 Divider()
-                expiredLoginNotice(accountName: accountName)
+                // An account a `claude` is using right now is not a problem
+                // to report. Its token ran down because this app refuses to
+                // spend a refresh token that process owns — Anthropic
+                // rotates the token on every use, and spending it is what
+                // ends the running session. Claude Code renews its own
+                // login on its own schedule, so the honest thing to show is
+                // that this copy is asleep, not a sign-in step the person
+                // does not need and a re-sync that would do nothing.
+                if ClaudeCodeSyncService.shared.isAccountInUse(
+                    forAccountNamed: accountName
+                ) {
+                    asleepLoginNotice(
+                        since: storedLoginExpiry(profileID: profileID)
+                    )
+                } else {
+                    expiredLoginNotice(accountName: accountName)
+                }
             } else if hasCredentials {
                 Divider()
 
@@ -728,6 +744,57 @@ struct ClaudeAccountView: View {
         })?.cliCredentialsJSON
         else { return false }
         return ClaudeCodeSyncService.shared.isTokenExpired(credentials)
+    }
+
+    /// When the copy of the login this profile holds ran out.
+    private func storedLoginExpiry(profileID: UUID) -> Date? {
+        guard let credentials = profileManager.profiles.first(where: {
+            $0.id == profileID
+        })?.cliCredentialsJSON
+        else { return nil }
+        return ClaudeCodeSyncService.shared.extractTokenExpiry(
+            from: credentials
+        )
+    }
+
+    /// The calm half of the expired-login story: nothing is broken, nothing
+    /// is being asked, and nobody needs to sign in again.
+    private func asleepLoginNotice(since: Date?) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
+            HStack(spacing: DesignTokens.Spacing.small) {
+                Image(systemName: "moon.zzz.fill")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: DesignTokens.Icons.standard))
+                Text("cli.login_asleep_title".localized)
+                    .font(DesignTokens.Typography.bodyMedium)
+            }
+
+            Text(asleepExplanation(since: since))
+                .font(DesignTokens.Typography.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("cli.login_asleep")
+    }
+
+    /// Names the time when there is one. A profile whose stored login
+    /// carries no expiry has nothing to name, and "asleep since —" reads as
+    /// a bug rather than as a calm statement.
+    private func asleepExplanation(since: Date?) -> String {
+        guard let since else {
+            return "cli.login_asleep_explain_untimed".localized
+        }
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeStyle = .short
+        formatter.dateStyle = Calendar.current.isDateInToday(since)
+            ? .none
+            : .short
+        return String(
+            format: "cli.login_asleep_explain".localized,
+            locale: .autoupdatingCurrent,
+            formatter.string(from: since)
+        )
     }
 
     /// The sign-in step, offered rather than described: the command is right

@@ -1431,6 +1431,8 @@ struct NormalizedUsageView: View {
             if let extraUsageNotice, let onConnectCLIAccount {
                 ExtraUsageNoticeView(
                     notice: extraUsageNotice,
+                    asleepSince: presentation.legacyClaudeUsage?
+                        .claudeCodeAsleepSince,
                     cliAccountAction: onConnectCLIAccount,
                     claudeAIAccountAction: onConnectClaudeAIAccount ?? onConnectCLIAccount
                 )
@@ -1472,6 +1474,10 @@ enum ExtraUsageNotice: Equatable {
 /// states, and opens the screen where the missing connection gets fixed.
 private struct ExtraUsageNoticeView: View {
     let notice: ExtraUsageNotice
+    /// When the Claude Code token behind `.signInAsleep` ran out. Nil for
+    /// every other notice, and nil for a cached record written before the
+    /// state existed — the wording below has to stand without it.
+    let asleepSince: Date?
     /// Settings → CLI Account, for the cases whose remedy is a Claude Code
     /// sign-in.
     let cliAccountAction: () -> Void
@@ -1501,7 +1507,11 @@ private struct ExtraUsageNoticeView: View {
                 return claudeAIAccountAction
             case .notLinked, .signInExpired, .signInUnusable,
                  .signInHasNoToken, .differentOrganization,
-                 .temporarilyUnavailable:
+                 .temporarilyUnavailable, .signInAsleep:
+                // `.signInAsleep` asks for nothing, like
+                // `.temporarilyUnavailable` below it. The row is a button
+                // because every notice is one; the destination is where a
+                // tap lands, not a step being suggested.
                 // `.temporarilyUnavailable` says nothing to do and means it:
                 // its message carries no instruction, because the retry is
                 // the app's job. The row is still a button — every notice is
@@ -1578,6 +1588,17 @@ private struct ExtraUsageNoticeView: View {
                     + "usage couldn't be read with the Claude Code account "
                     + "linked here."
             )
+        case .signInAsleep:
+            return asleepMessage(
+                key: "popover.extra_usage.cli_sign_in_asleep",
+                withTime: "This is your organization's total. The Claude "
+                    + "Code sign-in linked here has been asleep since %@. "
+                    + "It wakes by itself the next time you use Claude Code.",
+                withoutTime: "popover.extra_usage.cli_sign_in_asleep_untimed",
+                withoutTimeDefault: "This is your organization's total. The "
+                    + "Claude Code sign-in linked here is asleep. It wakes "
+                    + "by itself the next time you use Claude Code."
+            )
         case .temporarilyUnavailable:
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.cli_temporarily_unavailable",
@@ -1638,6 +1659,18 @@ private struct ExtraUsageNoticeView: View {
                 default: "Your extra usage couldn't be read with the Claude "
                     + "Code account linked here."
             )
+        case .signInAsleep:
+            return asleepMessage(
+                key: "popover.extra_usage.absent.cli_sign_in_asleep",
+                withTime: "The Claude Code sign-in linked here has been "
+                    + "asleep since %@. It wakes by itself the next time "
+                    + "you use Claude Code.",
+                withoutTime:
+                    "popover.extra_usage.absent.cli_sign_in_asleep_untimed",
+                withoutTimeDefault: "The Claude Code sign-in linked here is "
+                    + "asleep. It wakes by itself the next time you use "
+                    + "Claude Code."
+            )
         case .temporarilyUnavailable:
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.absent.cli_temporarily_unavailable",
@@ -1660,6 +1693,44 @@ private struct ExtraUsageNoticeView: View {
         }
     }
 
+    /// The one wording for the asleep state, in whichever voice asked for
+    /// it.
+    ///
+    /// Falls back to a timeless sentence when the record carries no expiry.
+    /// A cached reading written by an earlier version has no such date, and
+    /// "asleep since —" would be worse than not naming a time at all.
+    private func asleepMessage(
+        key: String,
+        withTime format: String,
+        withoutTime untimedKey: String,
+        withoutTimeDefault: String
+    ) -> String {
+        guard let asleepSince else {
+            return NormalizedUsageStrings.localized(
+                untimedKey,
+                default: withoutTimeDefault
+            )
+        }
+        return NormalizedUsageStrings.formatted(
+            key,
+            default: format,
+            arguments: [Self.asleepTime(asleepSince)]
+        )
+    }
+
+    /// A clock time for today, a short date and time for anything older.
+    /// Nobody reading "asleep since 09:12" three days later is helped by it.
+    static func asleepTime(_ date: Date, now: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeStyle = .short
+        formatter.dateStyle = Calendar.current.isDate(
+            date,
+            inSameDayAs: now
+        ) ? .none : .short
+        return formatter.string(from: date)
+    }
+
     private var icon: String {
         switch notice {
         case .absence(.unreadableOrganizationFigure):
@@ -1671,6 +1742,11 @@ private struct ExtraUsageNoticeView: View {
                 return "person.crop.circle.badge.plus"
             case .signInExpired, .signInUnusable, .signInHasNoToken:
                 return "exclamationmark.triangle"
+            case .signInAsleep:
+                // Not a warning triangle. Nothing is broken and nothing is
+                // being asked of the reader — the same reasoning as
+                // `.temporarilyUnavailable` below.
+                return "moon.zzz"
             case .temporarilyUnavailable:
                 // Not a warning triangle: nothing is wrong and nothing needs
                 // attention — a reading is simply on its way back.

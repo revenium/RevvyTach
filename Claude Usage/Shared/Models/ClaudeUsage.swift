@@ -139,6 +139,23 @@ struct ClaudeUsage: Codable, Equatable {
         /// re-synced. Advice that stops at "sign in again" leaves people
         /// watching an unchanged number, so both halves have to be said.
         case signInExpired
+        /// One is linked, its token has run out, and nothing spent a
+        /// refresh token to renew it.
+        ///
+        /// Not a failure and not a complaint. Either a `claude` process is
+        /// using that account right now — in which case Claude Code renews
+        /// its own login on its own schedule and this app must keep its
+        /// hands off, because Anthropic rotates the refresh token on every
+        /// use and spending it would be what breaks the running session —
+        /// or the stored login carries no refresh token to spend at all.
+        ///
+        /// Kept firmly apart from `signInExpired`, which means the server
+        /// was actually asked and refused. This one has asked nothing, so
+        /// telling someone their sign-in expired would be a guess, and a
+        /// wrong one: their account is signed in and working in the very
+        /// terminal they are looking at. The accompanying time comes from
+        /// `ClaudeUsage.claudeCodeAsleepSince`.
+        case signInAsleep
         /// One is linked, but the login stored for it carries no token at
         /// all — the state Claude Code leaves behind for a configuration
         /// directory it has been signed out of. Nothing the app can do with
@@ -190,6 +207,14 @@ struct ClaudeUsage: Codable, Equatable {
     /// Nil when the member's figure is present, or when there is no
     /// organization figure for it to sit beneath.
     var personalExtraUsageIssue: PersonalExtraUsageIssue?
+
+    /// When the Claude Code token behind `signInAsleep` ran out.
+    ///
+    /// A separate field rather than an associated value on the case: the
+    /// issue is a `String`-backed `Codable` enum persisted in cached usage
+    /// records, and giving one case a payload would change that encoding for
+    /// every record ever written. Nil for every other issue.
+    var claudeCodeAsleepSince: Date?
 
     /// Why the organization's extra-usage figure is absent, when it is.
     ///
@@ -300,6 +325,7 @@ struct ClaudeUsage: Codable, Equatable {
         personalCostLimit: Double? = nil,
         personalCostCurrency: String? = nil,
         personalExtraUsageIssue: PersonalExtraUsageIssue? = nil,
+        claudeCodeAsleepSince: Date? = nil,
         organizationExtraUsageIssue: OrganizationExtraUsageIssue? = nil,
         browserSignInIssue: BrowserSignInIssue? = nil,
         overageBalance: Double? = nil,
@@ -336,6 +362,7 @@ struct ClaudeUsage: Codable, Equatable {
         self.personalCostLimit = personalCostLimit
         self.personalCostCurrency = personalCostCurrency
         self.personalExtraUsageIssue = personalExtraUsageIssue
+        self.claudeCodeAsleepSince = claudeCodeAsleepSince
         self.organizationExtraUsageIssue = organizationExtraUsageIssue
         self.browserSignInIssue = browserSignInIssue
         self.overageBalance = overageBalance
@@ -405,6 +432,10 @@ struct ClaudeUsage: Codable, Equatable {
         personalExtraUsageIssue = try container.decodeIfPresent(
             PersonalExtraUsageIssue.self,
             forKey: .personalExtraUsageIssue
+        )
+        claudeCodeAsleepSince = try container.decodeIfPresent(
+            Date.self,
+            forKey: .claudeCodeAsleepSince
         )
         organizationExtraUsageIssue = try container.decodeIfPresent(
             OrganizationExtraUsageIssue.self,

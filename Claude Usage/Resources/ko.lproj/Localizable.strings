@@ -1385,3 +1385,14 @@
 "menubar.healthstrip.header" = "Claude 계정";
 "menubar.healthstrip.footer.refresh_all" = "모두 새로고침";
 "menubar.healthstrip.row.active_badge" = "활성";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "조직 전체 합계입니다. 여기에 연결된 Claude Code 로그인은 %@부터 대기 중입니다. 다음에 Claude Code를 사용하면 자동으로 깨어납니다.";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "조직 전체 합계입니다. 여기에 연결된 Claude Code 로그인은 대기 중입니다. 다음에 Claude Code를 사용하면 자동으로 깨어납니다.";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "여기에 연결된 Claude Code 로그인은 %@부터 대기 중입니다. 다음에 Claude Code를 사용하면 자동으로 깨어납니다.";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "여기에 연결된 Claude Code 로그인은 대기 중입니다. 다음에 Claude Code를 사용하면 자동으로 깨어납니다.";
+"cli.login_asleep_title" = "로그인 대기 중";
+"cli.login_asleep_explain" = "이 계정의 토큰은 %@에 만료되었습니다. Claude Code가 지금 이 계정을 사용 중이며 자체적으로 로그인을 갱신하므로 여기서 할 일은 없습니다.";
+"cli.login_asleep_explain_untimed" = "이 계정의 토큰이 만료되었습니다. Claude Code가 지금 이 계정을 사용 중이며 자체적으로 로그인을 갱신하므로 여기서 할 일은 없습니다.";

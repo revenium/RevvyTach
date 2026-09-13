@@ -1409,3 +1409,14 @@
 "menubar.healthstrip.header" = "Claudeアカウント";
 "menubar.healthstrip.footer.refresh_all" = "すべて更新";
 "menubar.healthstrip.row.active_badge" = "アクティブ";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "これは組織全体の合計です。ここにリンクされた Claude Code のサインインは %@ からスリープ中です。次に Claude Code を使うと自動的に復帰します。";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "これは組織全体の合計です。ここにリンクされた Claude Code のサインインはスリープ中です。次に Claude Code を使うと自動的に復帰します。";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "ここにリンクされた Claude Code のサインインは %@ からスリープ中です。次に Claude Code を使うと自動的に復帰します。";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "ここにリンクされた Claude Code のサインインはスリープ中です。次に Claude Code を使うと自動的に復帰します。";
+"cli.login_asleep_title" = "サインインはスリープ中";
+"cli.login_asleep_explain" = "このアカウントのトークンは %@ に期限切れになりました。Claude Code が現在このアカウントを使用しており、自分でサインインを更新します。ここで行うことはありません。";
+"cli.login_asleep_explain_untimed" = "このアカウントのトークンは期限切れです。Claude Code が現在このアカウントを使用しており、自分でサインインを更新します。ここで行うことはありません。";

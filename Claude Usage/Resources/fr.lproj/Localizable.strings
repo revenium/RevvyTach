@@ -1389,3 +1389,14 @@
 "menubar.healthstrip.header" = "Comptes Claude";
 "menubar.healthstrip.footer.refresh_all" = "Tout actualiser";
 "menubar.healthstrip.row.active_badge" = "Actif";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "Voici le total de votre organisation. La connexion Claude Code liée ici est en veille depuis %@. Elle se réveille toute seule à votre prochaine utilisation de Claude Code.";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "Voici le total de votre organisation. La connexion Claude Code liée ici est en veille. Elle se réveille toute seule à votre prochaine utilisation de Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "La connexion Claude Code liée ici est en veille depuis %@. Elle se réveille toute seule à votre prochaine utilisation de Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "La connexion Claude Code liée ici est en veille. Elle se réveille toute seule à votre prochaine utilisation de Claude Code.";
+"cli.login_asleep_title" = "Connexion en veille";
+"cli.login_asleep_explain" = "Le jeton de ce compte a expiré à %@. Claude Code utilise le compte en ce moment et renouvelle sa propre connexion. Il n'y a rien à faire ici.";
+"cli.login_asleep_explain_untimed" = "Le jeton de ce compte a expiré. Claude Code utilise le compte en ce moment et renouvelle sa propre connexion. Il n'y a rien à faire ici.";

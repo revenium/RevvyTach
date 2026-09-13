@@ -1409,3 +1409,14 @@
 "menubar.healthstrip.header" = "Account Claude";
 "menubar.healthstrip.footer.refresh_all" = "Aggiorna tutto";
 "menubar.healthstrip.row.active_badge" = "Attivo";
+
+/* A Claude Code sign-in this app deliberately left alone: a running
+   claude owns that refresh token, so spending it is what would end that
+   session. Nothing is broken and nothing is being asked of the reader. */
+"popover.extra_usage.cli_sign_in_asleep" = "Questo è il totale della tua organizzazione. L'accesso a Claude Code collegato qui è in pausa da %@. Si riattiva da solo la prossima volta che usi Claude Code.";
+"popover.extra_usage.cli_sign_in_asleep_untimed" = "Questo è il totale della tua organizzazione. L'accesso a Claude Code collegato qui è in pausa. Si riattiva da solo la prossima volta che usi Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep" = "L'accesso a Claude Code collegato qui è in pausa da %@. Si riattiva da solo la prossima volta che usi Claude Code.";
+"popover.extra_usage.absent.cli_sign_in_asleep_untimed" = "L'accesso a Claude Code collegato qui è in pausa. Si riattiva da solo la prossima volta che usi Claude Code.";
+"cli.login_asleep_title" = "Accesso in pausa";
+"cli.login_asleep_explain" = "Il token di questo account è scaduto alle %@. Claude Code sta usando l'account in questo momento e rinnova il proprio accesso: qui non serve fare nulla.";
+"cli.login_asleep_explain_untimed" = "Il token di questo account è scaduto. Claude Code sta usando l'account in questo momento e rinnova il proprio accesso: qui non serve fare nulla.";

@@ -735,6 +735,10 @@ final class ExtraUsageScopeTests: XCTestCase {
             profileManager: manager,
             systemCredentialsReader: { nil }
         )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
+        )
 
         StubPersonalUsageEndpointsURLProtocol.profileLookupResponses = [
             "token-a-wrong-org": (200, Data("""
@@ -807,6 +811,10 @@ final class ExtraUsageScopeTests: XCTestCase {
         let service = ClaudeAPIService(
             profileManager: manager,
             systemCredentialsReader: { nil }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
         )
 
         // First attempt: the lookup fails outright, landing the profile in
@@ -903,6 +911,15 @@ final class ExtraUsageScopeTests: XCTestCase {
                 persisted.append(renewal.credentialsJSON)
             }
         )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
+        )
+        // The renewal path only runs for an account no `claude` process is
+        // using, and the default answer to that is a scan of this machine's
+        // own processes. A test whose branch depends on whether the
+        // developer happens to have a terminal open is not a test.
+        service.accountIsInUse = { _ in false }
 
         // First refresh: the stored token has expired, so it is renewed and
         // the renewal is cached for the rest of the run.

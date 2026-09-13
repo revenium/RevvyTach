@@ -129,6 +129,9 @@ class ClaudeAPIService: APIServiceProtocol {
         /// (Greptile finding on PR #98).
         fileprivate let knownPersonalExtraUsageIssue:
             ClaudeUsage.PersonalExtraUsageIssue?
+        /// When the Claude Code token ran out, for the one verdict that
+        /// names a time: `.signInAsleep`. Nil for every other.
+        fileprivate let knownClaudeCodeAsleepSince: Date?
 
         init(
             source: CapturedUsageFetchSource,
@@ -138,7 +141,8 @@ class ClaudeAPIService: APIServiceProtocol {
             checkOverage: Bool,
             profileID: UUID,
             knownPersonalExtraUsageIssue:
-                ClaudeUsage.PersonalExtraUsageIssue? = nil
+                ClaudeUsage.PersonalExtraUsageIssue? = nil,
+            knownClaudeCodeAsleepSince: Date? = nil
         ) {
             self.source = source
             self.sessionKey = sessionKey
@@ -147,6 +151,7 @@ class ClaudeAPIService: APIServiceProtocol {
             self.checkOverage = checkOverage
             self.profileID = profileID
             self.knownPersonalExtraUsageIssue = knownPersonalExtraUsageIssue
+            self.knownClaudeCodeAsleepSince = knownClaudeCodeAsleepSince
         }
 
         /// The same request with a different claude.ai session key.
@@ -167,7 +172,8 @@ class ClaudeAPIService: APIServiceProtocol {
                 oauthAccessToken: oauthAccessToken,
                 checkOverage: checkOverage,
                 profileID: profileID,
-                knownPersonalExtraUsageIssue: knownPersonalExtraUsageIssue
+                knownPersonalExtraUsageIssue: knownPersonalExtraUsageIssue,
+                knownClaudeCodeAsleepSince: knownClaudeCodeAsleepSince
             )
         }
 
@@ -862,6 +868,38 @@ class ClaudeAPIService: APIServiceProtocol {
     /// already consumed; only a replacement login may clear this verdict.
     private var indeterminateCLILogins: Set<Int> = []
 
+    /// Names a refusal to take the refresh lock, for the log line.
+    private static func describeLockFailure(_ error: Error) -> String {
+        switch error {
+        case ClaudeCodeStoreLock.AcquisitionFailure.heldByAnotherProcess:
+            return "another process is holding Claude Code's refresh lock"
+        case ClaudeCodeStoreLock.AcquisitionFailure.filesystem(let detail):
+            return "the refresh lock could not be created (\(detail))"
+        default:
+            return "the refresh lock could not be taken: \(error)"
+        }
+    }
+
+    /// Credentials whose renewal this run deliberately postponed because
+    /// another process was already doing it.
+    ///
+    /// Not a verdict about the credential. It reaches the UI as
+    /// `temporarilyUnavailable`, which says a reading did not arrive and
+    /// will be retried unaided — which is exactly what happens.
+    private var deferredCLILogins: Set<Int> = []
+
+    /// Credentials this run declined to renew, each paired with the moment
+    /// its access token ran out.
+    ///
+    /// Distinct from `expiredCLILogins` in the only way that matters: no
+    /// refresh token was spent and the server was never asked. Either a
+    /// `claude` process is using that account — Anthropic rotates the
+    /// refresh token on every use, so spending it is exactly what ends that
+    /// process's session — or the stored login has no refresh token to
+    /// spend. Both are "asleep", and the UI says so without accusing a
+    /// sign-in that is, in the live case, working in a terminal right now.
+    private var asleepCLILogins: [Int: Date] = [:]
+
     /// Stored credentials this run has already tried to replace with the
     /// CLI's own live login, keyed to when that attempt happened, so the
     /// Keychain read behind `adoptLiveCLILogin(for:replacing:)` is throttled
@@ -904,6 +942,52 @@ class ClaudeAPIService: APIServiceProtocol {
     /// credential read once, and a zero interval makes every refresh retry.
     var liveCLILoginAdoptionRetryInterval: TimeInterval = 60
 
+    /// How far before expiry a Claude Code token is treated as due for
+    /// renewal. Claude Code's own margin is five minutes, and matching it is
+    /// the point.
+    ///
+    /// Exposed only so a test can put the boundary somewhere it can reach:
+    /// a suite that has to watch a token cross the line cannot wait five
+    /// minutes to do it, and a five-minute sleep in CI is not a test.
+    var cliRefreshLeadTime: TimeInterval = ClaudeCodeSyncService.refreshLeadTime
+
+    /// Whether a `claude` process is using a linked account right now.
+    ///
+    /// A settable property rather than an init parameter because every one
+    /// of this type's several dozen construction sites would otherwise have
+    /// to learn about it. Production answers with a real process scan; a
+    /// test stages the answer, because a test that depends on whether the
+    /// developer happens to have a terminal open is not a test.
+    var accountIsInUse: (String?) -> Bool = { accountName in
+        ClaudeCodeSyncService.shared.isAccountInUse(
+            forAccountNamed: accountName
+        )
+    }
+
+    /// Takes Claude Code's own `<configDir>/.oauth_refresh.lock`.
+    ///
+    /// A seam for the same reason `accountIsInUse` is one, and for one more:
+    /// the lock is a directory inside a linked account's configuration
+    /// directory, so a test that left this on its default would create both
+    /// the lock and the account directory under the developer's real home.
+    var acquireRefreshLock: (String?) throws -> ClaudeCodeStoreLock = {
+        accountName in
+        try ClaudeCodeSyncService.shared.acquireRefreshLock(
+            forAccountNamed: accountName
+        )
+    }
+
+    /// What Claude Code's store says about the snapshot about to be spent:
+    /// unchanged, already rotated by somebody else, or unreadable.
+    var claudeCodeStoreComparison:
+        (String, String?) -> ClaudeCodeSyncService.StoreComparison = {
+        snapshot, accountName in
+        ClaudeCodeSyncService.shared.compareStore(
+            with: snapshot,
+            forAccountNamed: accountName
+        )
+    }
+
     /// Credentials renewed during this app run, keyed by profile, each paired
     /// with the fingerprint of the stored credential it was renewed *from*.
     /// The durable store holds the same value; this keeps the run from
@@ -936,6 +1020,14 @@ class ClaudeAPIService: APIServiceProtocol {
     private enum ShieldedCLIRefreshResult: Sendable {
         case renewed(credentialsJSON: String, accessToken: String)
         case failed(ClaudeCLITokenRefresher.RefreshFailure)
+        /// Another process holds `<configDir>/.oauth_refresh.lock`. Nothing
+        /// was spent and nothing is wrong: that process is refreshing the
+        /// very token we wanted, and its result is readable next tick.
+        case deferredToAnotherProcess
+        /// Under the lock, the store turned out to hold a different access
+        /// token from the one we were about to spend. Somebody already
+        /// rotated it; the endpoint was never called.
+        case raceResolved
     }
 
     /// One stored profile credential participating in a shared exchange.
@@ -1074,6 +1166,12 @@ class ClaudeAPIService: APIServiceProtocol {
     private enum PersonalExtraUsageOutcome {
         case available(OAuthUsageResponse.ExtraUsage)
         case issue(ClaudeUsage.PersonalExtraUsageIssue)
+        /// The Claude Code login was deliberately left alone, and this is
+        /// when its access token ran out. Its own case rather than an
+        /// `.issue` payload because it is the one verdict that names a
+        /// time, and because reaching it means nothing was spent and the
+        /// server was never asked.
+        case asleep(since: Date?)
         /// Nothing to report: no profile, the member has extra usage off, or
         /// the linked account has no organization behind it to attribute an
         /// organization-scoped figure to.
@@ -1176,6 +1274,27 @@ class ClaudeAPIService: APIServiceProtocol {
             // Keyed on what was actually presented to the renewal path, which
             // is the adopted login when one was taken up — the verdict was
             // recorded against that, not against the copy we started with.
+            // A refresh another process was already performing is a
+            // reading that did not arrive, not a credential that failed.
+            if deferredCLILogins.contains(presented.hashValue) {
+                LoggingService.shared.logDebug(
+                    "Profile '\(profile.name)' postponed its Claude Code "
+                    + "token renewal to another process holding the refresh "
+                    + "lock; the member's own extra usage will be read on a "
+                    + "later refresh."
+                )
+                return .issue(.temporarilyUnavailable)
+            }
+            // Asleep outranks both: nothing was spent and the server was
+            // never asked, so neither "expired" nor "unusable" is a fact we
+            // have established.
+            if asleepSince(presented) != nil {
+                LoggingService.shared.logDebug(
+                    "Profile '\(profile.name)' has a Claude Code login this "
+                    + "app deliberately left alone; reporting it as asleep."
+                )
+                return .asleep(since: asleepSince(presented))
+            }
             let expired = expiredCLILogins.contains(presented.hashValue)
             LoggingService.shared.logDebug(
                 "Profile '\(profile.name)' has a Claude Code credential that "
@@ -1306,19 +1425,96 @@ class ClaudeAPIService: APIServiceProtocol {
     /// goes stale within a day. An expired one is renewed once per credential
     /// per app run; a failed renewal leaves the stored credential exactly as
     /// it was.
+    ///
+    /// - Parameter renewingTheStoresOwnCopy: set only by
+    ///   `renewTheStoresOwnCopy(for:replacing:logNoBrowserRenewal:)`, which
+    ///   re-enters this function once with the store's own login in hand. It
+    ///   is what stops a store that keeps moving from turning that single
+    ///   retry into a loop.
     private func usableCLICredential(
         for profile: Profile,
         credentialsJSON: String,
-        logNoBrowserRenewal: Bool = false
+        logNoBrowserRenewal: Bool = false,
+        renewingTheStoresOwnCopy: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
         guard !Task.isCancelled else { return nil }
         let sync = ClaudeCodeSyncService.shared
-        if !sync.isTokenExpired(credentialsJSON),
-           let accessToken = sync.extractAccessToken(from: credentialsJSON) {
+        // Claude Code's own rule, not ours: a token within five minutes of
+        // expiry is due. Waiting for the expiry itself guaranteed a window
+        // where every request failed while a renewal was still in flight,
+        // and left the two programs reaching for the same token at two
+        // different points in its life.
+        if !sync.isTokenDueForRefresh(
+            credentialsJSON,
+            leadTime: cliRefreshLeadTime
+        ), let accessToken = sync.extractAccessToken(from: credentialsJSON) {
             return (credentialsJSON, accessToken)
         }
 
         let fingerprint = credentialsJSON.hashValue
+        asleepCLILogins.removeValue(forKey: fingerprint)
+        deferredCLILogins.remove(fingerprint)
+
+        // R2. Never spend a refresh token for an account a `claude` process
+        // is holding. Anthropic rotates the refresh token on every use, so
+        // the running process's copy is retired the moment we spend ours,
+        // and its next renewal is refused as `invalid_grant` — which is when
+        // Claude Code blanks its own Keychain item and starts telling the
+        // person they are logged out of an account they never left.
+        //
+        // What we do instead is what Claude Code does: re-read the store.
+        // Claude Code keeps that login fresh for exactly as long as it is
+        // running, so reading it is both free and more current than anything
+        // we could produce.
+        if accountIsInUse(profile.cliAccountName) {
+            if let live = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                ignoringRetryThrottle: true,
+                allowingTheDefaultAccount: true
+            ) {
+                return live
+            }
+            // Claude Code is holding nothing better than what we already
+            // have. Ours may still have minutes left on it — being *due* for
+            // a refresh is not being expired — and a token with minutes left
+            // produces real numbers.
+            if !sync.isTokenExpired(credentialsJSON),
+               let accessToken = sync.extractAccessToken(from: credentialsJSON) {
+                return (credentialsJSON, accessToken)
+            }
+            recordAsleepCLILogin(credentialsJSON, for: profile, reason:
+                "a claude process is using this account, so its refresh "
+                + "token is not ours to spend")
+            return nil
+        }
+
+        // An idle account with nothing to spend cannot be renewed, and
+        // asking the server would be pointless rather than harmful.
+        guard ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON) != nil
+        else {
+            // Look at Claude Code's own store first, the way every other
+            // branch here does. What we hold is a snapshot taken when the
+            // profile was last synced; the account may have been signed in
+            // again since, leaving a renewable login in the store while our
+            // copy still has nothing to spend. Declaring the account asleep
+            // without looking denied it that login for the life of the run.
+            if let live = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                ignoringRetryThrottle: true,
+                allowingTheDefaultAccount: true
+            ) {
+                return live
+            }
+            // Nothing renewable anywhere. Say asleep rather than expired:
+            // nothing was refused.
+            recordAsleepCLILogin(credentialsJSON, for: profile, reason:
+                "the stored login carries no refresh token")
+            return nil
+        }
         // A credential already recorded as dead cannot be renewed — that
         // verdict does not change — but Claude Code may have been signed
         // back in since the verdict was recorded, and adoption is the only
@@ -1340,6 +1536,53 @@ class ClaudeAPIService: APIServiceProtocol {
             credentialsJSON: credentialsJSON,
             logNoBrowserRenewal: logNoBrowserRenewal
         ) else { return nil }
+
+        switch outcome {
+        case .raceResolved:
+            // The store already holds a newer login, written by whoever got
+            // there first. Reading it is the whole remedy, and nothing was
+            // spent to reach this point.
+            if let adopted = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                ignoringRetryThrottle: true
+            ) {
+                return adopted
+            }
+            // Unless the store's newer copy has itself expired. Adoption
+            // refuses a dead login, correctly, and that left nothing to do:
+            // ours is superseded, theirs is out of time, and the account
+            // printed this same line every tick forever — never renewed,
+            // never reported, never offered by the hop picker.
+            //
+            // Claude Code's own answer after it re-reads its store is to
+            // treat what it read as the new base, so that is what happens
+            // here: renew the store's copy once, under the lock, with the
+            // compare-and-swap measured against the token actually in the
+            // store.
+            guard !renewingTheStoresOwnCopy else { return nil }
+            return await renewTheStoresOwnCopy(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal
+            )
+        case .deferredToAnotherProcess:
+            // Another process is mid-refresh. It may already have finished,
+            // so look once; otherwise this tick simply has no answer, and
+            // says so rather than accusing the credential.
+            if let adopted = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                ignoringRetryThrottle: true
+            ) { return adopted }
+            deferredCLILogins.insert(fingerprint)
+            return nil
+        case .renewed, .failed:
+            break
+        }
+
         guard case .renewed(let refreshed, let accessToken) = outcome else {
             // Our own snapshot cannot be renewed. Before telling anyone their
             // sign-in expired, look at the login Claude Code itself is
@@ -1359,6 +1602,99 @@ class ClaudeAPIService: APIServiceProtocol {
             return nil
         }
         return (refreshed, accessToken)
+    }
+
+    /// Renews the login Claude Code's own store is holding, when that copy
+    /// has moved past ours and has itself run out of time.
+    ///
+    /// Only an idle account reaches this. A `claude` process holding the
+    /// account still owns its refresh token under R2, and the read-only
+    /// answer there — asleep — is unchanged.
+    ///
+    /// Re-entering `usableCLICredential` rather than calling the refresh
+    /// directly is deliberate: the store's copy deserves the same treatment
+    /// any presented credential gets — the not-yet-due shortcut, the missing
+    /// refresh token check, the already-dead verdicts — and it arrives at
+    /// `shieldedCLIRefresh` as `credentialsJSON`, which is what makes the
+    /// rotation's `rotatedFrom` the store's own refresh token rather than the
+    /// superseded one we started with. The compare-and-swap on the way back
+    /// then measures against the token that is genuinely in the Keychain.
+    /// The profile's stored copy stays the base fingerprint for the
+    /// `renewedCLICredentials` bookkeeping, because that is the credential
+    /// every later lookup presents.
+    private func renewTheStoresOwnCopy(
+        for profile: Profile,
+        replacing stale: String,
+        logNoBrowserRenewal: Bool
+    ) async -> (credentialsJSON: String, accessToken: String)? {
+        guard !Task.isCancelled,
+              !accountIsInUse(profile.cliAccountName),
+              // Same reasoning as adoption's: an unscoped read answers with
+              // whichever account owns the shared Keychain item, and this
+              // path both spends a refresh token and persists what it reads.
+              let accountName = profile.cliAccountName
+        else { return nil }
+
+        let live: String?
+        do {
+            live = try systemCredentialsReader(accountName)
+        } catch {
+            LoggingService.shared.logDebug(
+                "Could not re-read Claude Code's own login for profile "
+                + "'\(profile.name)' after it moved past this app's copy: "
+                + "\(error.localizedDescription)."
+            )
+            return nil
+        }
+
+        guard let live,
+              live != stale,
+              ClaudeCodeSyncService.carriesLogin(live),
+              ClaudeCLITokenRefresher.refreshToken(in: live) != nil
+        else { return nil }
+
+        LoggingService.shared.log(
+            "Claude Code's own login for profile '\(profile.name)' has moved "
+            + "past this app's copy, and the store's copy has itself expired; "
+            + "renewing that copy instead. Nobody is using the account, and "
+            + "the rotated token is written straight back into the store it "
+            + "came from."
+        )
+
+        return await usableCLICredential(
+            for: profile,
+            credentialsJSON: live,
+            logNoBrowserRenewal: logNoBrowserRenewal,
+            renewingTheStoresOwnCopy: true
+        )
+    }
+
+    /// Records that a credential was left alone, and when it ran out.
+    ///
+    /// The time is the access token's own expiry, which is what the calm
+    /// "asleep since" wording names. A credential with no expiry recorded
+    /// still counts as asleep; the UI simply drops the time from the
+    /// sentence rather than inventing one.
+    private func recordAsleepCLILogin(
+        _ credentialsJSON: String,
+        for profile: Profile,
+        reason: String
+    ) {
+        let expiry = ClaudeCodeSyncService.shared.extractTokenExpiry(
+            from: credentialsJSON
+        )
+        asleepCLILogins[credentialsJSON.hashValue] = expiry ?? Date()
+        LoggingService.shared.log(
+            "Left the Claude Code login for profile '\(profile.name)' "
+            + "alone: \(reason). Showing it as asleep rather than as an "
+            + "expired sign-in."
+        )
+    }
+
+    /// When the credential presented for this profile went to sleep, if it
+    /// did. `nil` means it was never left alone this run.
+    private func asleepSince(_ credentialsJSON: String) -> Date? {
+        asleepCLILogins[credentialsJSON.hashValue]
     }
 
     /// Starts or joins the non-cancellable part of a CLI token renewal.
@@ -1391,7 +1727,61 @@ class ClaudeAPIService: APIServiceProtocol {
             refresh = existing
         } else {
             let observation = CLIRefreshObservation()
-            let task = Task { @MainActor in
+            let task = Task { @MainActor () -> ShieldedCLIRefreshResult in
+                // R3. Everything from here to the write-back happens under
+                // Claude Code's own refresh lock, so the two programs cannot
+                // both be spending one account's single-use refresh token.
+                let lock: ClaudeCodeStoreLock
+                do {
+                    lock = try self.acquireRefreshLock(
+                        profile.cliAccountName
+                    )
+                } catch {
+                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                    LoggingService.shared.log(
+                        "Skipping this tick's Claude Code token refresh for "
+                        + "profile '\(profile.name)': "
+                        + "\(Self.describeLockFailure(error)). Nothing was "
+                        + "spent; whatever lands in the store will be read "
+                        + "on the next refresh."
+                    )
+                    return .deferredToAnotherProcess
+                }
+                defer { lock.release() }
+
+                // Claude Code re-reads its store immediately before posting,
+                // and adopts a sibling's rotated token rather than spending
+                // one that has already been replaced. Same check, same
+                // moment.
+                switch self.claudeCodeStoreComparison(
+                    credentialsJSON,
+                    profile.cliAccountName
+                ) {
+                case .movedOn:
+                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                    LoggingService.shared.log(
+                        "Claude Code's own login for profile "
+                        + "'\(profile.name)' has already moved past the copy "
+                        + "this app was about to renew; adopting it instead "
+                        + "of spending a token that is no longer current."
+                    )
+                    return .raceResolved
+                case .unreadable:
+                    // A token spent against a store we cannot read is a token
+                    // we cannot mirror back either — the compare-and-swap
+                    // fails closed on the same unreadable item. Skip.
+                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                    LoggingService.shared.log(
+                        "Could not read Claude Code's own login for profile "
+                        + "'\(profile.name)' under the refresh lock; skipping "
+                        + "this tick rather than spending a token whose "
+                        + "write-back could not be checked."
+                    )
+                    return .deferredToAnotherProcess
+                case .unchanged:
+                    break
+                }
+
                 let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
                     from: credentialsJSON,
                     forAccountNamed: profile.cliAccountName
@@ -1598,19 +1988,48 @@ class ClaudeAPIService: APIServiceProtocol {
     /// token into this profile's storage. A nil account name is therefore
     /// treated as adoption already having failed, never as a reason to fall
     /// back to the unscoped read.
+    ///
+    /// - Parameter ignoringRetryThrottle: skips the 60-second throttle.
+    ///   Passed by the live-account path, where this read is not a recovery
+    ///   attempt after a failure but the ordinary way numbers are produced:
+    ///   Claude Code owns that login and keeps it fresh, so re-reading it
+    ///   every refresh tick is the design, not a retry. Throttling it there
+    ///   would leave a working account showing nothing for a minute at a
+    ///   time. It stays throttled on the recovery path, where each attempt
+    ///   follows a failure that is unlikely to have resolved in seconds.
+    ///
+    /// - Parameter allowingTheDefaultAccount: lets a profile with no linked
+    ///   account name read the default `~/.claude` store. Passed only by the
+    ///   live path, where re-reading is the whole remedy and refusing it left
+    ///   the plain single-account user — a wizard terminal sign-in never
+    ///   linked to an account directory — frozen the moment any `claude` ran
+    ///   and their token passed expiry: no refresh, correctly, and no re-read
+    ///   either. It is safe now that the unnamed account resolves to exactly
+    ///   one item, `Claude Code-credentials`, rather than to whichever hashed
+    ///   item a prefix search returned first.
     private func adoptLiveCLILogin(
         for profile: Profile,
         replacing stale: String,
-        logNoBrowserRenewal: Bool = false
+        logNoBrowserRenewal: Bool = false,
+        ignoringRetryThrottle: Bool = false,
+        allowingTheDefaultAccount: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
         guard !Task.isCancelled else { return nil }
-        guard let accountName = profile.cliAccountName else { return nil }
+        let accountName: String?
+        if let linked = profile.cliAccountName {
+            accountName = linked
+        } else if allowingTheDefaultAccount {
+            accountName = nil
+        } else {
+            return nil
+        }
 
         let key = AdoptionAttemptKey(
             profileID: profile.id,
             credentialFingerprint: stale.hashValue
         )
-        if let lastAttempt = liveCLILoginAdoptionAttempts[key],
+        if !ignoringRetryThrottle,
+           let lastAttempt = liveCLILoginAdoptionAttempts[key],
            Date().timeIntervalSince(lastAttempt) < liveCLILoginAdoptionRetryInterval {
             return nil
         }
@@ -2003,6 +2422,9 @@ class ClaudeAPIService: APIServiceProtocol {
             usage.personalCostCurrency = extraUsage.currency
         case .issue(let issue):
             usage.personalExtraUsageIssue = issue
+        case .asleep(let since):
+            usage.personalExtraUsageIssue = .signInAsleep
+            usage.claudeCodeAsleepSince = since
         case .notApplicable:
             break
         case .superseded:
@@ -2521,7 +2943,16 @@ class ClaudeAPIService: APIServiceProtocol {
                 // and recorded regardless of `checkOverage` so the fallback
                 // never silently hides a credential the app already knows
                 // is broken (Greptile finding on PR #98).
+                let asleep = asleepSince(presented)
                 let expired = expiredCLILogins.contains(presented.hashValue)
+                let issue: ClaudeUsage.PersonalExtraUsageIssue
+                if deferredCLILogins.contains(presented.hashValue) {
+                    issue = .temporarilyUnavailable
+                } else if asleep != nil {
+                    issue = .signInAsleep
+                } else {
+                    issue = expired ? .signInExpired : .signInUnusable
+                }
                 return CapturedUsageRequest(
                     source: .claudeAI,
                     sessionKey: sessionKey,
@@ -2529,8 +2960,8 @@ class ClaudeAPIService: APIServiceProtocol {
                     oauthAccessToken: nil,
                     checkOverage: checkOverage,
                     profileID: profile.id,
-                    knownPersonalExtraUsageIssue:
-                        expired ? .signInExpired : .signInUnusable
+                    knownPersonalExtraUsageIssue: issue,
+                    knownClaudeCodeAsleepSince: asleep
                 )
             }
             throw AppError(
@@ -2620,6 +3051,8 @@ class ClaudeAPIService: APIServiceProtocol {
             if usage.personalExtraUsageIssue == nil,
                let knownIssue = request.knownPersonalExtraUsageIssue {
                 usage.personalExtraUsageIssue = knownIssue
+                usage.claudeCodeAsleepSince =
+                    request.knownClaudeCodeAsleepSince
             }
             return usage
 
