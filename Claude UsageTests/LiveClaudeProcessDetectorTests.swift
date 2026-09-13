@@ -36,6 +36,46 @@ extension RunningProcessSnapshot {
     }
 }
 
+extension RunningProcessSnapshot {
+    /// Anything that is not Claude Code but inherited the variable — which,
+    /// on a real machine, is most of what carries it: RevvyTach sets it
+    /// tmux-wide, so every pane and everything it spawns has it.
+    static func inheritedTheVariable(
+        pid: pid_t = 5150,
+        configurationDirectory: String,
+        executablePath: String = "/opt/homebrew/bin/node"
+    ) -> RunningProcessSnapshot {
+        RunningProcessSnapshot(
+            processIdentifier: pid,
+            executablePath: executablePath,
+            arguments: [executablePath, "server.js"],
+            environment: ["CLAUDE_CONFIG_DIR": configurationDirectory]
+        )
+    }
+
+    /// An npm install: a shebang script, so the executable and `argv[0]` are
+    /// the interpreter and the identity is in `argv[1]`.
+    static func npmClaude(
+        pid: pid_t = 6161,
+        configurationDirectory: String?
+    ) -> RunningProcessSnapshot {
+        var environment: [String: String] = [:]
+        if let configurationDirectory {
+            environment["CLAUDE_CONFIG_DIR"] = configurationDirectory
+        }
+        return RunningProcessSnapshot(
+            processIdentifier: pid,
+            executablePath: "/opt/homebrew/Cellar/node/24.0.0/bin/node",
+            arguments: [
+                "node",
+                "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+                "--continue"
+            ],
+            environment: environment
+        )
+    }
+}
+
 extension LiveClaudeProcessDetector {
     /// A detector that will never report anything as live. The default for
     /// tests about something other than liveness.
@@ -155,6 +195,65 @@ final class LiveClaudeProcessDetectorTests: HostedAppTestCase {
             .claude(configurationDirectory: decomposed)
         ])
         XCTAssertTrue(subject.isLive(configurationDirectory: composed))
+    }
+
+    /// The variable is not evidence of a `claude`. RevvyTach itself runs
+    /// `tmux set-environment -g CLAUDE_CONFIG_DIR`, so every pane opened
+    /// afterwards and everything it spawns inherits it. Measured across seven
+    /// linked accounts on the maintainer's machine, three carried the
+    /// variable on node, python or a language server with no `claude`
+    /// anywhere near them — and those three would have been refused a refresh
+    /// forever, then shown as asleep forever.
+    @MainActor
+    func testAnUnrelatedProcessCarryingTheVariableIsNotLive() {
+        let subject = detector([
+            .inheritedTheVariable(configurationDirectory: account)
+        ])
+        XCTAssertFalse(subject.isLive(configurationDirectory: account))
+    }
+
+    /// The same directory, with a real `claude` among the noise.
+    @MainActor
+    func testAClaudeAmongInheritingProcessesIsStillLive() {
+        let subject = detector([
+            .inheritedTheVariable(configurationDirectory: account),
+            .inheritedTheVariable(
+                pid: 5151,
+                configurationDirectory: account,
+                executablePath: "/usr/bin/python3"
+            ),
+            .claude(configurationDirectory: account)
+        ])
+        XCTAssertTrue(subject.isLive(configurationDirectory: account))
+    }
+
+    /// An npm install is `node cli.js`: the executable and `argv[0]` are the
+    /// interpreter, and the only thing that says Claude Code is `argv[1]`.
+    /// Missing it spent the token of every account on that class of install.
+    @MainActor
+    func testAnNpmInstalledClaudeIsRecognised() {
+        XCTAssertTrue(
+            detector([.npmClaude(configurationDirectory: account)])
+                .isLive(configurationDirectory: account)
+        )
+        XCTAssertTrue(
+            detector([.npmClaude(configurationDirectory: nil)])
+                .isLive(configurationDirectory: defaultHome)
+        )
+    }
+
+    /// An unrelated `cli.js` is not Claude Code.
+    @MainActor
+    func testAnUnrelatedNodeScriptIsNotClaudeCode() {
+        let subject = detector([
+            RunningProcessSnapshot(
+                processIdentifier: 7,
+                executablePath: "/usr/local/bin/node",
+                arguments: ["node", "/opt/tools/vendor/cli.js"],
+                environment: ["CLAUDE_CONFIG_DIR": account]
+            )
+        ])
+        XCTAssertFalse(subject.isLive(configurationDirectory: account))
     }
 
     // MARK: - The default account

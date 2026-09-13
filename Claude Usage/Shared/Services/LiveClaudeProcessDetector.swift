@@ -107,7 +107,12 @@ struct SysctlRunningProcessSource: RunningProcessSource {
                 "proc_listallpids returned \(written) (errno \(errno))"
             )
         }
-        return Array(pids.prefix(Int(written)))
+        // `proc_listallpids` returns BYTES written, not a count of pids.
+        // The surplus entries were the zero-filled tail and were skipped by
+        // the `pid > 0` filter, so this was harmless — but it was also wrong,
+        // and a non-zero byte pattern in that tail would have been read as a
+        // process identifier.
+        return Array(pids.prefix(Int(written) / MemoryLayout<pid_t>.size))
     }
 
     private func ownedByCurrentUser(_ pid: pid_t) -> Bool {
@@ -244,7 +249,7 @@ final class LiveClaudeProcessDetector {
         cacheDuration: TimeInterval = 5,
         now: @escaping () -> Date = Date.init,
         defaultConfigurationDirectory: String
-            = NSHomeDirectory() + "/.claude",
+            = Constants.ClaudePaths.claudeDirectory.path,
         log: @escaping (String) -> Void = { LoggingService.shared.logDebug($0) }
     ) {
         self.source = source
@@ -317,38 +322,56 @@ final class LiveClaudeProcessDetector {
         usesConfigurationDirectory target: String,
         isDefaultAccount: Bool
     ) -> Bool {
+        // It must be Claude Code. Carrying `CLAUDE_CONFIG_DIR` is not
+        // evidence of that, and treating it as evidence was badly wrong on a
+        // real machine: RevvyTach itself runs
+        // `tmux set-environment -g CLAUDE_CONFIG_DIR <dir>`, so every pane
+        // opened afterwards and everything it spawns inherits the variable.
+        // Measured across seven linked accounts, three had node, python, uv
+        // or a language-server process carrying it with no `claude` anywhere
+        // near them — and those three would have been refused a refresh
+        // forever, then shown as asleep forever, because the processes
+        // holding the variable are long-lived.
+        guard looksLikeClaudeCode(process) else { return false }
+
         let declared = process.environment[configurationDirectoryVariable]
 
         if let declared, !declared.isEmpty {
-            // An explicit pointer answers the question either way: a process
-            // that names a different directory is not using this one, even
-            // if it is a `claude`.
+            // An explicit pointer answers the question either way: a `claude`
+            // that names a different directory is not using this one.
             return canonical(declared) == target
         }
 
         // No pointer at all. Claude Code then uses `~/.claude`, so such a
         // process is live for the default account and for no other.
-        guard isDefaultAccount else { return false }
-        return looksLikeClaudeCode(process)
+        return isDefaultAccount
     }
 
     /// Whether a process is the `claude` CLI.
     ///
-    /// Two signals, because the CLI is installed two ways. A Homebrew or npm
-    /// install leaves an executable literally named `claude`; the native
-    /// installer runs a versioned binary under
-    /// `~/.local/share/claude/versions/<version>`, whose own name is the
-    /// version string and tells you nothing.
+    /// Three signals, because the CLI is installed three ways.
+    ///
+    /// A Homebrew install leaves an executable literally named `claude`. The
+    /// native installer runs a versioned binary under
+    /// `~/.local/share/claude/versions/<version>`, whose own file name is the
+    /// version string and tells you nothing. And an npm install is a shebang
+    /// script, so the executable and `argv[0]` are the interpreter — `node`
+    /// or `bun` — and the only thing that says "Claude Code" is
+    /// `argv[1]`, the path to `@anthropic-ai/claude-code/cli.js`.
+    ///
+    /// Every argument is scanned rather than only the first, which is what
+    /// the npm case needs, and a `cli.js` is accepted only when its own path
+    /// names Claude Code — an unrelated `cli.js` is not this.
     static func looksLikeClaudeCode(
         _ process: RunningProcessSnapshot
     ) -> Bool {
-        let candidates = [process.executablePath]
-            + (process.arguments.first.map { [$0] } ?? [])
-        for candidate in candidates {
-            if (candidate as NSString).lastPathComponent == "claude" {
-                return true
-            }
-            if candidate.contains("/claude/versions/") {
+        for candidate in [process.executablePath] + process.arguments {
+            let name = (candidate as NSString).lastPathComponent
+            if name == "claude" { return true }
+            if candidate.contains("/claude/versions/") { return true }
+            if candidate.contains("/claude-code/") { return true }
+            if name == "cli.js",
+               candidate.lowercased().contains("claude") {
                 return true
             }
         }
