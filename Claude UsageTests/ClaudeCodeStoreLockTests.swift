@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Claude_Usage
 
@@ -50,6 +51,28 @@ final class ClaudeCodeStoreLockTests: HostedAppTestCase {
                 startsHeartbeat: false
             )
         )
+    }
+
+    /// Which directory the path names, rather than merely that something is
+    /// there. The lock tells its own directory from a replacement by the
+    /// `(device, inode)` pair, so the tests have to talk about the same
+    /// thing.
+    private func identity(
+        of url: URL
+    ) throws -> (device: dev_t, inode: ino_t) {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        return (info.st_dev, info.st_ino)
+    }
+
+    /// Everything sitting beside the lock. Reclaiming moves a directory
+    /// aside before deleting it, and a move that was never finished would
+    /// leave that half-done state here.
+    private func entriesBesideTheLock() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .sorted()
     }
 
     private func modificationDate(of url: URL) throws -> Date {
@@ -218,6 +241,143 @@ final class ClaudeCodeStoreLockTests: HostedAppTestCase {
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: lockURL.path),
             "Releasing a stolen lock must not delete the new holder's"
+        )
+    }
+
+    /// Two processes can look at the same stale lock at the same moment. The
+    /// slower one must not delete the fresh directory the faster one has
+    /// already put at that path: the lock it judged stale is gone, so there
+    /// is nothing left for it to reclaim and it has to be refused. Deleting
+    /// it would leave both processes believing they held the lock, and both
+    /// spending the same single-use refresh token.
+    @MainActor
+    func testReclaimingRefusesWhenTheStaleLockHasAlreadyBeenReplaced() throws {
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        let stale = try identity(of: lockURL)
+
+        // The faster process gets there first: same path, new directory.
+        try FileManager.default.removeItem(at: lockURL)
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        let live = try identity(of: lockURL)
+
+        XCTAssertThrowsError(
+            try ClaudeCodeStoreLock.removeOnly(
+                stale,
+                at: lockURL,
+                fileManager: .default
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ClaudeCodeStoreLock.AcquisitionFailure,
+                .heldByAnotherProcess
+            )
+        }
+
+        let survivor = try identity(of: lockURL)
+        XCTAssertEqual(survivor.device, live.device)
+        XCTAssertEqual(
+            survivor.inode,
+            live.inode,
+            "The other process's lock must be the same directory it was"
+        )
+        XCTAssertEqual(try entriesBesideTheLock(), [".oauth_refresh.lock"])
+    }
+
+    /// The lock that really is stale is still reclaimed, and reclaiming it
+    /// leaves nothing behind: the directory that went away is gone, and the
+    /// one the new holder made is the only thing at the path.
+    @MainActor
+    func testReclaimingAStaleLockLeavesOnlyTheNewHoldersDirectory() throws {
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-61)],
+            ofItemAtPath: lockURL.path
+        )
+        let abandoned = try identity(of: lockURL)
+
+        let reclaimed = try acquire()
+        defer { reclaimed.release() }
+
+        XCTAssertFalse(reclaimed.isCompromised)
+        XCTAssertNotEqual(
+            try identity(of: lockURL).inode,
+            abandoned.inode,
+            "Taking it must make a new directory, not adopt the dead one"
+        )
+        XCTAssertEqual(try entriesBesideTheLock(), [".oauth_refresh.lock"])
+    }
+
+    /// A holder only learns its lock was stolen when the heartbeat fires, so
+    /// for up to five seconds it still thinks the lock is its own. Releasing
+    /// in that window must not delete the directory the new holder made —
+    /// which is exactly the logout this lock exists to prevent.
+    @MainActor
+    func testReleasingDoesNotRemoveADirectoryAnotherProcessPutThere() throws {
+        let lock = try acquire()
+
+        // Another process reclaims it as stale. No `touch()` here on
+        // purpose: this is the gap between two heartbeats.
+        try FileManager.default.removeItem(at: lockURL)
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        let replacement = try identity(of: lockURL)
+        XCTAssertFalse(lock.isCompromised, "Nothing has noticed yet")
+
+        lock.release()
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: lockURL.path),
+            "Releasing must not delete a lock that is no longer ours"
+        )
+        XCTAssertEqual(try identity(of: lockURL).inode, replacement.inode)
+        XCTAssertEqual(try entriesBesideTheLock(), [".oauth_refresh.lock"])
+    }
+
+    /// Reclaiming moves the dead holder's directory aside before deleting
+    /// it, so a process killed between those two steps leaves the moved
+    /// directory behind — and quitting is one of the moments that can
+    /// happen. Nothing else would ever clear it, so taking the lock clears
+    /// the ones nobody can still be working on.
+    @MainActor
+    func testTakingTheLockClearsLeftoversFromAnInterruptedReclaim() throws {
+        let abandoned = directory.appendingPathComponent(
+            ".oauth_refresh.lock.reclaim-\(UUID().uuidString)"
+        )
+        let inProgress = directory.appendingPathComponent(
+            ".oauth_refresh.lock.reclaim-\(UUID().uuidString)"
+        )
+        for leftover in [abandoned, inProgress] {
+            try FileManager.default.createDirectory(
+                at: leftover,
+                withIntermediateDirectories: false
+            )
+        }
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-61)],
+            ofItemAtPath: abandoned.path
+        )
+
+        let lock = try acquire()
+        defer { lock.release() }
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: abandoned.path),
+            "A reclaim interrupted a minute ago is never coming back"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: inProgress.path),
+            "A reclaim another process is doing right now must survive"
         )
     }
 

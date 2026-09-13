@@ -87,10 +87,12 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
     /// Takes the lock, or says who has it.
     ///
     /// One `mkdir`. On `EEXIST`, one look at the mtime: a lock that is not
-    /// stale is simply held, and a stale one is removed and the `mkdir`
-    /// tried exactly once more. That "once more" matters — looping would let
-    /// two processes that both saw the same stale lock take turns removing
-    /// each other's fresh one.
+    /// stale is simply held, and a stale one is moved out of the way and the
+    /// `mkdir` tried exactly once more. That "once more" matters — looping
+    /// would let two processes that both saw the same stale lock take turns
+    /// removing each other's fresh one. Moving the stale directory aside
+    /// rather than deleting whatever is at the path is what stops the same
+    /// two processes from doing it even once; see `removeOnly`.
     ///
     /// - Parameters:
     ///   - staleAfter: how old the mtime must be before the lock counts as
@@ -131,8 +133,16 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
             throw AcquisitionFailure.heldByAnotherProcess
         }
 
-        // Stale: the holder died. Remove it and take it.
-        try? fileManager.removeItem(at: url)
+        // Stale: the holder died. Take away the directory we just looked at,
+        // and only that one — by now another process may have reclaimed it
+        // and be holding a brand new directory at the same path.
+        if let staleIdentity = identity(of: url) {
+            try removeOnly(
+                staleIdentity,
+                at: url,
+                fileManager: fileManager
+            )
+        }
         guard let lock = try make(
             at: url,
             staleAfter: staleAfter,
@@ -160,6 +170,13 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
         }
         let stamp = Date()
         setModificationDate(stamp, of: url, fileManager: fileManager)
+        // Taking the lock is the one moment this folder is already being
+        // looked at, so it is where the leftovers get tidied.
+        sweepAbandonedReclaims(
+            beside: url,
+            staleAfter: staleAfter,
+            fileManager: fileManager
+        )
         return ClaudeCodeStoreLock(
             url: url,
             staleAfter: staleAfter,
@@ -170,6 +187,90 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
             identity: identity(of: url),
             fileManager: fileManager
         )
+    }
+
+    /// Removes the directory at a path, but only if it is still the one the
+    /// caller means — the one whose `(device, inode)` it was given.
+    ///
+    /// Deleting by path is the whole bug this avoids. Two processes can both
+    /// decide the same lock is stale; if each simply deleted the path, the
+    /// slower one would delete the fresh directory the faster one had already
+    /// made, make its own, and both would go on believing they held the lock.
+    /// The same thing happens on release, where "is this still mine" is only
+    /// as current as the last heartbeat.
+    ///
+    /// So the directory is moved rather than deleted. `rename(2)` happens in
+    /// one step, so of two processes racing for the same directory exactly
+    /// one moves it; the other finds it has moved something else, puts it
+    /// straight back, and gives up. `RENAME_EXCL` on the way back refuses to
+    /// overwrite, so a third directory that appeared at the path in the
+    /// meantime survives, and the one we should never have touched is thrown
+    /// away instead — the lesser of two wrongs, and one that only costs a
+    /// stale window rather than a shared lock.
+    ///
+    /// Throws `heldByAnotherProcess` when the path holds somebody else's
+    /// directory. A path with nothing at it is not a failure: there is
+    /// nothing left to remove.
+    static func removeOnly(
+        _ identity: (device: dev_t, inode: ino_t),
+        at url: URL,
+        fileManager: FileManager
+    ) throws {
+        let movedPath = "\(url.path).reclaim-\(UUID().uuidString)"
+        guard rename(url.path, movedPath) == 0 else {
+            let failure = errno
+            if failure == ENOENT { return }
+            throw AcquisitionFailure.heldByAnotherProcess
+        }
+
+        let moved = URL(fileURLWithPath: movedPath)
+        // A moved directory keeps the modification time it had, and a stale
+        // lock's is old by definition — which is exactly what the leftover
+        // sweep looks for. Stamping it as of now is how a reclaim happening
+        // this instant is told apart from one that was interrupted.
+        setModificationDate(Date(), of: moved, fileManager: fileManager)
+        guard let movedIdentity = self.identity(of: moved),
+              movedIdentity == identity else {
+            if renamex_np(movedPath, url.path, UInt32(RENAME_EXCL)) != 0 {
+                try? fileManager.removeItem(at: moved)
+            }
+            throw AcquisitionFailure.heldByAnotherProcess
+        }
+
+        try? fileManager.removeItem(at: moved)
+    }
+
+    /// Clears away the directories an interrupted reclaim left behind.
+    ///
+    /// Taking a lock from a dead holder moves its directory aside and then
+    /// deletes it. A process killed between those two steps — and release
+    /// runs from `deinit`, so quitting is one of the moments this can happen
+    /// — leaves the moved directory sitting in the credential folder with
+    /// nobody left to delete it, and every such death would leave one more.
+    ///
+    /// Only directories beside this lock, named after it, and untouched for
+    /// longer than the stale window are cleared: a reclaim that is happening
+    /// right now stamps what it moved, so nothing another process is in the
+    /// middle of can look this old. Every failure is ignored, because a
+    /// folder that cannot be tidied is no reason to refuse a lock.
+    private static func sweepAbandonedReclaims(
+        beside url: URL,
+        staleAfter: TimeInterval,
+        fileManager: FileManager
+    ) {
+        let folder = url.deletingLastPathComponent()
+        let prefix = "\(url.lastPathComponent).reclaim-"
+        guard let names = try? fileManager.contentsOfDirectory(
+            atPath: folder.path
+        ) else { return }
+        for name in names where name.hasPrefix(prefix) {
+            let leftover = folder.appendingPathComponent(name)
+            guard let modified = modificationDate(
+                of: leftover,
+                fileManager: fileManager
+            ), Date().timeIntervalSince(modified) > staleAfter else { continue }
+            try? fileManager.removeItem(at: leftover)
+        }
     }
 
     private func startHeartbeatIfNeeded(
@@ -241,6 +342,13 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
     /// A compromised lock is abandoned rather than removed: the directory at
     /// that path is another process's lock now, and deleting it would hand
     /// the account to a third.
+    ///
+    /// Being compromised is only ever noticed on a heartbeat, though, so
+    /// between two beats the flag still says "ours" about a lock somebody
+    /// else reclaimed seconds ago. That is why the directory itself is
+    /// checked here rather than trusted: what comes away has to be the very
+    /// directory this lock made, and anything else goes back untouched. A
+    /// lock that never learned which directory it made removes nothing.
     func release() {
         mutex.lock()
         let timer = heartbeat
@@ -250,8 +358,8 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
         mutex.unlock()
 
         timer?.cancel()
-        guard shouldRemove else { return }
-        try? fileManager.removeItem(at: url)
+        guard shouldRemove, let identity else { return }
+        try? Self.removeOnly(identity, at: url, fileManager: fileManager)
     }
 
     deinit {
