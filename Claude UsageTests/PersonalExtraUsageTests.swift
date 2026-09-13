@@ -2262,6 +2262,122 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertEqual(scene.store.locks, locksBefore)
     }
 
+    /// The same promise after an exchange that worked. Two profiles linked
+    /// to one account backed by a credentials file hold the same login in
+    /// different bytes, so they do not join one exchange. The first renews;
+    /// with no Keychain item the store comparison has nothing to measure the
+    /// second against, and the spent token went out again — which the
+    /// server refuses, turning a login renewed a moment ago into "sign in
+    /// again". The second profile needs the renewal, not a second spend.
+    func testARefreshTokenSpentOnARenewalIsNeverSentAgainFromAnotherProfile()
+        async throws
+    {
+        let expired = Self.credentialsJSON(expiresAt: 1_000)
+        let firstProfile = terminalOnlyProfile(credentialsJSON: expired)
+        var secondProfile = terminalOnlyProfile(
+            credentialsJSON: Self.rewrittenByItsStore(expired)
+        )
+        secondProfile.name = "Second terminal-only fixture"
+        let store = makeIsolatedProfileStore()
+        try seedProfilesForTesting([firstProfile, secondProfile], in: store)
+        try store.saveCLIProfileCredential(expired, for: firstProfile.id)
+        try store.saveCLIProfileCredential(
+            secondProfile.cliCredentialsJSON,
+            for: secondProfile.id
+        )
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [firstProfile, secondProfile]
+        retained.append(manager)
+        retained.append(store)
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            renewals: renewals
+        )
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let first = try await service
+            .captureUsageRequestPreparingTerminalSignIn(for: firstProfile)
+        XCTAssertTrue(first.capturesOAuthToken("renewed-access"))
+        XCTAssertEqual(tokenRequestCount, 1)
+
+        // What the server does with a refresh token it already rotated, so
+        // a second send shows up as a dead login as well as in the count.
+        // Re-installing starts a new count.
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        let second = try? await service
+            .captureUsageRequestPreparingTerminalSignIn(for: secondProfile)
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            0,
+            "a refresh token a renewal already spent must never be sent "
+                + "again, whatever bytes it arrives in: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertTrue(
+            second?.capturesOAuthToken("renewed-access") == true,
+            "the second profile's login is the one just renewed, and it must "
+                + "use that renewal rather than be told to sign in again"
+        )
+    }
+
+    /// The browser-backed wording of the same defect. The profile presents
+    /// its login re-serialized by the credentials file, which still holds the
+    /// spent token because the write-back did not land there. That copy
+    /// must read the renewal, not come back "expired, sign in again".
+    func testARenewedLoginInDifferentBytesIsNeitherResentNorReportedExpired()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let renewed = try await fetchMemberUsage(scene)
+        XCTAssertNil(renewed.personalExtraUsageIssue)
+        XCTAssertEqual(tokenRequestCount, 1)
+        let locksBefore = scene.store.locks
+
+        let rewritten = Self.rewrittenByItsStore(stored)
+        scene.store.copy = rewritten
+        var reSynced = scene.profile
+        reSynced.cliCredentialsJSON = rewritten
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            tokenRefreshStatusCode: 400
+        )
+        for refresh in 2...3 {
+            let usage = try await scene.service.fetchUsageData(
+                sessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: teamOrganizationID,
+                profile: reSynced
+            )
+            XCTAssertNil(
+                usage.personalExtraUsageIssue,
+                "a login renewed this run is neither expired nor unusable "
+                    + "(refresh \(refresh))"
+            )
+        }
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            0,
+            "a refresh token a renewal already spent must never be sent "
+                + "again: \(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(scene.store.locks, locksBefore)
+    }
+
     /// The same promise when nobody was left waiting for the answer. The
     /// verdict on a blob is recorded by the caller, and a caller the app
     /// cancelled mid-exchange records nothing, so the next refresh found no

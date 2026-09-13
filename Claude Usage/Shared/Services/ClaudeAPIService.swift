@@ -896,6 +896,44 @@ class ClaudeAPIService: APIServiceProtocol {
         Int: ClaudeCLITokenRefresher.RefreshFailure
     ] = [:]
 
+    /// Refresh tokens this run spent on a successful renewal, keyed by the
+    /// token's own hash and paired with the credential it was renewed into.
+    ///
+    /// A success spends a token exactly as surely as a refusal does, and the
+    /// same login in different bytes reaches the renewal path just as often:
+    /// a second profile linked to the account, or the file's own
+    /// re-serialized copy. For an account with no Keychain item the store
+    /// comparison has nothing to measure against and answers `.unchanged`,
+    /// so without this the spent token went out a second time, came back
+    /// `invalid_grant`, and a login that had just been renewed was reported
+    /// as expired. The successor is what that presentation actually needs.
+    ///
+    /// Recorded inside the shielded exchange, like the map above, so a
+    /// caller that stopped waiting cannot leave the spend unrecorded. Only
+    /// a token the server actually rotated is kept: one handed back
+    /// unchanged is still current, and has not been spent. Never cleared,
+    /// for the same reason as the map above.
+    private var renewedRefreshTokens: [Int: String] = [:]
+
+    /// The newest credential this run renewed the presented one into,
+    /// following renewals of renewals. `nil` when its refresh token was never
+    /// spent on a success. The visited set is belt and braces: only rotated
+    /// tokens are recorded, so a chain cannot loop back on itself.
+    private func newestRenewal(of credentialsJSON: String) -> String? {
+        var newest: String?
+        var current = credentialsJSON
+        var visited: Set<Int> = []
+        while let refreshToken = ClaudeCLITokenRefresher.refreshToken(
+                  in: current
+              ),
+              visited.insert(refreshToken.hashValue).inserted,
+              let successor = renewedRefreshTokens[refreshToken.hashValue] {
+            newest = successor
+            current = successor
+        }
+        return newest
+    }
+
     /// What this run already knows about renewing a credential: refused,
     /// unanswered, or nothing. Checked against the blob's own verdicts first
     /// and then against the refresh token it carries, so the same login in
@@ -1577,6 +1615,40 @@ class ClaudeAPIService: APIServiceProtocol {
                 "the stored login carries no refresh token")
             return nil
         }
+        // A refresh token this run already renewed is spent, and a spent
+        // token is never sent again — not even in different bytes, where the
+        // store comparison may have nothing to tell them apart by. The login
+        // it belonged to is alive, in the credential it was renewed into, so
+        // that is the answer: used as-is while it has time left, otherwise
+        // handed once to the ordinary path, whose guards, lock and
+        // comparison apply to a token nobody has sent. No verdict is filed
+        // against the presented copy unless the successor earned one.
+        //
+        // The re-entry cannot come back here with the same token: the chain
+        // ends at a successor whose own token has not been renewed, and only
+        // another successful exchange could extend it.
+        if let successor = newestRenewal(of: credentialsJSON) {
+            // Anything filed here was borrowed: a token that renewed was
+            // never refused.
+            expiredCLILogins.remove(fingerprint)
+            indeterminateCLILogins.remove(fingerprint)
+            if !sync.isTokenDueForRefresh(
+                successor,
+                leadTime: cliRefreshLeadTime
+            ), let accessToken = sync.extractAccessToken(from: successor) {
+                return (successor, accessToken)
+            }
+            let renewed = await usableCLICredential(
+                for: profile,
+                credentialsJSON: successor,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                renewingTheStoresOwnCopy: renewingTheStoresOwnCopy
+            )
+            if renewed == nil {
+                carryRenewalVerdicts(from: successor, onto: credentialsJSON)
+            }
+            return renewed
+        }
         // A credential already recorded as dead cannot be renewed — that
         // verdict does not change — but Claude Code may have been signed
         // back in since the verdict was recorded, and adoption is the only
@@ -1687,10 +1759,8 @@ class ClaudeAPIService: APIServiceProtocol {
             ) {
                 return adopted
             }
-            if case .failed(.expired) = outcome {
-                expiredCLILogins.insert(fingerprint)
-            } else if case .failed(.indeterminate) = outcome {
-                indeterminateCLILogins.insert(fingerprint)
+            if case .failed(let failure) = outcome {
+                recordRefreshFailure(failure, for: credentialsJSON)
             }
             return nil
         }
@@ -1758,13 +1828,17 @@ class ClaudeAPIService: APIServiceProtocol {
         // a profile switch, or the same token in the store's own bytes. Any
         // dead verdict on our copy was then borrowed from a different login
         // that has since left the store, not earned: a refresh token this
-        // run actually sent is always in `unsendableRefreshTokens`, and this
-        // one is not. Left in place it said "expired, sign in again" until a
-        // restart about a token nobody had tried. Retiring it hands the next
-        // refresh back to the ordinary locked, compared, spend-once path.
+        // run actually sent is always in `unsendableRefreshTokens` or, when
+        // it renewed, in `renewedRefreshTokens`, and this one is in neither.
+        // Left in place it said "expired, sign in again" until a restart
+        // about a token nobody had tried. Retiring it hands the next refresh
+        // back to the ordinary locked, compared, spend-once path. A token
+        // that did renew is not retired here; its presentation is answered
+        // by the successor it renewed into.
         let staleFingerprint = stale.hashValue
         if liveRefreshToken == ClaudeCLITokenRefresher.refreshToken(in: stale),
            unsendableRefreshTokens[liveRefreshToken.hashValue] == nil,
+           renewedRefreshTokens[liveRefreshToken.hashValue] == nil,
            expiredCLILogins.contains(staleFingerprint)
             || indeterminateCLILogins.contains(staleFingerprint) {
             expiredCLILogins.remove(staleFingerprint)
@@ -2020,6 +2094,13 @@ class ClaudeAPIService: APIServiceProtocol {
                     baseCredentialFingerprint: fingerprint
                 )
             ]
+        // Recorded before anything below can bail out: a renewal whose
+        // access token cannot be read back still spent the refresh token.
+        if case .renewed(let refreshed) = outcome,
+           let spent = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON),
+           ClaudeCLITokenRefresher.refreshToken(in: refreshed) != spent {
+            renewedRefreshTokens[spent.hashValue] = refreshed
+        }
         guard
             case .renewed(let refreshed) = outcome,
             let accessToken = ClaudeCodeSyncService.shared.extractAccessToken(
