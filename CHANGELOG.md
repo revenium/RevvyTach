@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-09-12
+
 ### Added
 
 - **A health strip: every Claude account as one small bar, in one menu bar
@@ -90,6 +92,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Your menu bar item order is untouched — only the list inside the "+N"
   popover is ranked.
+
+### Fixed
+
+- **RevvyTach no longer signs a running Claude Code session out of its
+  account.** Claude Code's sign-in tokens are single-use: renewing one makes
+  the previous one invalid. When RevvyTach renewed an account's token while a
+  `claude` process was using that same account, the next call from that
+  process failed with an authentication error and the session had to sign in
+  again. RevvyTach now checks for a live `claude` on each account before
+  touching its token. Accounts with a live session are read-only: RevvyTach
+  adopts the token Claude Code already renewed, or reports the account as
+  asleep until it does. Idle accounts are renewed under the same lock files
+  Claude Code uses (`.oauth_refresh.lock` and `.storage-write.lock`), written
+  to the Keychain only, and only if the stored token is still the one
+  RevvyTach read. (#111)
 
 ## [4.2.0] - 2026-08-29
 
