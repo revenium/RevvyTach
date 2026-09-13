@@ -1466,6 +1466,136 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertNil(usage.claudeCodeAsleepSince)
     }
 
+    // MARK: - Refreshing under Claude Code's own lock
+
+    /// Claude Code takes `<configDir>/.oauth_refresh.lock` before it
+    /// refreshes. When it is holding it, it is refreshing the very token this
+    /// tick wanted — so this app skips the tick rather than queueing behind
+    /// it, and reads the result next time. Nothing is spent, and the
+    /// credential is not accused of anything.
+    func testARefreshIsSkippedWhileAnotherProcessHoldsTheLock() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { nil },
+            renewals: renewals
+        )
+        service.acquireRefreshLock = { _ in
+            throw ClaudeCodeStoreLock.AcquisitionFailure.heldByAnotherProcess
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(
+            usage.personalExtraUsageIssue,
+            .temporarilyUnavailable,
+            "A refresh somebody else is already performing is a reading that "
+                + "did not arrive, not a credential that failed"
+        )
+        XCTAssertTrue(renewals.writes.isEmpty)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "Nothing may be spent while another process holds the lock: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+    }
+
+    /// Claude Code re-reads its store immediately before it posts a refresh
+    /// and adopts a sibling's rotated token rather than spending one that has
+    /// already been replaced. Under the lock, this app makes the same check:
+    /// a store holding a different access token means somebody got there
+    /// first, and the endpoint is not called at all.
+    func testAStoreThatMovedOnUnderTheLockIsAdoptedInsteadOfSpent()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory(),
+            storeHasMovedOn: { _, _ in true }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(usage.personalCostUsed, 0)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "A token somebody already rotated must not be posted: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertTrue(
+            renewals.writes.contains {
+                $0.json == live && $0.rotatedFrom == nil
+            },
+            "The adopted login is not a rotation and must claim none"
+        )
+    }
+
     /// A genuinely signed-out account must still be reported as expired —
     /// this fix must not paper over a real expiry.
     func testAGenuinelySignedOutAccountStillReportsExpired() async throws {
@@ -2531,10 +2661,16 @@ final class PersonalExtraUsageTests: XCTestCase {
             logMessages.append($0)
         }
         let keychain = TerminalRenewalSecurityRunner(holding: expired)
+        // Claude Code's refresh and store-write locks are directories inside
+        // the account's configuration directory; a fixture account must not
+        // make one under the developer's real `~/.claude-accounts`.
+        let configurationDirectory = makeIsolatedClaudeConfigurationDirectory()
         let cliSync = ClaudeCodeSyncService(
             profileStore: store,
             systemCredentialsReader: { expired },
-            securityRunner: keychain
+            securityRunner: keychain,
+            credentialsFileDirectory: { _ in configurationDirectory },
+            liveProcessDetector: .stubbedIdle()
         )
         let service = ClaudeAPIService(
             profileManager: manager,
@@ -2553,6 +2689,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             },
             loggingService: loggingService
         )
+        useIsolatedClaudeCodeLocks(on: service, in: configurationDirectory)
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
         )
@@ -2609,10 +2746,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let renewals = RenewedCredentialRecorder()
         var logMessages: [String] = []
         let keychain = TerminalRenewalSecurityRunner(holding: expired)
+        // Claude Code's refresh and store-write locks are directories inside
+        // the account's configuration directory; a fixture account must not
+        // make one under the developer's real `~/.claude-accounts`.
+        let configurationDirectory = makeIsolatedClaudeConfigurationDirectory()
         let cliSync = ClaudeCodeSyncService(
             profileStore: store,
             systemCredentialsReader: { expired },
-            securityRunner: keychain
+            securityRunner: keychain,
+            credentialsFileDirectory: { _ in configurationDirectory },
+            liveProcessDetector: .stubbedIdle()
         )
         let service = ClaudeAPIService(
             profileManager: manager,
@@ -2631,6 +2774,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             },
             loggingService: LoggingService { logMessages.append($0) }
         )
+        useIsolatedClaudeCodeLocks(on: service, in: configurationDirectory)
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,

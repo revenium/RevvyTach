@@ -810,7 +810,12 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         let found = live.map {
             SecurityCommandResult(exitCode: 0, standardOutput: $0, standardError: "")
         } ?? SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        // Two reads, then the write. The second read is the
+        // compare-and-swap: under `.storage-write` the item is read again
+        // and the write only proceeds if the refresh token stored there is
+        // still the one that was posted to the server.
         runner.results = [
+            found,
             found,
             SecurityCommandResult(exitCode: 0, standardOutput: "", standardError: "")
         ]
@@ -1073,9 +1078,18 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             rotatedFrom: spent
         )
 
+        // Contract change: a second read sits between the ownership check
+        // and the write. That is the compare-and-swap, taken under Claude
+        // Code's own `.storage-write` lock — without it, two rotations
+        // racing each other both write, and the loser's token is the one
+        // left in the store.
         XCTAssertEqual(
             runner.verbs,
-            ["find-generic-password", "add-generic-password"],
+            [
+                "find-generic-password",
+                "find-generic-password",
+                "add-generic-password"
+            ],
             "The rotated token must be written back into Claude Code's login"
         )
         let read = try XCTUnwrap(runner.invocations.first)
@@ -1648,6 +1662,309 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         XCTAssertFalse(
             ClaudeCodeSyncService.shared.isTokenExpired(
                 credential(minutesFromNow: 4)
+            )
+        )
+    }
+
+    // MARK: - Compare-and-swap on the Keychain write
+
+    /// A refresh token is single-use. If the item no longer holds the one
+    /// that was posted to the server, somebody else's rotation landed first
+    /// and theirs is the live pair — writing ours would install a token the
+    /// server has already retired, which is this whole change's failure with
+    /// the roles reversed.
+    @MainActor
+    func testARotationIsAbandonedWhenAnotherProcessGotThereFirst() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput:
+                    #"{"claudeAiOauth":{"accessToken":"newer","refreshToken":"someone-elses","expiresAt":99999999999999}}"#,
+                standardError: ""
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertFalse(
+            runner.verbs.contains("add-generic-password"),
+            "Nothing may be written once the stored token has moved on: "
+                + "\(runner.verbs)"
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(logged.first).contains("rotated this login first"),
+            logged.description
+        )
+    }
+
+    /// The ordinary case: the item still holds the token that was posted, so
+    /// the rotated pair goes in.
+    @MainActor
+    func testARotationIsWrittenWhenTheStoredTokenIsStillOurs() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput:
+                    #"{"claudeAiOauth":{"accessToken":"old","refreshToken":"the-one-we-posted","expiresAt":1000}}"#,
+                standardError: ""
+            ),
+            SecurityCommandResult(exitCode: 0, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertTrue(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertEqual(
+            runner.verbs,
+            ["find-generic-password", "add-generic-password"],
+            "The item is re-read under the lock, then written"
+        )
+    }
+
+    /// Claude Code blanks the tokens in place when it retires a dead refresh
+    /// token. Refusing to write over that would leave the account signed out
+    /// with a perfectly good replacement pair in hand — so a blank token is
+    /// writable, exactly as it is for Claude Code.
+    @MainActor
+    func testARotationIsWrittenOverABlankedOutItem() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput: Self.blankedKeychainItem,
+                standardError: ""
+            ),
+            SecurityCommandResult(exitCode: 0, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertTrue(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertTrue(runner.verbs.contains("add-generic-password"))
+    }
+
+    /// A rotation has nothing to swap when there is no item, so it is
+    /// abandoned. Activating a profile carries no posted token and is a
+    /// different question — that one may create the item.
+    @MainActor
+    func testARotationIsAbandonedWhenTheItemHasGoneButActivationStillWrites()
+        throws
+    {
+        let rotationRunner = RecordingSecurityRunner()
+        rotationRunner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let rotation = makeChokepointService(
+            runner: rotationRunner,
+            directory: directory,
+            live: false
+        )
+        XCTAssertFalse(
+            try rotation.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertFalse(rotationRunner.verbs.contains("add-generic-password"))
+
+        let activationRunner = RecordingSecurityRunner()
+        let activation = makeChokepointService(
+            runner: activationRunner,
+            directory: try stagedConfigurationDirectory(containing: nil),
+            live: false
+        )
+        XCTAssertTrue(
+            try activation.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
+            )
+        )
+        XCTAssertEqual(activationRunner.verbs, ["add-generic-password"])
+    }
+
+    /// The write happens under Claude Code's own store-write lock, so a
+    /// write of theirs that is already in progress is not landed on.
+    @MainActor
+    func testAWriteWaitsForNobodyWhenTheStoreWriteLockIsHeld() throws {
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        // Stand in for Claude Code holding it: a fresh lock directory that
+        // nothing here will release.
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent(
+                ClaudeCodeSyncService.storageWriteLockName
+            ),
+            withIntermediateDirectories: false
+        )
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
+            )
+        )
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "Nothing may reach `security` while Claude Code is writing: "
+                + "\(runner.invocations)"
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(logged.first).contains("store-write lock"),
+            logged.description
+        )
+    }
+
+    /// The lock is taken and given back, not leaked. A lock directory left
+    /// behind would block Claude Code's own writes for fifteen seconds every
+    /// time this app wrote anything.
+    @MainActor
+    func testTheStoreWriteLockIsReleasedAfterTheWrite() throws {
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertTrue(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(
+                    ClaudeCodeSyncService.storageWriteLockName
+                ).path
+            )
+        )
+    }
+
+    // MARK: - Taking Claude Code's refresh lock
+
+    @MainActor
+    func testTheRefreshLockIsClaudeCodesOwnLockPathAndThresholds() throws {
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: RecordingSecurityRunner(),
+            directory: directory,
+            live: false
+        )
+
+        let lock = try service.acquireRefreshLock(forAccountNamed: "work")
+        defer { lock.release() }
+        XCTAssertEqual(
+            lock.url.path,
+            directory.appendingPathComponent(".oauth_refresh.lock").path
+        )
+        XCTAssertEqual(ClaudeCodeSyncService.refreshLockStaleAfter, 60)
+        XCTAssertEqual(ClaudeCodeSyncService.refreshLockRefreshEvery, 5)
+        XCTAssertEqual(ClaudeCodeSyncService.storageWriteLockStaleAfter, 15)
+
+        XCTAssertThrowsError(
+            try service.acquireRefreshLock(forAccountNamed: "work")
+        ) { error in
+            XCTAssertEqual(
+                error as? ClaudeCodeStoreLock.AcquisitionFailure,
+                .heldByAnotherProcess
+            )
+        }
+    }
+
+    /// The check Claude Code makes immediately before it posts a refresh: has
+    /// the store already moved past the token I was about to spend?
+    @MainActor
+    func testTheStoreIsSeenToHaveMovedOnWhenItsAccessTokenDiffers() throws {
+        let directory = try stagedConfigurationDirectory(containing: nil)
+
+        func service(
+            holding stored: String
+        ) -> ClaudeCodeSyncService {
+            let runner = RecordingSecurityRunner()
+            runner.results = [
+                SecurityCommandResult(
+                    exitCode: 0,
+                    standardOutput: stored,
+                    standardError: ""
+                )
+            ]
+            return makeChokepointService(
+                runner: runner,
+                directory: directory,
+                live: false
+            )
+        }
+
+        XCTAssertTrue(
+            service(holding: Self.fileLogin).storeHasMovedOn(
+                from: Self.keychainLogin,
+                forAccountNamed: "work"
+            )
+        )
+        XCTAssertFalse(
+            service(holding: Self.keychainLogin).storeHasMovedOn(
+                from: Self.keychainLogin,
+                forAccountNamed: "work"
             )
         )
     }

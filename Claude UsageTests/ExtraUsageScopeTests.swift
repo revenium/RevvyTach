@@ -735,6 +735,10 @@ final class ExtraUsageScopeTests: XCTestCase {
             profileManager: manager,
             systemCredentialsReader: { nil }
         )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
+        )
 
         StubPersonalUsageEndpointsURLProtocol.profileLookupResponses = [
             "token-a-wrong-org": (200, Data("""
@@ -807,6 +811,10 @@ final class ExtraUsageScopeTests: XCTestCase {
         let service = ClaudeAPIService(
             profileManager: manager,
             systemCredentialsReader: { nil }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
         )
 
         // First attempt: the lookup fails outright, landing the profile in
@@ -902,6 +910,10 @@ final class ExtraUsageScopeTests: XCTestCase {
             renewedCredentialWriter: { renewal, _ in
                 persisted.append(renewal.credentialsJSON)
             }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory()
         )
 
         // First refresh: the stored token has expired, so it is renewed and

@@ -425,6 +425,46 @@ struct UnreachableSecurityRunner: SecurityCommandRunning {
 /// bare closure so the validation in `saveRefreshedCredentials` — the guard
 /// that refuses to persist a blob carrying no token — still runs. Only the
 /// store underneath it changes.
+/// A throwaway stand-in for a linked account's configuration directory.
+///
+/// Claude Code's two cross-process locks — `.oauth_refresh.lock` and
+/// `.storage-write` — are directories inside the account's own configuration
+/// directory. A test that leaves that path on its production default creates
+/// both the lock and a fixture account directory under the developer's real
+/// `~/.claude-accounts`, which is exactly the class of accident this app's
+/// test suite is not allowed to have.
+nonisolated func makeIsolatedClaudeConfigurationDirectory() -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "revvytach-config-\(UUID().uuidString)",
+            isDirectory: true
+        )
+    try? FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+    )
+    return directory
+}
+
+/// Points a service's Claude Code refresh lock at a throwaway directory, and
+/// answers "the store has not moved on" unless a test says otherwise.
+nonisolated func useIsolatedClaudeCodeLocks(
+    on service: ClaudeAPIService,
+    in directory: URL,
+    storeHasMovedOn: @escaping (String, String?) -> Bool = { _, _ in false }
+) {
+    service.acquireRefreshLock = { _ in
+        try ClaudeCodeStoreLock.acquire(
+            at: directory.appendingPathComponent(
+                ClaudeCodeSyncService.refreshLockName
+            ),
+            staleAfter: ClaudeCodeSyncService.refreshLockStaleAfter,
+            refreshEvery: ClaudeCodeSyncService.refreshLockRefreshEvery
+        )
+    }
+    service.claudeCodeStoreHasMovedOn = storeHasMovedOn
+}
+
 @MainActor
 func makeIsolatedClaudeAPIService(
     profileManager: ProfileManager,
@@ -438,6 +478,7 @@ func makeIsolatedClaudeAPIService(
     /// a terminal happens to be open is not a suite.
     accountIsInUse: @escaping (String?) -> Bool = { _ in false }
 ) -> ClaudeAPIService {
+    let configurationDirectory = makeIsolatedClaudeConfigurationDirectory()
     let cliSync = ClaudeCodeSyncService(
         profileStore: store,
         // The write-back that keeps Claude Code's login working reads the
@@ -445,7 +486,11 @@ func makeIsolatedClaudeAPIService(
         // the developer's real `~/.claude/.credentials.json`; answering `nil`
         // keeps the whole seam inside the test.
         systemCredentialsReader: { nil },
-        securityRunner: UnreachableSecurityRunner()
+        securityRunner: UnreachableSecurityRunner(),
+        // Claude Code's store-write lock is a directory in here, so this
+        // must not be the developer's real account directory either.
+        credentialsFileDirectory: { _ in configurationDirectory },
+        liveProcessDetector: .stubbedIdle()
     )
     let service = ClaudeAPIService(
         profileManager: profileManager,
@@ -467,6 +512,7 @@ func makeIsolatedClaudeAPIService(
         loggingService: loggingService
     )
     service.accountIsInUse = accountIsInUse
+    useIsolatedClaudeCodeLocks(on: service, in: configurationDirectory)
     return service
 }
 

@@ -731,6 +731,89 @@ class ClaudeCodeSyncService {
         resolvedServiceName = nil
     }
 
+    // MARK: - Claude Code's cross-process locks
+
+    /// The lock Claude Code takes before it refreshes an OAuth token.
+    static let refreshLockName = ".oauth_refresh.lock"
+    /// The lock Claude Code takes before it writes its credential store.
+    static let storageWriteLockName = ".storage-write"
+    /// Claude Code's own staleness thresholds and heartbeat interval.
+    static let refreshLockStaleAfter: TimeInterval = 60
+    static let refreshLockRefreshEvery: TimeInterval = 5
+    static let storageWriteLockStaleAfter: TimeInterval = 15
+    static let storageWriteLockRefreshEvery: TimeInterval = 5
+
+    /// Takes the lock Claude Code takes before it refreshes a token.
+    ///
+    /// Claude Code acquires two locks here: this one and a legacy lock at
+    /// `<realpath(configDir)>.lock`. It acquires this one first, so holding
+    /// this one is enough to make Claude Code back off — it never reaches
+    /// the legacy lock while we have this. Taking only the lock that
+    /// actually excludes is one fewer path that can fail half-way and leave
+    /// a directory behind.
+    ///
+    /// Throws `heldByAnotherProcess` when someone else has it. The caller
+    /// skips the tick rather than waiting: the process holding it is
+    /// refreshing the very token we wanted, and its result is readable next
+    /// tick.
+    func acquireRefreshLock(
+        forAccountNamed accountName: String?
+    ) throws -> ClaudeCodeStoreLock {
+        try acquireLock(
+            named: Self.refreshLockName,
+            forAccountNamed: accountName,
+            staleAfter: Self.refreshLockStaleAfter,
+            refreshEvery: Self.refreshLockRefreshEvery
+        )
+    }
+
+    private func acquireLock(
+        named name: String,
+        forAccountNamed accountName: String?,
+        staleAfter: TimeInterval,
+        refreshEvery: TimeInterval
+    ) throws -> ClaudeCodeStoreLock {
+        let directory = credentialsDirectory(forAccountNamed: accountName)
+        // Claude Code creates the configuration directory before locking in
+        // it; a lock cannot be taken inside a directory that is not there.
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return try ClaudeCodeStoreLock.acquire(
+            at: directory.appendingPathComponent(name),
+            staleAfter: staleAfter,
+            refreshEvery: refreshEvery
+        )
+    }
+
+    /// Whether Claude Code's store has moved past the snapshot we were about
+    /// to spend.
+    ///
+    /// Claude Code re-reads its own store three times before it posts a
+    /// refresh, and adopts a sibling's rotated access token at any of them
+    /// rather than spending a token that has already been replaced. This is
+    /// that same check, asked at the same moment: under the refresh lock,
+    /// immediately before the endpoint call.
+    ///
+    /// Answers `false` when it cannot tell. Being wrong here costs one
+    /// wasted exchange; refusing to refresh on every unreadable store would
+    /// cost the numbers entirely.
+    func storeHasMovedOn(
+        from snapshot: String,
+        forAccountNamed accountName: String?
+    ) -> Bool {
+        guard let snapshotToken = extractAccessToken(from: snapshot) else {
+            return false
+        }
+        guard let lookup = try? claudeCodeKeychainLookup(
+            forAccountNamed: accountName
+        ), case .login(let current) = lookup,
+            let currentToken = extractAccessToken(from: current)
+        else { return false }
+        return currentToken != snapshotToken
+    }
+
     // MARK: - The one way into a Claude Code store
 
     /// Which of Claude Code's two stores a write is aimed at.
@@ -766,6 +849,15 @@ class ClaudeCodeSyncService {
         /// on, or its login is newer than ours. Someone else got there
         /// first; their write stands.
         case fileMovedOn
+        /// The Keychain item no longer holds the refresh token that was
+        /// posted to the server, so somebody else's rotation landed first
+        /// and theirs is the live one. Claude Code calls this adopting a
+        /// newer write, and abandons its own save exactly here.
+        case keychainMovedOn
+        /// `<configDir>/.storage-write` stayed held for every attempt.
+        /// Claude Code is writing its own store; ours would land on top of
+        /// a write still in progress.
+        case storeWriteLockBusy
     }
 
     /// The single chokepoint for every write into a Claude Code store.
@@ -884,18 +976,19 @@ class ClaudeCodeSyncService {
     ) throws -> Bool {
         switch store {
         case .keychain:
-            try performKeychainWrite(
+            let outcome = try writeKeychainUnderStoreLock(
                 credentialsJSON,
-                forAccountNamed: accountName
+                forAccountNamed: accountName,
+                expectedRefreshToken: expectedRefreshToken
             )
             logStoreDecision(
                 account: account,
                 live: false,
                 store: store,
                 purpose: purpose,
-                refusal: nil
+                refusal: outcome
             )
-            return true
+            return outcome == nil
         case .credentialsFile:
             guard let expectedRefreshToken else {
                 throw ClaudeCodeError.invalidJSON
@@ -946,6 +1039,12 @@ class ClaudeCodeSyncService {
         case .fileMovedOn:
             verdict = "refused: the credentials file changed underneath this "
                 + "write, so the other writer's login stands"
+        case .keychainMovedOn:
+            verdict = "refused: another process rotated this login first, so "
+                + "its token is the live one and ours is already spent"
+        case .storeWriteLockBusy:
+            verdict = "refused: Claude Code is holding the store-write lock, "
+                + "so its own write is still in progress"
         }
         let suffix = detail.map { " (\($0))" } ?? ""
         logCredentialDecision(
@@ -953,6 +1052,112 @@ class ClaudeCodeSyncService {
             + "store: \(store.rawValue), asked by: \(purpose) — "
             + "\(verdict)\(suffix)"
         )
+    }
+
+    /// Claude Code's own save: under `<configDir>/.storage-write`, re-read
+    /// the item, and write only if the refresh token stored there is still
+    /// the one that was posted to the server.
+    ///
+    /// This is the compare-and-swap that stops two programs' rotations from
+    /// overwriting each other. A refresh token is single-use: if the stored
+    /// token is no longer the one we posted, somebody else's rotation landed
+    /// first, theirs is the live pair, and writing ours would install a
+    /// token the server has already retired — which is the exact failure
+    /// this whole change exists to prevent, only with the roles reversed.
+    ///
+    /// Three attempts, 100 ms apart, matching Claude Code's own retry.
+    /// Retries exist for a busy store-write lock and for a Keychain that
+    /// refuses one write; a token that has genuinely moved on is abandoned
+    /// on the first look, because retrying cannot make it come back.
+    ///
+    /// `expectedRefreshToken` is `nil` for a write that was not derived from
+    /// a spend — activating a profile, say. There is nothing to compare
+    /// then, and a missing item is created rather than refused.
+    ///
+    /// - Returns: `nil` when the bytes were written, or the reason they were
+    ///   not.
+    private func writeKeychainUnderStoreLock(
+        _ credentialsJSON: String,
+        forAccountNamed accountName: String?,
+        expectedRefreshToken: String?
+    ) throws -> ClaudeCodeWriteRefusal? {
+        let attempts = 3
+        // Tracked apart from lock failures: a Keychain that refused the
+        // write is a real error the caller has to see, while a busy lock is
+        // a refusal. Sharing one variable let a late lock failure swallow an
+        // earlier write failure.
+        var lastWriteError: Error?
+
+        for attempt in 0..<attempts {
+            if attempt > 0 {
+                Thread.sleep(forTimeInterval: 0.1 * Double(attempt))
+            }
+
+            let storeLock: ClaudeCodeStoreLock
+            do {
+                storeLock = try acquireLock(
+                    named: Self.storageWriteLockName,
+                    forAccountNamed: accountName,
+                    staleAfter: Self.storageWriteLockStaleAfter,
+                    refreshEvery: Self.storageWriteLockRefreshEvery
+                )
+            } catch {
+                continue
+            }
+            defer { storeLock.release() }
+
+            if let expectedRefreshToken,
+               let refusal = compareAndSwapVerdict(
+                   forAccountNamed: accountName,
+                   expectedRefreshToken: expectedRefreshToken
+               ) {
+                return refusal
+            }
+
+            do {
+                try performKeychainWrite(
+                    credentialsJSON,
+                    forAccountNamed: accountName
+                )
+                return nil
+            } catch {
+                lastWriteError = error
+            }
+        }
+
+        if let lastWriteError { throw lastWriteError }
+        return .storeWriteLockBusy
+    }
+
+    /// `nil` means "go ahead"; anything else is the reason not to.
+    ///
+    /// A blank refresh token is writable. That is the shape Claude Code
+    /// leaves when it retires a dead one, and refusing to write over it
+    /// would leave the account signed out with a perfectly good replacement
+    /// pair in hand. An item with no Claude Code record at all is refused,
+    /// as Claude Code refuses it: there is nothing to swap.
+    private func compareAndSwapVerdict(
+        forAccountNamed accountName: String?,
+        expectedRefreshToken: String
+    ) -> ClaudeCodeWriteRefusal? {
+        let lookup: ClaudeCodeKeychainLookup
+        do {
+            lookup = try claudeCodeKeychainLookup(forAccountNamed: accountName)
+        } catch {
+            // Cannot prove the stored token is still ours. Fail closed.
+            return .keychainMovedOn
+        }
+
+        switch lookup {
+        case .loggedOut:
+            return nil
+        case .noItem:
+            return .keychainMovedOn
+        case .login(let current):
+            let stored = ClaudeCLITokenRefresher.refreshToken(in: current)
+            guard let stored, !stored.isEmpty else { return nil }
+            return stored == expectedRefreshToken ? nil : .keychainMovedOn
+        }
     }
 
     /// Writes Claude Code credentials to system Keychain using security command.
@@ -1406,7 +1611,11 @@ class ClaudeCodeSyncService {
                         renewed,
                         forAccountNamed: accountName,
                         store: .keychain,
-                        purpose: "mirroring back a token this app rotated"
+                        purpose: "mirroring back a token this app rotated",
+                        // The check above is a cheap early out; this is the
+                        // one that counts, because it happens under
+                        // `.storage-write` with the item re-read.
+                        expectedRefreshToken: spentRefreshToken
                     ) {
                         LoggingService.shared.log(
                             "Mirrored the rotated token back into Claude Code's own login "
