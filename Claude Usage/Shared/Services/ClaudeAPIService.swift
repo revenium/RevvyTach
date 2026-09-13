@@ -923,11 +923,17 @@ class ClaudeAPIService: APIServiceProtocol {
     /// for the same reason as the map above.
     private var spentRefreshTokens: Set<Int> = []
 
-    /// Refresh tokens this run received from those same renewals, keyed the
-    /// same way. The other half of `storeIsBehindThisApp(for:presenting:)`:
-    /// a copy carrying one is this app's own, and nobody else can have spent
-    /// it without this run knowing.
-    private var issuedRefreshTokens: Set<Int> = []
+    /// Which refresh token each of those renewals issued, from the spent
+    /// token's hash to the issued token's hash — hashes only, never a
+    /// credential.
+    ///
+    /// It exists for one question, `storeIsBehindThisApp(for:presenting:)`:
+    /// is the presented copy a descendant, through this app's own rotations,
+    /// of the login the store is holding? It must never be used to hand a
+    /// credential to anyone. That is the successor handoff this replaced,
+    /// which gave profiles logins they never stored and logins of accounts
+    /// they were not linked to.
+    private var issuedRefreshTokenBySpent: [Int: Int] = [:]
 
     /// Whether the credential carries a refresh token this run already
     /// spent on a renewal that worked.
@@ -939,8 +945,8 @@ class ClaudeAPIService: APIServiceProtocol {
     }
 
     /// Whether Claude Code's store for the profile's account is holding a
-    /// login whose refresh token this run already renewed away, while the
-    /// presented copy is one of this run's own renewals.
+    /// login this run already renewed away, and the presented copy descends
+    /// from that login through this run's own renewals.
     ///
     /// Asked only under the refresh lock, after the store comparison said
     /// `.movedOn`, and read through the same account-scoped reader, so it is
@@ -948,13 +954,16 @@ class ClaudeAPIService: APIServiceProtocol {
     /// that state is behind this app, not ahead: the only way it holds a
     /// token we renewed is that our write-back did not land.
     ///
-    /// Both halves are required. A presented copy this app did not renew
-    /// into — an older snapshot another program already rotated — keeps the
-    /// ordinary `.movedOn` answer, because sending it is exactly the reuse
-    /// that comparison exists to prevent. So does anything unreadable or
-    /// tokenless, and a profile with no linked account name: the unscoped
-    /// read could be another account's item, and this answer permits a
-    /// spend.
+    /// Descent is required, not merely "ours on both sides": following the
+    /// store's token forward through `issuedRefreshTokenBySpent` must arrive
+    /// at exactly the presented token, which must itself still be unspent.
+    /// Two unrelated renewals prove nothing about each other, and sending a
+    /// copy the store's login did not lead to is exactly the reuse the
+    /// comparison exists to prevent. Several hops still count: every link is
+    /// a rotation this app made and nobody else holds. Anything unreadable
+    /// or tokenless keeps the ordinary `.movedOn` answer, and so does a
+    /// profile with no linked account name: the unscoped read could be
+    /// another account's item, and this answer permits a spend.
     private func storeIsBehindThisApp(
         for profile: Profile,
         presenting credentialsJSON: String
@@ -962,13 +971,23 @@ class ClaudeAPIService: APIServiceProtocol {
         guard let presented = ClaudeCLITokenRefresher.refreshToken(
                   in: credentialsJSON
               ),
-              issuedRefreshTokens.contains(presented.hashValue),
               !spentRefreshTokens.contains(presented.hashValue),
               let accountName = profile.cliAccountName,
               let store = try? systemCredentialsReader(accountName),
-              ClaudeCodeSyncService.carriesLogin(store)
+              ClaudeCodeSyncService.carriesLogin(store),
+              let storeToken = ClaudeCLITokenRefresher.refreshToken(in: store)
         else { return false }
-        return refreshTokenWasRenewedAway(in: store)
+        // Bounded by the visited set: only rotated tokens are recorded, so a
+        // cycle cannot occur, but a walk that could never end is not one to
+        // run under Claude Code's lock on that promise alone.
+        var current = storeToken.hashValue
+        var visited: Set<Int> = []
+        while visited.insert(current).inserted,
+              let issued = issuedRefreshTokenBySpent[current] {
+            if issued == presented.hashValue { return true }
+            current = issued
+        }
+        return false
     }
 
     /// What this run already knows about renewing a credential: refused,
@@ -2174,7 +2193,7 @@ class ClaudeAPIService: APIServiceProtocol {
            let issued = ClaudeCLITokenRefresher.refreshToken(in: refreshed),
            issued != spent {
             spentRefreshTokens.insert(spent.hashValue)
-            issuedRefreshTokens.insert(issued.hashValue)
+            issuedRefreshTokenBySpent[spent.hashValue] = issued.hashValue
         }
         guard
             case .renewed(let refreshed) = outcome,

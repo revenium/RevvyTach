@@ -2653,6 +2653,134 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    /// Two renewals this app made prove nothing about each other. With the
+    /// store left holding the first chain's spent login, a copy from a second,
+    /// unrelated chain is not that login's descendant, and the store having
+    /// "moved on" from it is not evidence it is current. It gets the ordinary
+    /// `.movedOn` answer: one lock, and nothing sent.
+    func testAStoreLeftBehindByOneRenewalNeverLicensesACopyFromAnotherChain()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            issuedRefreshToken: "chain-a-refresh"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+        _ = try await fetchMemberUsage(scene)
+
+        // A second chain, renewed while the store held its own login.
+        let chainB = Self.signInAgainJSON(expiresAt: 1_000)
+        var onChainB = scene.profile
+        onChainB.cliCredentialsJSON = chainB
+        scene.store.copy = chainB
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            issuedRefreshToken: "chain-b-refresh"
+        )
+        _ = try await scene.service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: onChainB
+        )
+        XCTAssertEqual(tokenRequestCount, 1)
+        let chainBRenewal = try XCTUnwrap(
+            scene.renewals.writes.last { $0.rotatedFrom == chainB }?.json
+        )
+
+        // The store is back on chain A's spent login; the profile presents
+        // chain B's renewal once its hours are up.
+        scene.store.copy = stored
+        var later = scene.profile
+        later.cliCredentialsJSON = try Self.expiring(chainBRenewal, at: 1_000)
+        let locksBefore = scene.store.locks
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        _ = try await scene.service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: later
+        )
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            0,
+            "a copy the store's login never led to must not be sent: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(
+            scene.store.locks - locksBefore,
+            1,
+            "only the ordinary moved-on lock"
+        )
+    }
+
+    /// Several hops still license the renewal: the store holds the original
+    /// login, and this app has renewed twice since, each link a rotation it
+    /// made and nobody else holds. The newest copy is renewed once.
+    func testAStoreLeftBehindByTwoRenewalsStillRenewsTheNewestCopyOnce()
+        async throws
+    {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            issuedRefreshToken: "hop-1-refresh"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+        _ = try await fetchMemberUsage(scene)
+        let firstHop = try Self.expiring(
+            try XCTUnwrap(scene.renewals.writes.last?.json),
+            at: 1_000
+        )
+
+        var onFirstHop = scene.profile
+        onFirstHop.cliCredentialsJSON = firstHop
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            issuedRefreshToken: "hop-2-refresh"
+        )
+        _ = try await scene.service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: onFirstHop
+        )
+        let secondHop = try Self.expiring(
+            try XCTUnwrap(
+                scene.renewals.writes.last { $0.rotatedFrom == firstHop }?.json
+            ),
+            at: 1_000
+        )
+
+        var onSecondHop = scene.profile
+        onSecondHop.cliCredentialsJSON = secondHop
+        let locksBefore = scene.store.locks
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            issuedRefreshToken: "hop-3-refresh"
+        )
+        for tick in 1...2 {
+            let usage = try await scene.service.fetchUsageData(
+                sessionKey: "sk-ant-sid01-fixture-session-key-value",
+                organizationId: teamOrganizationID,
+                profile: onSecondHop
+            )
+            XCTAssertNil(usage.personalExtraUsageIssue, "tick \(tick)")
+        }
+
+        XCTAssertEqual(
+            tokenRequestCount,
+            1,
+            "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        XCTAssertEqual(scene.store.locks - locksBefore, 1)
+        XCTAssertTrue(
+            scene.renewals.writes.contains { $0.rotatedFrom == secondHop }
+        )
+    }
+
     /// The same promise when nobody was left waiting for the answer. The
     /// verdict on a blob is recorded by the caller, and a caller the app
     /// cancelled mid-exchange records nothing, so the next refresh found no
@@ -6523,6 +6651,9 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         tokenRefreshStatusCode: Int = 200,
         oauthProfileStatusCode: Int = 200,
         tokenRefreshErrorCode: String = "invalid_grant",
+        // The refresh token a successful renewal hands back. Distinct values
+        // keep two renewals in one test from issuing the same token.
+        issuedRefreshToken: String = "renewed-refresh",
         memberExtraUsageEnabled: Bool = true,
         // What claude.ai answers for the organization-scoped extra-usage
         // endpoint. Two of the maintainer's organizations answer 200 with a
@@ -6619,7 +6750,8 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
                 Data(
                     tokenBody(
                         for: tokenRefreshStatusCode,
-                        errorCode: tokenRefreshErrorCode
+                        errorCode: tokenRefreshErrorCode,
+                        issuedRefreshToken: issuedRefreshToken
                     ).utf8
                 )
             )
@@ -6631,14 +6763,15 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
 
     private static func tokenBody(
         for statusCode: Int,
-        errorCode: String = "invalid_grant"
+        errorCode: String = "invalid_grant",
+        issuedRefreshToken: String = "renewed-refresh"
     ) -> String {
         guard statusCode == 200 else {
             return #"{"error":"\#(errorCode)"}"#
         }
         return """
         {"access_token":"renewed-access",
-         "refresh_token":"renewed-refresh",
+         "refresh_token":"\(issuedRefreshToken)",
          "expires_in":28800}
         """
     }
