@@ -36,13 +36,15 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     /// trips a runtime allocator bug that crashes the host.
     @MainActor
     private func makeService(
-        runner: RecordingSecurityRunner
+        runner: RecordingSecurityRunner,
+        liveProcessDetector: LiveClaudeProcessDetector = .stubbedIdle()
     ) -> ClaudeCodeSyncService {
         _ = retain(runner)
         return retain(
             ClaudeCodeSyncService(
                 profileStore: retain(makeIsolatedProfileStore()),
-                securityRunner: runner
+                securityRunner: runner,
+                liveProcessDetector: liveProcessDetector
             )
         )
     }
@@ -58,7 +60,8 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         systemCredentialsReader: (() throws -> String?)? = nil,
         keychainCredentialsReader: ((String?) throws -> String?)? = nil,
         credentialsFileDirectory: ((String?) -> URL)? = nil,
-        credentialLogSink: ((String) -> Void)? = nil
+        credentialLogSink: ((String) -> Void)? = nil,
+        liveProcessDetector: LiveClaudeProcessDetector = .stubbedIdle()
     ) -> ClaudeCodeSyncService {
         _ = retain(runner)
         // Apply tests provide a system-reader seam and must not fall through
@@ -78,8 +81,29 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
                 keychainCredentialsReader: itemReader,
                 securityRunner: runner,
                 credentialsFileDirectory: fileDirectory,
-                credentialLogSink: credentialLogSink
+                credentialLogSink: credentialLogSink,
+                liveProcessDetector: liveProcessDetector
             )
+        )
+    }
+
+    /// The one call every production write now goes through. Tests that are
+    /// about the Keychain mechanics — `-U`, the delete-then-add recovery,
+    /// the stderr in the error — call it with an idle account, because the
+    /// low-level primitive behind it is private on purpose.
+    @MainActor
+    @discardableResult
+    private func write(
+        _ credentialsJSON: String,
+        with service: ClaudeCodeSyncService,
+        forAccountNamed accountName: String? = nil,
+        purpose: String = "a test"
+    ) throws -> Bool {
+        try service.commitClaudeCodeStoreWrite(
+            credentialsJSON,
+            forAccountNamed: accountName,
+            store: .keychain,
+            purpose: purpose
         )
     }
 
@@ -96,8 +120,13 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     /// the user logged out of Claude Code. `-U` already updates in place.
     @MainActor
     func testSuccessfulWriteNeverDeletesTheExistingItem() throws {
+        // Contract change: the write now enters through
+        // `commitClaudeCodeStoreWrite`, the one chokepoint, rather than
+        // through a public primitive any caller could reach. What is
+        // asserted about the Keychain mechanics is unchanged.
         let runner = RecordingSecurityRunner()
-        try makeService(runner: runner).writeSystemCredentials(credentials)
+        let service = makeService(runner: runner)
+        XCTAssertTrue(try write(credentials, with: service))
 
         XCTAssertEqual(runner.verbs, ["add-generic-password"])
         XCTAssertFalse(
@@ -108,8 +137,10 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
 
     @MainActor
     func testWriteUpdatesInPlace() throws {
+        // Contract change: same assertion, now made of the write that goes
+        // through the one chokepoint.
         let runner = RecordingSecurityRunner()
-        try makeService(runner: runner).writeSystemCredentials(credentials)
+        XCTAssertTrue(try write(credentials, with: makeService(runner: runner)))
 
         let add = try XCTUnwrap(runner.invocations.first)
         XCTAssertTrue(add.contains("-U"), "The add must update an existing item")
@@ -130,9 +161,10 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             )
         ]
 
-        XCTAssertThrowsError(
-            try makeService(runner: runner).writeSystemCredentials(credentials)
-        )
+        // Contract change: the failure still surfaces as a throw, and now
+        // surfaces it through the one chokepoint.
+        let service = makeService(runner: runner)
+        XCTAssertThrowsError(try write(credentials, with: service))
         XCTAssertFalse(runner.verbs.contains("delete-generic-password"))
     }
 
@@ -149,9 +181,11 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             )
         ]
 
-        XCTAssertThrowsError(
-            try makeService(runner: runner).writeSystemCredentials(credentials)
-        ) { error in
+        // Contract change: routed through the one chokepoint; the error the
+        // caller sees is still the Keychain's own, exit code and stderr
+        // intact.
+        let service = makeService(runner: runner)
+        XCTAssertThrowsError(try write(credentials, with: service)) { error in
             guard case ClaudeCodeError.keychainWriteFailed(
                 let exitCode,
                 let message
@@ -178,7 +212,9 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             SecurityCommandResult(exitCode: 0, standardOutput: "", standardError: "")
         ]
 
-        try makeService(runner: runner).writeSystemCredentials(credentials)
+        // Contract change: routed through the one chokepoint. The
+        // duplicate-item recovery is unchanged.
+        XCTAssertTrue(try write(credentials, with: makeService(runner: runner)))
 
         XCTAssertEqual(
             runner.verbs,
@@ -918,8 +954,18 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         XCTAssertTrue(logs.contains { $0.contains("Could not parse Claude Code's credentials file") })
     }
 
+    /// Contract change: an account with a Keychain item now has its file
+    /// left alone, where this test used to require both stores to be
+    /// updated.
+    ///
+    /// Claude Code reads the Keychain item and never looks at the file
+    /// behind it — it writes the file only when the Keychain write fails
+    /// outright, and deletes one when it writes the other. Keeping both
+    /// current was this app inventing a state Claude Code does not produce:
+    /// two copies of one login, each holding a refresh token that the other
+    /// copy's owner can rotate away.
     @MainActor
-    func testRotatedTokenInBothStoresUpdatesBoth() throws {
+    func testAFileIsLeftAloneWhenTheAccountKeepsItsLoginInTheKeychain() throws {
         let directory = try makeTemporaryCredentialsDirectory()
         let spent = credentials(refreshToken: "shared", expiresAtMillis: 1_000)
         try writeCredentialsFile(spent, in: directory)
@@ -935,7 +981,12 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         )
 
         XCTAssertEqual(runner.verbs, ["add-generic-password"])
-        XCTAssertTrue(try String(contentsOf: credentialsFile(in: directory)).contains("rotated"))
+        XCTAssertEqual(
+            try String(contentsOf: credentialsFile(in: directory)),
+            spent,
+            "The Keychain is the store Claude Code reads; the file must not "
+                + "become a second copy of the same login"
+        )
     }
 
     @MainActor
@@ -1211,6 +1262,393 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             runner.invocations.isEmpty,
             "With no linked account there is no CLI login to repair: "
                 + "\(runner.invocations)"
+        )
+    }
+
+    // MARK: - Reading the login the way Claude Code reads it
+
+    /// A staged configuration directory with a `.credentials.json` in it.
+    private func stagedConfigurationDirectory(
+        containing fileLogin: String?
+    ) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        if let fileLogin {
+            try Data(fileLogin.utf8).write(
+                to: directory.appendingPathComponent(".credentials.json")
+            )
+        }
+        return directory
+    }
+
+    private static let keychainLogin =
+        #"{"claudeAiOauth":{"accessToken":"from-keychain","refreshToken":"r1","expiresAt":99999999999999}}"#
+    private static let fileLogin =
+        #"{"claudeAiOauth":{"accessToken":"from-file","refreshToken":"r2","expiresAt":99999999999999}}"#
+    /// What Claude Code leaves behind when it retires a dead refresh token.
+    private static let blankedKeychainItem =
+        #"{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"max"}}"#
+
+    /// Claude Code reads its Keychain item first and consults the file for
+    /// exactly one reason: no item. A file sitting behind a working item is
+    /// never read, however fresh it looks.
+    @MainActor
+    func testAKeychainLoginWinsAndTheFileIsNeverRead() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput: Self.keychainLogin,
+                standardError: ""
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        XCTAssertEqual(
+            try service.readSystemCredentials(),
+            Self.keychainLogin
+        )
+    }
+
+    /// The regression that made this app and the CLI look at two different
+    /// token chains for one account: a blank Keychain item means the account
+    /// is signed out, and the file behind it must not be resurrected.
+    @MainActor
+    func testABlankKeychainItemIsLoggedOutAndTheFileIsNotConsulted() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput: Self.blankedKeychainItem,
+                standardError: ""
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        XCTAssertNil(try service.readSystemCredentials())
+    }
+
+    /// Exit 44 is `security` saying the item is not there, and it is the one
+    /// condition that sends Claude Code — and now this app — to the file.
+    @MainActor
+    func testOnlyAMissingKeychainItemSendsTheReadToTheFile() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        XCTAssertEqual(try service.readSystemCredentials(), Self.fileLogin)
+    }
+
+    /// No item and no file is "not signed in", not an error.
+    @MainActor
+    func testNoKeychainItemAndNoFileReadsAsNoLogin() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        XCTAssertNil(try service.readSystemCredentials())
+    }
+
+    /// A Keychain that refuses the read is a failure, not an absence. The
+    /// old chain could quietly answer with an expired file login here, which
+    /// is how the app ended up holding a different token chain from the CLI.
+    @MainActor
+    func testARefusedKeychainReadThrowsRatherThanFallingBackToTheFile() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 36,
+                standardOutput: "",
+                standardError: "security: User interaction is not allowed."
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        let service = makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory }
+        )
+
+        XCTAssertThrowsError(try service.readSystemCredentials())
+    }
+
+    // MARK: - The one write chokepoint
+
+    @MainActor
+    private func makeChokepointService(
+        runner: RecordingSecurityRunner,
+        directory: URL,
+        live: Bool,
+        sink: @escaping (String) -> Void = { _ in }
+    ) -> ClaudeCodeSyncService {
+        let detector = live
+            ? LiveClaudeProcessDetector(
+                source: StubRunningProcessSource(processes: [
+                    .claude(configurationDirectory: directory.path)
+                ]),
+                defaultConfigurationDirectory: "/tmp/no-such-claude-home",
+                log: { _ in }
+            )
+            : LiveClaudeProcessDetector.stubbedIdle()
+        return makeService(
+            runner: runner,
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in directory },
+            credentialLogSink: sink,
+            liveProcessDetector: detector
+        )
+    }
+
+    /// The rule the whole fix exists for. A `claude` process holds its
+    /// account's refresh token in memory; Anthropic rotates that token on
+    /// every use, so writing — or spending — it is what leaves that process
+    /// asking the person to sign in to an account they never left.
+    @MainActor
+    func testAWriteIsRefusedWhileAClaudeProcessIsUsingTheAccount() throws {
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: true,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
+            )
+        )
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "Nothing may reach `security` for a live account: \(runner.invocations)"
+        )
+        // R6: the refusal says which account, that it is in use, and why.
+        let line = try XCTUnwrap(logged.first)
+        XCTAssertTrue(line.contains("work"), line)
+        XCTAssertTrue(line.contains("in use by a running claude"), line)
+        XCTAssertTrue(line.contains("refused"), line)
+        XCTAssertFalse(
+            line.contains("from-keychain"),
+            "No token value may reach a log line: \(line)"
+        )
+    }
+
+    /// An idle account is written, and the log says so in the same shape.
+    @MainActor
+    func testAnIdleAccountIsWrittenAndTheDecisionIsLogged() throws {
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertTrue(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
+            )
+        )
+        XCTAssertEqual(runner.verbs, ["add-generic-password"])
+        let line = try XCTUnwrap(logged.first)
+        XCTAssertTrue(line.contains("idle"), line)
+        XCTAssertTrue(line.contains("wrote it"), line)
+    }
+
+    /// Claude Code reads the Keychain item and never looks at the file
+    /// behind it. Writing both would leave two copies of one login that
+    /// nothing reconciles and either side can rotate.
+    @MainActor
+    func testAFileWriteIsRefusedWhenTheAccountHasAKeychainItem() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput: Self.keychainLogin,
+                standardError: ""
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .credentialsFile,
+                purpose: "a test",
+                expectedRefreshToken: "r2"
+            )
+        )
+        let contents = try String(
+            contentsOf: directory.appendingPathComponent(".credentials.json"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(contents, Self.fileLogin, "The file must be untouched")
+        XCTAssertTrue(
+            try XCTUnwrap(logged.first).contains("refused"),
+            logged.description
+        )
+    }
+
+    /// Installing a plaintext credential store on a machine that chose not to
+    /// have one is not this app's decision to make.
+    @MainActor
+    func testAMissingCredentialsFileIsNeverCreated() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .credentialsFile,
+                purpose: "a test",
+                expectedRefreshToken: "r2"
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(
+                    ".credentials.json"
+                ).path
+            )
+        )
+    }
+
+    /// The compare-and-swap survives the move behind the chokepoint: a file
+    /// that no longer holds the refresh token this write was based on
+    /// belongs to whoever got there first.
+    @MainActor
+    func testAFileWriteIsAbandonedWhenItsRefreshTokenHasMovedOn() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(
+            containing: Self.fileLogin
+        )
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .credentialsFile,
+                purpose: "a test",
+                expectedRefreshToken: "some-other-token"
+            )
+        )
+        let contents = try String(
+            contentsOf: directory.appendingPathComponent(".credentials.json"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(contents, Self.fileLogin)
+    }
+
+    // MARK: - Claude Code's refresh timing
+
+    /// Claude Code refreshes five minutes before expiry. Waiting for the
+    /// expiry itself guarantees a window where every request fails while a
+    /// renewal is still in flight.
+    @MainActor
+    func testATokenWithinFiveMinutesOfExpiryIsDueForRefresh() {
+        let service = makeService(runner: RecordingSecurityRunner())
+        // A realistic epoch: `extractTokenExpiry` reads values above 1e12
+        // as milliseconds, which is the shape Claude Code actually stores.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        func credential(minutesFromNow: Double) -> String {
+            let expiry = now.addingTimeInterval(minutesFromNow * 60)
+            return credentials(
+                expiresAtMillis: expiry.timeIntervalSince1970 * 1000
+            )
+        }
+
+        XCTAssertFalse(
+            service.isTokenDueForRefresh(credential(minutesFromNow: 10), now: now)
+        )
+        XCTAssertTrue(
+            service.isTokenDueForRefresh(credential(minutesFromNow: 4), now: now)
+        )
+        XCTAssertTrue(
+            service.isTokenDueForRefresh(credential(minutesFromNow: -1), now: now)
+        )
+        // Being due is not being expired: a token with four minutes left
+        // still authenticates, which is what a live account falls back on.
+        XCTAssertFalse(
+            ClaudeCodeSyncService.shared.isTokenExpired(
+                credential(minutesFromNow: 4)
+            )
         )
     }
 }
