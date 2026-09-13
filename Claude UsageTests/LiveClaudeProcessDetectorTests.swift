@@ -88,16 +88,6 @@ extension LiveClaudeProcessDetector {
             log: { _ in }
         )
     }
-
-    /// A detector that reports every account as live.
-    static func stubbedAlwaysLive() -> LiveClaudeProcessDetector {
-        LiveClaudeProcessDetector(
-            source: StubRunningProcessSource(
-                failure: RunningProcessSourceError.enumerationFailed("stub")
-            ),
-            log: { _ in }
-        )
-    }
 }
 
 /// The guard the whole token-race fix rests on: before spending an account's

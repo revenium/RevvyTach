@@ -394,37 +394,6 @@ struct UnreachableSecurityRunner: SecurityCommandRunning {
     }
 }
 
-/// A `ClaudeAPIService` with **all three** of its credential-store seams
-/// pointed at `store`.
-///
-/// Prefer this over `ClaudeAPIService(profileManager:systemCredentialsReader:)`
-/// in every test. Each of the three defaults resolves to the developer's own
-/// credentials, and injecting only the obvious one is not enough:
-///
-/// - `profileManager` resolves to `.shared`.
-/// - `systemCredentialsReader` resolves to
-///   `ClaudeCodeSyncService.shared.readSystemCredentials`, which reads the
-///   real `~/.claude/.credentials.json` and shells out to `security
-///   find-generic-password`.
-/// - `renewedCredentialWriter` resolves to
-///   `ClaudeCodeSyncService.shared.saveRefreshedCredentials`, which writes
-///   through `ProfileStore.shared` — and, when a refresh token was spent, can
-///   go on to write Claude Code's own Keychain item through
-///   `/usr/bin/security`.
-///
-/// The third one is the expensive one, and it is the one with no argument at
-/// the call site to hint that it exists. Persisting a renewed token loads
-/// every profile in `ProfileStore.shared` first, which reads every stored
-/// secret out of the developer's login Keychain — fourteen macOS consent
-/// dialogs on the maintainer's machine, from a single test. The renewal
-/// failure is swallowed by design (`ClaudeAPIService` keeps a successful
-/// renewal even when it cannot be persisted), so the cost showed up only as
-/// dialogs, never as a test failure.
-///
-/// The writer is routed through a real `ClaudeCodeSyncService` rather than a
-/// bare closure so the validation in `saveRefreshedCredentials` — the guard
-/// that refuses to persist a blob carrying no token — still runs. Only the
-/// store underneath it changes.
 /// A throwaway stand-in for a linked account's configuration directory.
 ///
 /// Claude Code's two cross-process locks — `.oauth_refresh.lock` and
@@ -466,6 +435,37 @@ nonisolated func useIsolatedClaudeCodeLocks(
     service.claudeCodeStoreComparison = storeComparison
 }
 
+/// A `ClaudeAPIService` with **all three** of its credential-store seams
+/// pointed at `store`.
+///
+/// Prefer this over `ClaudeAPIService(profileManager:systemCredentialsReader:)`
+/// in every test. Each of the three defaults resolves to the developer's own
+/// credentials, and injecting only the obvious one is not enough:
+///
+/// - `profileManager` resolves to `.shared`.
+/// - `systemCredentialsReader` resolves to
+///   `ClaudeCodeSyncService.shared.readSystemCredentials`, which reads the
+///   real `~/.claude/.credentials.json` and shells out to `security
+///   find-generic-password`.
+/// - `renewedCredentialWriter` resolves to
+///   `ClaudeCodeSyncService.shared.saveRefreshedCredentials`, which writes
+///   through `ProfileStore.shared` — and, when a refresh token was spent, can
+///   go on to write Claude Code's own Keychain item through
+///   `/usr/bin/security`.
+///
+/// The third one is the expensive one, and it is the one with no argument at
+/// the call site to hint that it exists. Persisting a renewed token loads
+/// every profile in `ProfileStore.shared` first, which reads every stored
+/// secret out of the developer's login Keychain — fourteen macOS consent
+/// dialogs on the maintainer's machine, from a single test. The renewal
+/// failure is swallowed by design (`ClaudeAPIService` keeps a successful
+/// renewal even when it cannot be persisted), so the cost showed up only as
+/// dialogs, never as a test failure.
+///
+/// The writer is routed through a real `ClaudeCodeSyncService` rather than a
+/// bare closure so the validation in `saveRefreshedCredentials` — the guard
+/// that refuses to persist a blob carrying no token — still runs. Only the
+/// store underneath it changes.
 @MainActor
 func makeIsolatedClaudeAPIService(
     profileManager: ProfileManager,

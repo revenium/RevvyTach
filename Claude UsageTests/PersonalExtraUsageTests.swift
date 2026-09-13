@@ -1466,6 +1466,132 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertNil(usage.claudeCodeAsleepSince)
     }
 
+    /// A stored snapshot with no refresh token is not the last word on the
+    /// account. Claude Code's own store may have been signed in again since
+    /// that snapshot was taken, and reading it costs nothing and spends
+    /// nothing. Declaring the account asleep without looking denied it a
+    /// perfectly good login for the rest of the run, while the notice
+    /// promised it would wake by itself.
+    func testAStoredLoginWithNoRefreshTokenStillAdoptsTheLiveOne()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.accessTokenOnlyCredentialsJSON(
+                expiresAt: 1_000
+            ),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals,
+            accountIsInUse: { _ in false }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(
+            usage.personalExtraUsageIssue,
+            "the store held a usable login, so nothing is asleep"
+        )
+        XCTAssertNil(usage.claudeCodeAsleepSince)
+        XCTAssertEqual(usage.personalCostLimit, 5_000)
+        XCTAssertTrue(
+            renewals.writes.contains {
+                $0.json == live && $0.profileID == profileID
+            },
+            "the adopted login must be persisted"
+        )
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "there was no refresh token to spend, so nothing may be posted"
+        )
+    }
+
+    /// And when the store has nothing better either, the calm state is still
+    /// the right one: nothing was spent and nothing was refused.
+    func testAStoredLoginWithNoRefreshTokenAndAnEmptyStoreIsAsleep()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.accessTokenOnlyCredentialsJSON(
+                expiresAt: 1_000
+            ),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { nil },
+            renewals: renewals,
+            accountIsInUse: { _ in false }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .signInAsleep)
+        XCTAssertEqual(
+            usage.claudeCodeAsleepSince,
+            Date(timeIntervalSince1970: 1_000)
+        )
+        XCTAssertTrue(renewals.writes.isEmpty)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            }
+        )
+    }
+
     // MARK: - Refreshing under Claude Code's own lock
 
     /// Claude Code takes `<configDir>/.oauth_refresh.lock` before it
@@ -5160,6 +5286,19 @@ final class PersonalExtraUsageTests: XCTestCase {
         """
         {"claudeAiOauth":{"accessToken":"live-access-token",\
         "refreshToken":"live-refresh-token","expiresAt":\(expiresAt),\
+        "scopes":["user:inference"],"subscriptionType":"max"}}
+        """
+    }
+
+    /// The snapshot a profile can be left holding after Claude Code rotated
+    /// its refresh token and this app copied only the access token forward:
+    /// a login with nothing left to spend.
+    private static func accessTokenOnlyCredentialsJSON(
+        expiresAt: Double
+    ) -> String {
+        """
+        {"claudeAiOauth":{"accessToken":"fixture-access-token",\
+        "expiresAt":\(expiresAt),\
         "scopes":["user:inference"],"subscriptionType":"max"}}
         """
     }

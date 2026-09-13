@@ -15,6 +15,29 @@ import XCTest
 /// app target uses main-actor default isolation, and releasing one of its
 /// objects from the XCTest thunk trips a runtime allocator bug that aborts
 /// the host.
+/// A `FileManager` that lets a test slip a third process in at the one
+/// moment `removeOnly` leaves the lock path empty.
+///
+/// `removeOnly` moves the directory aside, stamps it, and only then decides
+/// whether to put it back. That stamp is the single call it makes through
+/// the injected file manager while the canonical path is vacant, so running
+/// the interloper from here reproduces the three-process window exactly,
+/// with no threads and no timing to get lucky with.
+private final class InterleavingFileManager: FileManager {
+    /// Run once, after the next modification-time change.
+    var duringModificationDateChange: (() -> Void)?
+
+    override func setAttributes(
+        _ attributes: [FileAttributeKey: Any],
+        ofItemAtPath path: String
+    ) throws {
+        try super.setAttributes(attributes, ofItemAtPath: path)
+        let interleave = duringModificationDateChange
+        duringModificationDateChange = nil
+        interleave?()
+    }
+}
+
 final class ClaudeCodeStoreLockTests: HostedAppTestCase {
     private var directory: URL!
 
@@ -187,11 +210,12 @@ final class ClaudeCodeStoreLockTests: HostedAppTestCase {
         XCTAssertNoThrow(try acquire(staleAfter: 15))
     }
 
-    /// The heartbeat is what keeps the lock from being taken as abandoned
-    /// while it is genuinely held. A refresh that outlives the threshold
-    /// without touching it would have the lock stolen mid-flight.
+    /// A modification time this holder did not write is somebody else at
+    /// the lock, and the holder has to notice rather than carry on. `touch()`
+    /// refuses and the lock is marked compromised, which is what later stops
+    /// it deleting a directory that is no longer its own.
     @MainActor
-    func testTouchingTheLockMovesItsModificationTimeForward() throws {
+    func testATamperedModificationTimeIsDetectedAsTheft() throws {
         let lock = try acquire()
         defer { lock.release() }
         let before = try modificationDate(of: lockURL)
@@ -207,6 +231,9 @@ final class ClaudeCodeStoreLockTests: HostedAppTestCase {
         XCTAssertTrue(lock.isCompromised)
     }
 
+    /// The heartbeat is what keeps the lock from being taken as abandoned
+    /// while it is genuinely held. A refresh that outlives the threshold
+    /// without touching it would have the lock stolen mid-flight.
     @MainActor
     func testAHeldLockTouchesItselfWithoutBecomingCompromised() throws {
         let lock = try acquire()
@@ -287,6 +314,77 @@ final class ClaudeCodeStoreLockTests: HostedAppTestCase {
             "The other process's lock must be the same directory it was"
         )
         XCTAssertEqual(try entriesBesideTheLock(), [".oauth_refresh.lock"])
+    }
+
+    /// The same race with a third process in it, which is the part that was
+    /// ours to fix.
+    ///
+    /// A replacement holder's lock is moved aside, and before it can be put
+    /// back a third process finds the vacant path and takes it. The restore
+    /// is refused, correctly — overwriting the third process's lock would
+    /// be the same wrong in the other direction — and the displaced
+    /// directory is then still a live lock with a holder that has noticed
+    /// nothing. Deleting it there left that holder and the third process
+    /// both believing they held the lock, and both free to spend the same
+    /// single-use refresh token. So it stays where it landed, under its
+    /// reclaim name, and the abandoned-reclaim sweep clears it once the
+    /// stale window has passed.
+    @MainActor
+    func testADisplacedLockIsKeptWhenItCannotBePutBack() throws {
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        let stale = try identity(of: lockURL)
+
+        // The directory this caller judged stale is already gone; what sits
+        // at the path now is the replacement holder's live lock.
+        try FileManager.default.removeItem(at: lockURL)
+        try FileManager.default.createDirectory(
+            at: lockURL,
+            withIntermediateDirectories: false
+        )
+        let live = try identity(of: lockURL)
+
+        let path = lockURL
+        let fileManager = InterleavingFileManager()
+        fileManager.duringModificationDateChange = {
+            // The third process, arriving while the path is empty.
+            try? FileManager.default.createDirectory(
+                at: path,
+                withIntermediateDirectories: false
+            )
+        }
+
+        XCTAssertThrowsError(
+            try ClaudeCodeStoreLock.removeOnly(
+                stale,
+                at: lockURL,
+                fileManager: fileManager
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ClaudeCodeStoreLock.AcquisitionFailure,
+                .heldByAnotherProcess
+            )
+        }
+
+        let entries = try entriesBesideTheLock()
+        XCTAssertTrue(
+            entries.contains(".oauth_refresh.lock"),
+            "The third process's lock must be left alone: \(entries)"
+        )
+        let displaced = try XCTUnwrap(
+            entries.first { $0.hasPrefix(".oauth_refresh.lock.reclaim-") },
+            "The displaced live lock must still be there: \(entries)"
+        )
+        XCTAssertEqual(
+            try identity(
+                of: directory.appendingPathComponent(displaced)
+            ).inode,
+            live.inode,
+            "What survived must be the very directory that was moved aside"
+        )
     }
 
     /// The lock that really is stale is still reclaimed, and reclaiming it

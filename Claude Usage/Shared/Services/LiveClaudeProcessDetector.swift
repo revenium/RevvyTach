@@ -232,6 +232,15 @@ final class LiveClaudeProcessDetector {
     private let defaultConfigurationDirectory: String
     private let log: (String) -> Void
 
+    /// Guards the two cached fields below.
+    ///
+    /// This detector is one shared object reached from two independent
+    /// execution contexts at once: the SwiftUI view body asks it on the main
+    /// actor while `UsageRefreshEngine` asks it from a task group refreshing
+    /// several profiles concurrently. Without this, two of those can write
+    /// `cachedResult` at the same moment, which is a data race on
+    /// reference-counted storage rather than merely a stale answer.
+    private let cacheMutex = NSLock()
     private var cachedResult: Result<[RunningProcessSnapshot], Error>?
     private var cachedAt: Date?
 
@@ -300,11 +309,18 @@ final class LiveClaudeProcessDetector {
     /// Drops the cached scan. Used by tests and by anything that has just
     /// changed which processes ought to exist.
     func invalidateCache() {
+        cacheMutex.lock()
+        defer { cacheMutex.unlock() }
         cachedResult = nil
         cachedAt = nil
     }
 
     private func cachedProcesses() throws -> [RunningProcessSnapshot] {
+        // Held across the scan as well as the read: two callers arriving
+        // together then take one scan between them rather than two, and
+        // neither can see the cache half-written.
+        cacheMutex.lock()
+        defer { cacheMutex.unlock() }
         if let cachedResult, let cachedAt,
            now().timeIntervalSince(cachedAt) < cacheDuration {
             return try cachedResult.get()

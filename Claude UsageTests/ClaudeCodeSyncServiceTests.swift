@@ -37,13 +37,23 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     @MainActor
     private func makeService(
         runner: RecordingSecurityRunner,
+        credentialsFileDirectory: ((String?) -> URL)? = nil,
         liveProcessDetector: LiveClaudeProcessDetector = .stubbedIdle()
     ) -> ClaudeCodeSyncService {
         _ = retain(runner)
+        // Every write here goes through the chokepoint, and the chokepoint
+        // takes Claude Code's own `.storage-write` lock inside the account's
+        // configuration directory. Left on its default that is the real
+        // `~/.claude` on whatever machine runs the suite — created if it is
+        // missing, with a live `claude` quite possibly locking the same
+        // path. The test suite is not allowed anywhere near it.
+        let configurationDirectory = makeIsolatedClaudeConfigurationDirectory()
         return retain(
             ClaudeCodeSyncService(
                 profileStore: retain(makeIsolatedProfileStore()),
                 securityRunner: runner,
+                credentialsFileDirectory: credentialsFileDirectory
+                    ?? { _ in configurationDirectory },
                 liveProcessDetector: liveProcessDetector
             )
         )
@@ -2195,7 +2205,19 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     /// first — some other account's.
     @MainActor
     func testAnUnnamedAccountResolvesToTheOneItemClaudeCodeUses() throws {
-        let service = makeService(runner: RecordingSecurityRunner())
+        // Service names are hashes of directory paths, and nothing here is
+        // created or written — but both sides of the comparison below have
+        // to resolve an account's directory the same way, so the test owns
+        // that resolution rather than leaving it on the production default.
+        let root = makeIsolatedClaudeConfigurationDirectory()
+        let directory: (String?) -> URL = { account in
+            account.map { root.appendingPathComponent($0, isDirectory: true) }
+                ?? root
+        }
+        let service = makeService(
+            runner: RecordingSecurityRunner(),
+            credentialsFileDirectory: directory
+        )
 
         // With no `CLAUDE_CONFIG_DIR` in this process's environment, Claude
         // Code drops the hash suffix entirely.
@@ -2211,8 +2233,7 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         XCTAssertEqual(
             service.keychainServiceName(forAccountNamed: account),
             ClaudeCodeSyncService.serviceName(
-                forConfigurationDirectory: ClaudeCodeSyncService
-                    .configurationDirectory(forAccountNamed: account).path
+                forConfigurationDirectory: directory(account).path
             )
         )
     }

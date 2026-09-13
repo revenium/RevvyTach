@@ -915,6 +915,11 @@ final class ExtraUsageScopeTests: XCTestCase {
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory()
         )
+        // The renewal path only runs for an account no `claude` process is
+        // using, and the default answer to that is a scan of this machine's
+        // own processes. A test whose branch depends on whether the
+        // developer happens to have a terminal open is not a test.
+        service.accountIsInUse = { _ in false }
 
         // First refresh: the stored token has expired, so it is renewed and
         // the renewal is cached for the rest of the run.

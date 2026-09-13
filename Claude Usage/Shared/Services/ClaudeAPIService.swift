@@ -1491,10 +1491,26 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         // An idle account with nothing to spend cannot be renewed, and
-        // asking the server would be pointless rather than harmful. Say
-        // asleep rather than expired: nothing was refused.
+        // asking the server would be pointless rather than harmful.
         guard ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON) != nil
         else {
+            // Look at Claude Code's own store first, the way every other
+            // branch here does. What we hold is a snapshot taken when the
+            // profile was last synced; the account may have been signed in
+            // again since, leaving a renewable login in the store while our
+            // copy still has nothing to spend. Declaring the account asleep
+            // without looking denied it that login for the life of the run.
+            if let live = await adoptLiveCLILogin(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal,
+                ignoringRetryThrottle: true,
+                allowingTheDefaultAccount: true
+            ) {
+                return live
+            }
+            // Nothing renewable anywhere. Say asleep rather than expired:
+            // nothing was refused.
             recordAsleepCLILogin(credentialsJSON, for: profile, reason:
                 "the stored login carries no refresh token")
             return nil

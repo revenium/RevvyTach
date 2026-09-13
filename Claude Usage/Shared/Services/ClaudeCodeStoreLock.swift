@@ -204,9 +204,12 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
     /// one moves it; the other finds it has moved something else, puts it
     /// straight back, and gives up. `RENAME_EXCL` on the way back refuses to
     /// overwrite, so a third directory that appeared at the path in the
-    /// meantime survives, and the one we should never have touched is thrown
-    /// away instead — the lesser of two wrongs, and one that only costs a
-    /// stale window rather than a shared lock.
+    /// meantime survives — and so does the one we should never have
+    /// touched, left where it landed under its reclaim name for the
+    /// abandoned-reclaim sweep to clear once the stale window has passed.
+    /// Deleting it instead would cost exactly what deleting by path costs:
+    /// its holder goes on believing it holds the lock, the third process
+    /// believes the same, and both spend the same single-use refresh token.
     ///
     /// Throws `heldByAnotherProcess` when the path holds somebody else's
     /// directory. A path with nothing at it is not a failure: there is
@@ -231,9 +234,16 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
         setModificationDate(Date(), of: moved, fileManager: fileManager)
         guard let movedIdentity = self.identity(of: moved),
               movedIdentity == identity else {
-            if renamex_np(movedPath, url.path, UInt32(RENAME_EXCL)) != 0 {
-                try? fileManager.removeItem(at: moved)
-            }
+            // Somebody else's lock, and it may well be live. Put it back
+            // when the path is still vacant; when a third process has
+            // already taken the path, leave the displaced directory exactly
+            // where it landed rather than delete it. A live lock that is
+            // deleted is the whole failure this function exists to avoid —
+            // its holder would keep believing it held the lock, the third
+            // process would believe the same, and both would spend the same
+            // single-use refresh token. Under its reclaim name it is out of
+            // everyone's way and the sweep above clears it once it is stale.
+            _ = renamex_np(movedPath, url.path, UInt32(RENAME_EXCL))
             throw AcquisitionFailure.heldByAnotherProcess
         }
 
