@@ -13,10 +13,10 @@ import Foundation
 ///
 /// This is not a lock of our own design. Claude Code takes
 /// `<configDir>/.oauth_refresh.lock` before it refreshes an OAuth token and
-/// `<configDir>/.storage-write` before it writes its credential store, both
-/// through the `proper-lockfile` npm package. A lock that differs in any
+/// `<configDir>/.storage-write.lock` before it writes its credential store,
+/// both through the `proper-lockfile` npm package. A lock that differs in any
 /// detail is not the same lock, and two programs holding two different locks
-/// exclude nothing.
+/// exclude nothing — including two that differ only by a suffix.
 ///
 /// The lock **is a directory**. `mkdir(2)` either creates it or fails with
 /// `EEXIST`, in one syscall with no window between asking and taking — which
@@ -255,7 +255,11 @@ nonisolated final class ClaudeCodeStoreLock: @unchecked Sendable {
     }
 
     deinit {
-        heartbeat?.cancel()
+        // Defence in depth: every call site releases through a `defer`, but a
+        // lock that were ever dropped without one would keep its directory
+        // and block Claude Code for the whole stale window — sixty seconds
+        // for a refresh.
+        release()
     }
 
     /// `(device, inode)` — which directory this path currently names.
