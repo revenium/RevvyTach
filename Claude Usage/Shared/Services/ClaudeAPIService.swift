@@ -1425,10 +1425,17 @@ class ClaudeAPIService: APIServiceProtocol {
     /// goes stale within a day. An expired one is renewed once per credential
     /// per app run; a failed renewal leaves the stored credential exactly as
     /// it was.
+    ///
+    /// - Parameter renewingTheStoresOwnCopy: set only by
+    ///   `renewTheStoresOwnCopy(for:replacing:logNoBrowserRenewal:)`, which
+    ///   re-enters this function once with the store's own login in hand. It
+    ///   is what stops a store that keeps moving from turning that single
+    ///   retry into a loop.
     private func usableCLICredential(
         for profile: Profile,
         credentialsJSON: String,
-        logNoBrowserRenewal: Bool = false
+        logNoBrowserRenewal: Bool = false,
+        renewingTheStoresOwnCopy: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
         guard !Task.isCancelled else { return nil }
         let sync = ClaudeCodeSyncService.shared
@@ -1519,11 +1526,30 @@ class ClaudeAPIService: APIServiceProtocol {
             // The store already holds a newer login, written by whoever got
             // there first. Reading it is the whole remedy, and nothing was
             // spent to reach this point.
-            return await adoptLiveCLILogin(
+            if let adopted = await adoptLiveCLILogin(
                 for: profile,
                 replacing: credentialsJSON,
                 logNoBrowserRenewal: logNoBrowserRenewal,
                 ignoringRetryThrottle: true
+            ) {
+                return adopted
+            }
+            // Unless the store's newer copy has itself expired. Adoption
+            // refuses a dead login, correctly, and that left nothing to do:
+            // ours is superseded, theirs is out of time, and the account
+            // printed this same line every tick forever — never renewed,
+            // never reported, never offered by the hop picker.
+            //
+            // Claude Code's own answer after it re-reads its store is to
+            // treat what it read as the new base, so that is what happens
+            // here: renew the store's copy once, under the lock, with the
+            // compare-and-swap measured against the token actually in the
+            // store.
+            guard !renewingTheStoresOwnCopy else { return nil }
+            return await renewTheStoresOwnCopy(
+                for: profile,
+                replacing: credentialsJSON,
+                logNoBrowserRenewal: logNoBrowserRenewal
             )
         case .deferredToAnotherProcess:
             // Another process is mid-refresh. It may already have finished,
@@ -1560,6 +1586,71 @@ class ClaudeAPIService: APIServiceProtocol {
             return nil
         }
         return (refreshed, accessToken)
+    }
+
+    /// Renews the login Claude Code's own store is holding, when that copy
+    /// has moved past ours and has itself run out of time.
+    ///
+    /// Only an idle account reaches this. A `claude` process holding the
+    /// account still owns its refresh token under R2, and the read-only
+    /// answer there — asleep — is unchanged.
+    ///
+    /// Re-entering `usableCLICredential` rather than calling the refresh
+    /// directly is deliberate: the store's copy deserves the same treatment
+    /// any presented credential gets — the not-yet-due shortcut, the missing
+    /// refresh token check, the already-dead verdicts — and it arrives at
+    /// `shieldedCLIRefresh` as `credentialsJSON`, which is what makes the
+    /// rotation's `rotatedFrom` the store's own refresh token rather than the
+    /// superseded one we started with. The compare-and-swap on the way back
+    /// then measures against the token that is genuinely in the Keychain.
+    /// The profile's stored copy stays the base fingerprint for the
+    /// `renewedCLICredentials` bookkeeping, because that is the credential
+    /// every later lookup presents.
+    private func renewTheStoresOwnCopy(
+        for profile: Profile,
+        replacing stale: String,
+        logNoBrowserRenewal: Bool
+    ) async -> (credentialsJSON: String, accessToken: String)? {
+        guard !Task.isCancelled,
+              !accountIsInUse(profile.cliAccountName),
+              // Same reasoning as adoption's: an unscoped read answers with
+              // whichever account owns the shared Keychain item, and this
+              // path both spends a refresh token and persists what it reads.
+              let accountName = profile.cliAccountName
+        else { return nil }
+
+        let live: String?
+        do {
+            live = try systemCredentialsReader(accountName)
+        } catch {
+            LoggingService.shared.logDebug(
+                "Could not re-read Claude Code's own login for profile "
+                + "'\(profile.name)' after it moved past this app's copy: "
+                + "\(error.localizedDescription)."
+            )
+            return nil
+        }
+
+        guard let live,
+              live != stale,
+              ClaudeCodeSyncService.carriesLogin(live),
+              ClaudeCLITokenRefresher.refreshToken(in: live) != nil
+        else { return nil }
+
+        LoggingService.shared.log(
+            "Claude Code's own login for profile '\(profile.name)' has moved "
+            + "past this app's copy, and the store's copy has itself expired; "
+            + "renewing that copy instead. Nobody is using the account, and "
+            + "the rotated token is written straight back into the store it "
+            + "came from."
+        )
+
+        return await usableCLICredential(
+            for: profile,
+            credentialsJSON: live,
+            logNoBrowserRenewal: logNoBrowserRenewal,
+            renewingTheStoresOwnCopy: true
+        )
     }
 
     /// Records that a credential was left alone, and when it ran out.

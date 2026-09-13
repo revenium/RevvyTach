@@ -1596,6 +1596,146 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    /// The stall this cost a live debugging session for. A store that has
+    /// moved past our copy is usually newer *and* usable, and adopting it is
+    /// the whole remedy — but on an idle account nobody was running `claude`
+    /// to keep that copy fresh, so it can be newer and expired at once.
+    /// Adoption declines a dead login, correctly, and the account was then
+    /// left with nothing renewable: ours superseded, theirs out of time. It
+    /// logged "already moved past the copy this app was about to renew"
+    /// every thirty seconds, forever, and its Keychain item never rotated.
+    ///
+    /// The store's copy becomes the new base instead, which is what Claude
+    /// Code itself does after it re-reads its store.
+    func testAnExpiredStoreCopyOnAnIdleAccountIsRenewedInPlace() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: stored,
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        // Newer than the app's copy — a different refresh token entirely —
+        // and expired, which is the whole shape of the defect.
+        let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { storeCopy },
+            renewals: renewals,
+            accountIsInUse: { _ in false }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory(),
+            storeComparison: { snapshot, _ in
+                snapshot == storeCopy ? .unchanged : .movedOn
+            }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertTrue(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "An idle account whose only renewable login is the store's own "
+                + "copy must actually renew it: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+        let write = try XCTUnwrap(
+            renewals.writes.first { $0.json.contains("renewed-access") }
+        )
+        XCTAssertEqual(
+            write.rotatedFrom,
+            storeCopy,
+            "the compare-and-swap has to measure against the token actually "
+                + "in the store, so the store's own copy is what was spent — "
+                + "naming the superseded copy would fail the swap and leave "
+                + "Claude Code holding a token this app just rotated away"
+        )
+    }
+
+    /// The same state on an account a `claude` process is using stays
+    /// read-only. That refresh token belongs to the running process under
+    /// R2, whatever shape the store's copy is in, so the answer is still
+    /// asleep and the endpoint is still never asked.
+    func testAnExpiredStoreCopyOnALiveAccountIsLeftAsleep() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { storeCopy },
+            renewals: renewals,
+            accountIsInUse: { _ in true }
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory(),
+            storeComparison: { snapshot, _ in
+                snapshot == storeCopy ? .unchanged : .movedOn
+            }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .signInAsleep)
+        XCTAssertTrue(renewals.writes.isEmpty)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "A refresh token a running claude owns must never be spent, "
+                + "however far the store has moved: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+    }
+
     /// A store that cannot be read is not permission to spend. Answering
     /// "unchanged" there spent the token and then hit the compare-and-swap,
     /// which fails closed on the same unreadable item — so the token was
