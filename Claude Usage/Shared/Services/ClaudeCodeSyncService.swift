@@ -974,39 +974,20 @@ class ClaudeCodeSyncService {
         account: String,
         expectedRefreshToken: String?
     ) throws -> Bool {
-        switch store {
-        case .keychain:
-            let outcome = try writeKeychainUnderStoreLock(
-                credentialsJSON,
-                forAccountNamed: accountName,
-                expectedRefreshToken: expectedRefreshToken
-            )
-            logStoreDecision(
-                account: account,
-                live: false,
-                store: store,
-                purpose: purpose,
-                refusal: outcome
-            )
-            return outcome == nil
-        case .credentialsFile:
-            guard let expectedRefreshToken else {
-                throw ClaudeCodeError.invalidJSON
-            }
-            let written = try performCredentialsFileWrite(
-                inCredentialsFileFor: accountName,
-                with: credentialsJSON,
-                expectedRefreshToken: expectedRefreshToken
-            )
-            logStoreDecision(
-                account: account,
-                live: false,
-                store: store,
-                purpose: purpose,
-                refusal: written ? nil : .fileMovedOn
-            )
-            return written
-        }
+        let outcome = try writeUnderStoreLock(
+            credentialsJSON,
+            forAccountNamed: accountName,
+            store: store,
+            expectedRefreshToken: expectedRefreshToken
+        )
+        logStoreDecision(
+            account: account,
+            live: false,
+            store: store,
+            purpose: purpose,
+            refusal: outcome
+        )
+        return outcome == nil
     }
 
     /// R6: one line per chokepoint decision — which account, whether a
@@ -1054,9 +1035,13 @@ class ClaudeCodeSyncService {
         )
     }
 
-    /// Claude Code's own save: under `<configDir>/.storage-write`, re-read
-    /// the item, and write only if the refresh token stored there is still
-    /// the one that was posted to the server.
+    /// Claude Code's own save, and the only code that touches either store.
+    ///
+    /// Everything here happens under `<configDir>/.storage-write`, which is
+    /// the lock Claude Code takes around every write to its credential
+    /// store. For the Keychain that means re-reading the item and writing
+    /// only if the refresh token stored there is still the one that was
+    /// posted to the server.
     ///
     /// This is the compare-and-swap that stops two programs' rotations from
     /// overwriting each other. A refresh token is single-use: if the stored
@@ -1076,9 +1061,10 @@ class ClaudeCodeSyncService {
     ///
     /// - Returns: `nil` when the bytes were written, or the reason they were
     ///   not.
-    private func writeKeychainUnderStoreLock(
+    private func writeUnderStoreLock(
         _ credentialsJSON: String,
         forAccountNamed accountName: String?,
+        store: ClaudeCodeStore,
         expectedRefreshToken: String?
     ) throws -> ClaudeCodeWriteRefusal? {
         let attempts = 3
@@ -1106,22 +1092,42 @@ class ClaudeCodeSyncService {
             }
             defer { storeLock.release() }
 
-            if let expectedRefreshToken,
-               let refusal = compareAndSwapVerdict(
-                   forAccountNamed: accountName,
-                   expectedRefreshToken: expectedRefreshToken
-               ) {
-                return refusal
-            }
-
-            do {
-                try performKeychainWrite(
-                    credentialsJSON,
-                    forAccountNamed: accountName
-                )
-                return nil
-            } catch {
-                lastWriteError = error
+            switch store {
+            case .keychain:
+                if let expectedRefreshToken,
+                   let refusal = compareAndSwapVerdict(
+                       forAccountNamed: accountName,
+                       expectedRefreshToken: expectedRefreshToken
+                   ) {
+                    return refusal
+                }
+                do {
+                    try performKeychainWrite(
+                        credentialsJSON,
+                        forAccountNamed: accountName
+                    )
+                    return nil
+                } catch {
+                    lastWriteError = error
+                }
+            case .credentialsFile:
+                // The file store carries its own compare-and-swap in bytes:
+                // the refresh token in the file must still be the posted
+                // one, and the file's bytes must not have changed between
+                // staging the replacement and installing it.
+                guard let expectedRefreshToken else {
+                    throw ClaudeCodeError.invalidJSON
+                }
+                do {
+                    let written = try performCredentialsFileWrite(
+                        inCredentialsFileFor: accountName,
+                        with: credentialsJSON,
+                        expectedRefreshToken: expectedRefreshToken
+                    )
+                    return written ? nil : .fileMovedOn
+                } catch {
+                    lastWriteError = error
+                }
             }
         }
 
