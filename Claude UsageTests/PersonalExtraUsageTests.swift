@@ -1565,7 +1565,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
-            storeHasMovedOn: { _, _ in true }
+            storeComparison: { _, _ in .movedOn }
         )
 
         StubClaudeEndpointsURLProtocol.install(
@@ -1593,6 +1593,125 @@ final class PersonalExtraUsageTests: XCTestCase {
                 $0.json == live && $0.rotatedFrom == nil
             },
             "The adopted login is not a rotation and must claim none"
+        )
+    }
+
+    /// A store that cannot be read is not permission to spend. Answering
+    /// "unchanged" there spent the token and then hit the compare-and-swap,
+    /// which fails closed on the same unreadable item — so the token was
+    /// gone and the mirror-back refused, which is the original bug reached by
+    /// another road.
+    func testAnUnreadableStoreUnderTheLockSpendsNothing() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { nil },
+            renewals: renewals
+        )
+        useIsolatedClaudeCodeLocks(
+            on: service,
+            in: makeIsolatedClaudeConfigurationDirectory(),
+            storeComparison: { _, _ in .unreadable }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertTrue(renewals.writes.isEmpty)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            },
+            "A token whose write-back cannot be checked must not be spent: "
+                + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
+        )
+    }
+
+    /// The plain single-account user: a wizard terminal sign-in that was
+    /// never linked to an account directory, so the profile carries no
+    /// account name. Once any `claude` runs and their token passes expiry,
+    /// this app must not refresh — and must still be able to read the login
+    /// Claude Code itself keeps fresh, or the numbers freeze until a manual
+    /// re-sync.
+    func testAnUnlinkedProfileStillReadsTheDefaultStoreWhileClaudeRuns()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            credentialsJSON: Self.credentialsJSON(expiresAt: 1_000),
+            cliAccountName: nil,
+            in: store
+        )
+        let manager = ProfileManager(profileStore: store)
+        let profile = try seededProfile(profileID)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+
+        let renewals = RenewedCredentialRecorder()
+        let live = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store,
+            systemCredentials: { live },
+            renewals: renewals,
+            accountIsInUse: { _ in true }
+        )
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertNil(
+            usage.personalExtraUsageIssue,
+            "An unlinked profile must not go permanently asleep just because "
+                + "a claude is running"
+        )
+        XCTAssertEqual(usage.personalCostUsed, 0)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.contains("/v1/oauth/token")
+            }
         )
     }
 
@@ -2707,10 +2826,14 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         XCTAssertEqual(renewals.writes.count, 1)
         XCTAssertEqual(renewals.writes.first?.rotatedFrom, expired)
-        let accountDirectory = ClaudeCodeSyncService
-            .configurationDirectory(forAccountNamed: "fixture-account")
+        // Contract change: the Keychain item is now named from the same
+        // directory the liveness check uses, so the expectation is derived
+        // from this test's own configuration directory rather than from the
+        // production account path. That shared resolution is the point —
+        // the item written and the directory checked can no longer belong to
+        // two different accounts.
         let accountService = ClaudeCodeSyncService.serviceName(
-            forConfigurationDirectory: accountDirectory.path
+            forConfigurationDirectory: configurationDirectory.path
         )
         let keychainWrite = try XCTUnwrap(keychain.invocations.last)
         XCTAssertEqual(keychainWrite.first, "add-generic-password")

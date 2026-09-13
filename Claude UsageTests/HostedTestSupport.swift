@@ -451,7 +451,8 @@ nonisolated func makeIsolatedClaudeConfigurationDirectory() -> URL {
 nonisolated func useIsolatedClaudeCodeLocks(
     on service: ClaudeAPIService,
     in directory: URL,
-    storeHasMovedOn: @escaping (String, String?) -> Bool = { _, _ in false }
+    storeComparison: @escaping (String, String?)
+        -> ClaudeCodeSyncService.StoreComparison = { _, _ in .unchanged }
 ) {
     service.acquireRefreshLock = { _ in
         try ClaudeCodeStoreLock.acquire(
@@ -462,7 +463,7 @@ nonisolated func useIsolatedClaudeCodeLocks(
             refreshEvery: ClaudeCodeSyncService.refreshLockRefreshEvery
         )
     }
-    service.claudeCodeStoreHasMovedOn = storeHasMovedOn
+    service.claudeCodeStoreComparison = storeComparison
 }
 
 @MainActor

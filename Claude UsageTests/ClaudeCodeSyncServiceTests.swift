@@ -70,10 +70,16 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         // the owner of the Keychain interaction.
         let itemReader = keychainCredentialsReader
             ?? (systemCredentialsReader == nil ? nil : { _ in nil })
-        let fileDirectory = credentialsFileDirectory ?? { _ in
-            FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        }
+        // One directory for the life of this service, not a fresh UUID on
+        // every call. The closure used to mint a new path each time it was
+        // asked, which was invisible while it only resolved the credentials
+        // file — and became a real defect the moment the Keychain service
+        // name was derived from the same directory: the item that was read
+        // and the item that was written came out with different hashes,
+        // which is precisely the drift this resolution exists to prevent.
+        let stableDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileDirectory = credentialsFileDirectory ?? { _ in stableDirectory }
         return retain(
             ClaudeCodeSyncService(
                 profileStore: profileStore,
@@ -783,13 +789,16 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
     /// the same way production derives it, so a test asserting on the write
     /// is asserting it landed on the account's own item and not the shared
     /// one.
-    private var rotationAccountServiceName: String {
-        ClaudeCodeSyncService.serviceName(
-            forConfigurationDirectory: ClaudeCodeSyncService
-                .configurationDirectory(
-                    forAccountNamed: Self.rotationAccountName
-                ).path
-        )
+    ///
+    /// Contract change: taken from the service's own configuration
+    /// directory rather than the production account path, because the
+    /// Keychain item is now named from the same directory the liveness check
+    /// uses. Asking the service is also the only way to assert the thing
+    /// that matters — that the item read and the item written are one item.
+    private func rotationAccountServiceName(
+        _ service: ClaudeCodeSyncService
+    ) -> String {
+        service.keychainServiceName(forAccountNamed: Self.rotationAccountName)
     }
 
     @MainActor
@@ -1099,14 +1108,14 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             "Claude Code must receive the renewed credential: \(write)"
         )
         XCTAssertTrue(
-            write.contains(rotationAccountServiceName),
+            write.contains(rotationAccountServiceName(service)),
             "The write must land on this account's own Keychain item, not "
                 + "the shared one: \(write)"
         )
         // The whole guard is worthless if the item that was checked is not
         // the item that gets overwritten.
         XCTAssertTrue(
-            read.contains(rotationAccountServiceName),
+            read.contains(rotationAccountServiceName(service)),
             "Ownership must be checked against the very item the write "
                 + "replaces: \(read)"
         )
@@ -1836,11 +1845,13 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         let runner = RecordingSecurityRunner()
         let directory = try stagedConfigurationDirectory(containing: nil)
         // Stand in for Claude Code holding it: a fresh lock directory that
-        // nothing here will release.
+        // nothing here will release. The path is written out rather than
+        // taken from the constant on purpose — building it from the same
+        // constant the code uses is what let this test pass while the real
+        // directory was one suffix away from Claude Code's and excluded
+        // nobody.
         try FileManager.default.createDirectory(
-            at: directory.appendingPathComponent(
-                ClaudeCodeSyncService.storageWriteLockName
-            ),
+            at: directory.appendingPathComponent(".storage-write.lock"),
             withIntermediateDirectories: false
         )
         var logged: [String] = []
@@ -1894,7 +1905,7 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: directory.appendingPathComponent(
-                    ClaudeCodeSyncService.storageWriteLockName
+                    ".storage-write.lock"
                 ).path
             )
         )
@@ -1955,17 +1966,272 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
             )
         }
 
-        XCTAssertTrue(
-            service(holding: Self.fileLogin).storeHasMovedOn(
-                from: Self.keychainLogin,
+        XCTAssertEqual(
+            service(holding: Self.fileLogin).compareStore(
+                with: Self.keychainLogin,
                 forAccountNamed: "work"
-            )
+            ),
+            .movedOn
         )
+        XCTAssertEqual(
+            service(holding: Self.keychainLogin).compareStore(
+                with: Self.keychainLogin,
+                forAccountNamed: "work"
+            ),
+            .unchanged
+        )
+    }
+
+    // MARK: - Review fixes
+
+    /// B1. Claude Code locks `.storage-write` WITHOUT passing
+    /// `proper-lockfile`'s `lockfilePath`, and that library appends `.lock`
+    /// to whatever path it is handed — `return r.lockfilePath || `${e}.lock``,
+    /// read out of the 2.1.270 binary. So its directory is
+    /// `.storage-write.lock`, and a lock one suffix away from it excluded
+    /// nobody while looking exactly as though it did.
+    @MainActor
+    func testTheStoreWriteLockIsTheDirectoryClaudeCodeActuallyTakes() throws {
+        XCTAssertEqual(
+            ClaudeCodeSyncService.storageWriteLockName,
+            ".storage-write.lock"
+        )
+        // The refresh lock is the other way round: Claude Code passes
+        // `lockfilePath` for that one, so no suffix is appended.
+        XCTAssertEqual(
+            ClaudeCodeSyncService.refreshLockName,
+            ".oauth_refresh.lock"
+        )
+
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+        // Stand in for Claude Code holding its own store-write lock.
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent(".storage-write.lock"),
+            withIntermediateDirectories: false
+        )
+
         XCTAssertFalse(
-            service(holding: Self.keychainLogin).storeHasMovedOn(
-                from: Self.keychainLogin,
-                forAccountNamed: "work"
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "a test"
             )
         )
+        XCTAssertTrue(
+            runner.invocations.isEmpty,
+            "Nothing may reach `security` while Claude Code is writing"
+        )
+    }
+
+    /// B2. The liveness answer can be five seconds old and the token exchange
+    /// runs for up to thirty, so a `claude` that starts mid-flight used to
+    /// turn the mirror-back into a refusal — leaving that process holding the
+    /// exact token the server had just retired, with nothing to try again
+    /// later. A write carrying a posted refresh token is a repair of a token
+    /// this app already spent, and the compare-and-swap is what makes it
+    /// safe: it can only ever replace that one token.
+    @MainActor
+    func testARepairOfASpentTokenIsWrittenEvenForALiveAccount() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput:
+                    #"{"claudeAiOauth":{"accessToken":"old","refreshToken":"the-one-we-posted","expiresAt":1000}}"#,
+                standardError: ""
+            ),
+            SecurityCommandResult(exitCode: 0, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        var logged: [String] = []
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: true,
+            sink: { logged.append($0) }
+        )
+
+        XCTAssertTrue(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "mirroring back a token this app rotated",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertTrue(runner.verbs.contains("add-generic-password"))
+        // The log still says the account is in use — the write happened
+        // anyway, and the log has to show that rather than hide it.
+        let line = try XCTUnwrap(logged.first)
+        XCTAssertTrue(line.contains("in use by a running claude"), line)
+        XCTAssertTrue(line.contains("wrote it"), line)
+    }
+
+    /// And the exception is exactly that: a write with nothing to swap — a
+    /// profile activation, a re-sync — is still refused for a live account.
+    @MainActor
+    func testAWriteWithNothingToSwapIsStillRefusedForALiveAccount() throws {
+        let runner = RecordingSecurityRunner()
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: true
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "activating a profile"
+            )
+        )
+        XCTAssertTrue(runner.invocations.isEmpty)
+    }
+
+    /// A repair that arrives after somebody else's rotation is still
+    /// abandoned, live account or not. This is what makes B2's exception
+    /// safe rather than a hole in it.
+    @MainActor
+    func testARepairIsStillAbandonedWhenTheTokenHasMovedOn() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 0,
+                standardOutput:
+                    #"{"claudeAiOauth":{"accessToken":"newer","refreshToken":"someone-elses","expiresAt":99999999999999}}"#,
+                standardError: ""
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: true
+        )
+
+        XCTAssertFalse(
+            try service.commitClaudeCodeStoreWrite(
+                Self.keychainLogin,
+                forAccountNamed: "work",
+                store: .keychain,
+                purpose: "mirroring back a token this app rotated",
+                expectedRefreshToken: "the-one-we-posted"
+            )
+        )
+        XCTAssertFalse(runner.verbs.contains("add-generic-password"))
+    }
+
+    /// S3. A store that cannot be read is not permission to spend. Answering
+    /// "unchanged" there spent the token and then hit the compare-and-swap,
+    /// which fails closed on that same unreadable item — so the token was
+    /// gone and the mirror-back refused, which is the original bug by
+    /// another road.
+    @MainActor
+    func testAnUnreadableStoreIsItsOwnAnswerRatherThanPermissionToSpend()
+        throws
+    {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(
+                exitCode: 36,
+                standardOutput: "",
+                standardError: "security: User interaction is not allowed."
+            )
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertEqual(
+            service.compareStore(
+                with: Self.keychainLogin,
+                forAccountNamed: "work"
+            ),
+            .unreadable
+        )
+    }
+
+    /// An account with no Keychain item is a file-backed account, which is a
+    /// legitimate state and must still permit a refresh.
+    @MainActor
+    func testAnAbsentKeychainItemStillPermitsARefresh() throws {
+        let runner = RecordingSecurityRunner()
+        runner.results = [
+            SecurityCommandResult(exitCode: 44, standardOutput: "", standardError: "")
+        ]
+        let directory = try stagedConfigurationDirectory(containing: nil)
+        let service = makeChokepointService(
+            runner: runner,
+            directory: directory,
+            live: false
+        )
+
+        XCTAssertEqual(
+            service.compareStore(
+                with: Self.keychainLogin,
+                forAccountNamed: "work"
+            ),
+            .unchanged
+        )
+    }
+
+    /// S5. The item a write lands on and the directory whose liveness was
+    /// checked must be the same account. For a profile with no linked
+    /// account name they were not: liveness was checked against `~/.claude`
+    /// and the write went to whichever hashed item a prefix search returned
+    /// first — some other account's.
+    @MainActor
+    func testAnUnnamedAccountResolvesToTheOneItemClaudeCodeUses() throws {
+        let service = makeService(runner: RecordingSecurityRunner())
+
+        // With no `CLAUDE_CONFIG_DIR` in this process's environment, Claude
+        // Code drops the hash suffix entirely.
+        XCTAssertNil(ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"])
+        XCTAssertEqual(
+            service.keychainServiceName(forAccountNamed: nil),
+            "Claude Code-credentials"
+        )
+
+        // A named account is the hash of its own directory, which is the
+        // same directory the liveness check uses.
+        let account = "work"
+        XCTAssertEqual(
+            service.keychainServiceName(forAccountNamed: account),
+            ClaudeCodeSyncService.serviceName(
+                forConfigurationDirectory: ClaudeCodeSyncService
+                    .configurationDirectory(forAccountNamed: account).path
+            )
+        )
+    }
+
+    /// N3. A refresh must not resurrect an account directory somebody
+    /// unlinked.
+    @MainActor
+    func testNoLockIsTakenWhereThereIsNoConfigurationDirectory() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let service = makeService(
+            runner: RecordingSecurityRunner(),
+            profileStore: retain(makeIsolatedProfileStore()),
+            credentialsFileDirectory: { _ in missing }
+        )
+
+        XCTAssertThrowsError(
+            try service.acquireRefreshLock(forAccountNamed: "unlinked")
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
     }
 }

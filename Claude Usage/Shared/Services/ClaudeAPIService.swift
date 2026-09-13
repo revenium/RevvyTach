@@ -977,12 +977,13 @@ class ClaudeAPIService: APIServiceProtocol {
         )
     }
 
-    /// Whether Claude Code's store already holds a different access token
-    /// from the snapshot about to be spent.
-    var claudeCodeStoreHasMovedOn: (String, String?) -> Bool = {
+    /// What Claude Code's store says about the snapshot about to be spent:
+    /// unchanged, already rotated by somebody else, or unreadable.
+    var claudeCodeStoreComparison:
+        (String, String?) -> ClaudeCodeSyncService.StoreComparison = {
         snapshot, accountName in
-        ClaudeCodeSyncService.shared.storeHasMovedOn(
-            from: snapshot,
+        ClaudeCodeSyncService.shared.compareStore(
+            with: snapshot,
             forAccountNamed: accountName
         )
     }
@@ -1463,7 +1464,8 @@ class ClaudeAPIService: APIServiceProtocol {
                 for: profile,
                 replacing: credentialsJSON,
                 logNoBrowserRenewal: logNoBrowserRenewal,
-                ignoringRetryThrottle: true
+                ignoringRetryThrottle: true,
+                allowingTheDefaultAccount: true
             ) {
                 return live
             }
@@ -1644,10 +1646,11 @@ class ClaudeAPIService: APIServiceProtocol {
                 // and adopts a sibling's rotated token rather than spending
                 // one that has already been replaced. Same check, same
                 // moment.
-                if self.claudeCodeStoreHasMovedOn(
+                switch self.claudeCodeStoreComparison(
                     credentialsJSON,
                     profile.cliAccountName
                 ) {
+                case .movedOn:
                     defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
                     LoggingService.shared.log(
                         "Claude Code's own login for profile "
@@ -1656,6 +1659,20 @@ class ClaudeAPIService: APIServiceProtocol {
                         + "of spending a token that is no longer current."
                     )
                     return .raceResolved
+                case .unreadable:
+                    // A token spent against a store we cannot read is a token
+                    // we cannot mirror back either — the compare-and-swap
+                    // fails closed on the same unreadable item. Skip.
+                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                    LoggingService.shared.log(
+                        "Could not read Claude Code's own login for profile "
+                        + "'\(profile.name)' under the refresh lock; skipping "
+                        + "this tick rather than spending a token whose "
+                        + "write-back could not be checked."
+                    )
+                    return .deferredToAnotherProcess
+                case .unchanged:
+                    break
                 }
 
                 let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
@@ -1873,14 +1890,32 @@ class ClaudeAPIService: APIServiceProtocol {
     ///   would leave a working account showing nothing for a minute at a
     ///   time. It stays throttled on the recovery path, where each attempt
     ///   follows a failure that is unlikely to have resolved in seconds.
+    ///
+    /// - Parameter allowingTheDefaultAccount: lets a profile with no linked
+    ///   account name read the default `~/.claude` store. Passed only by the
+    ///   live path, where re-reading is the whole remedy and refusing it left
+    ///   the plain single-account user — a wizard terminal sign-in never
+    ///   linked to an account directory — frozen the moment any `claude` ran
+    ///   and their token passed expiry: no refresh, correctly, and no re-read
+    ///   either. It is safe now that the unnamed account resolves to exactly
+    ///   one item, `Claude Code-credentials`, rather than to whichever hashed
+    ///   item a prefix search returned first.
     private func adoptLiveCLILogin(
         for profile: Profile,
         replacing stale: String,
         logNoBrowserRenewal: Bool = false,
-        ignoringRetryThrottle: Bool = false
+        ignoringRetryThrottle: Bool = false,
+        allowingTheDefaultAccount: Bool = false
     ) async -> (credentialsJSON: String, accessToken: String)? {
         guard !Task.isCancelled else { return nil }
-        guard let accountName = profile.cliAccountName else { return nil }
+        let accountName: String?
+        if let linked = profile.cliAccountName {
+            accountName = linked
+        } else if allowingTheDefaultAccount {
+            accountName = nil
+        } else {
+            return nil
+        }
 
         let key = AdoptionAttemptKey(
             profileID: profile.id,
