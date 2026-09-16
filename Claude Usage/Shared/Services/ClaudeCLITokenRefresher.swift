@@ -47,9 +47,10 @@ enum ClaudeCLITokenRefresher {
     enum RefreshFailure: Equatable, Sendable {
         /// The account's login is too old to renew. Signing in again fixes it.
         case expired
-        /// The request was cancelled or timed out after dispatch, so the
-        /// server may already have spent the refresh token. Replaying this
-        /// credential could turn an uncertain result into `invalid_grant`.
+        /// The request was cancelled, timed out, lost its connection, or
+        /// returned an unusable success after dispatch. The server may
+        /// already have spent the refresh token; the service owns the one
+        /// guarded replay allowance, never the transport helper itself.
         case indeterminate
         /// Anything else: offline, a server error, a malformed credential.
         case unavailable
@@ -65,13 +66,16 @@ enum ClaudeCLITokenRefresher {
         from credentialsJSON: String,
         forAccountNamed accountName: String? = nil,
         session: URLSession = .shared,
-        now: Date = Date()
+        now: Date = Date(),
+        connectivitySnapshot: () -> NetworkMonitor.ConnectivitySnapshot
+            = { NetworkMonitor.shared.connectivitySnapshot }
     ) async -> String? {
         switch await refreshOutcome(
             from: credentialsJSON,
             forAccountNamed: accountName,
             session: session,
-            now: now
+            now: now,
+            connectivitySnapshot: connectivitySnapshot
         ) {
         case .renewed(let blob):
             return blob
@@ -88,7 +92,10 @@ enum ClaudeCLITokenRefresher {
         from credentialsJSON: String,
         forAccountNamed accountName: String? = nil,
         session: URLSession = .shared,
-        now: Date = Date()
+        now: Date = Date(),
+        connectivitySnapshot: () -> NetworkMonitor.ConnectivitySnapshot
+            = { NetworkMonitor.shared.connectivitySnapshot },
+        onUnsentFailure: () -> Void = {}
     ) async -> RefreshOutcome {
         let account = ClaudeCodeSyncService.describeAccount(accountName)
         guard let refreshToken = refreshToken(in: credentialsJSON) else {
@@ -102,6 +109,7 @@ enum ClaudeCLITokenRefresher {
             return .failed(.expired)
         }
         guard let url = URL(string: tokenEndpoint) else {
+            onUnsentFailure()
             return .failed(.unavailable)
         }
 
@@ -116,8 +124,20 @@ enum ClaudeCLITokenRefresher {
         ]
         guard let httpBody = try? JSONSerialization.data(
             withJSONObject: body
-        ) else { return .failed(.unavailable) }
+        ) else {
+            onUnsentFailure()
+            return .failed(.unavailable)
+        }
         request.httpBody = httpBody
+
+        // Only a confirmed offline observation is an admission refusal.
+        // Unknown is normal while the shared monitor starts and must not
+        // strand a login. Neither this refusal nor pre-dispatch cancellation
+        // can have spent the token, so both remain retryable next cycle.
+        guard connectivitySnapshot() != .offline, !Task.isCancelled else {
+            onUnsentFailure()
+            return .failed(.unavailable)
+        }
 
         let data: Data
         let response: URLResponse
@@ -133,8 +153,22 @@ enum ClaudeCLITokenRefresher {
             if Task.isCancelled
                 || urlError?.code == .cancelled
                 || urlError?.code == .timedOut
+                || urlError?.code == .networkConnectionLost
             {
                 return .failed(.indeterminate)
+            }
+            // Offline/DNS/connect failures retain the existing retryable
+            // classification, as do other transport failures. In particular
+            // do not turn an HTTP 503 below into a spent-token prohibition.
+            switch urlError?.code {
+            case .notConnectedToInternet, .cannotFindHost, .dnsLookupFailed,
+                 .cannotConnectToHost:
+                // Preserve the limited replay allowance when connection
+                // establishment failed. HTTP errors remain retryable too,
+                // but are not evidence that the POST was never sent.
+                onUnsentFailure()
+            default:
+                break
             }
             return .failed(.unavailable)
         }
@@ -170,7 +204,10 @@ enum ClaudeCLITokenRefresher {
                 "CLI token refresh response for \(account) could not be "
                 + "applied. The stored credential is unchanged."
             )
-            return .failed(.unavailable)
+            // A 200 can mean rotation already happened even when its body
+            // is malformed or cannot be merged. Preserve that uncertainty
+            // instead of allowing unlimited renewals of the same token.
+            return .failed(.indeterminate)
         }
         return .renewed(merged)
     }

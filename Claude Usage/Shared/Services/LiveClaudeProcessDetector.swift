@@ -274,14 +274,17 @@ final class LiveClaudeProcessDetector {
     ///   `~/.claude-accounts/work` or `~/.claude` for the default account.
     /// - Returns: `true` when a match is found, and `true` again when the
     ///   scan could not be completed.
-    func isLive(configurationDirectory: String) -> Bool {
+    func isLive(
+        configurationDirectory: String,
+        bypassCache: Bool = false
+    ) -> Bool {
         let target = Self.canonical(configurationDirectory)
         let isDefaultAccount = target
             == Self.canonical(defaultConfigurationDirectory)
 
         let processes: [RunningProcessSnapshot]
         do {
-            processes = try cachedProcesses()
+            processes = try cachedProcesses(bypassCache: bypassCache)
         } catch {
             log(
                 "Could not enumerate running processes, so the account at "
@@ -315,13 +318,19 @@ final class LiveClaudeProcessDetector {
         cachedAt = nil
     }
 
-    private func cachedProcesses() throws -> [RunningProcessSnapshot] {
+    private func cachedProcesses(
+        bypassCache: Bool = false
+    ) throws -> [RunningProcessSnapshot] {
         // Held across the scan as well as the read: two callers arriving
         // together then take one scan between them rather than two, and
         // neither can see the cache half-written.
         cacheMutex.lock()
         defer { cacheMutex.unlock() }
-        if let cachedResult, let cachedAt,
+        // A guarded renewal replay asks again while holding its account
+        // lock: a CLI may have started since the ordinary five-second scan.
+        // Bypass and refresh the cache under this same mutex, rather than
+        // invalidating first and opening a second race between those calls.
+        if !bypassCache, let cachedResult, let cachedAt,
            now().timeIntervalSince(cachedAt) < cacheDuration {
             return try cachedResult.get()
         }

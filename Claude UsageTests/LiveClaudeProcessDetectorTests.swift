@@ -326,6 +326,42 @@ final class LiveClaudeProcessDetectorTests: HostedAppTestCase {
     // MARK: - Caching
 
     @MainActor
+    func testReplayCheckBypassesCachedIdleScan() {
+        final class ChangingSource: RunningProcessSource {
+            var processes: [RunningProcessSnapshot] = []
+            var calls = 0
+            func currentProcesses() throws -> [RunningProcessSnapshot] {
+                calls += 1
+                return processes
+            }
+        }
+        let source = retain(ChangingSource())
+        let subject = retain(LiveClaudeProcessDetector(
+            source: source,
+            cacheDuration: 5,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            defaultConfigurationDirectory: defaultHome,
+            log: { _ in }
+        ))
+        XCTAssertFalse(subject.isLive(configurationDirectory: account))
+        source.processes = [.claude(configurationDirectory: account)]
+        XCTAssertFalse(subject.isLive(configurationDirectory: account))
+        XCTAssertTrue(subject.isLive(
+            configurationDirectory: account, bypassCache: true
+        ))
+        XCTAssertEqual(source.calls, 2)
+        XCTAssertTrue(subject.isLive(configurationDirectory: account))
+        XCTAssertEqual(source.calls, 2, "The fresh scan also updates the cache")
+    }
+
+    @MainActor
+    func testNetworkMonitorStartsUnknownUntilItsFirstPathObservation() {
+        let monitor = retain(NetworkMonitor())
+        XCTAssertEqual(monitor.connectivitySnapshot, .unknown)
+        XCTAssertFalse(monitor.isConnected)
+    }
+
+    @MainActor
     func testTheScanIsCachedWithinTheCacheWindow() throws {
         final class CountingSource: RunningProcessSource {
             var calls = 0

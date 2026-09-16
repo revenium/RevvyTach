@@ -13,16 +13,34 @@ import Network
 final class NetworkMonitor {
     static let shared = NetworkMonitor()
 
+    enum ConnectivitySnapshot: Equatable, Sendable {
+        case unknown
+        case offline
+        case online
+    }
+
     private let monitor: NWPathMonitor
     private let queue = DispatchQueue(label: "com.claudeusage.networkmonitor")
 
-    /// Current network status
-    private(set) var isConnected: Bool = false
+    private let stateLock = NSLock()
+    private var currentSnapshot: ConnectivitySnapshot = .unknown
+
+    /// Path callbacks run on the monitor queue while renewal admission runs
+    /// on background tasks. A synchronized snapshot avoids a data race and,
+    /// unlike the old initial `false`, does not claim the Mac is offline
+    /// before NWPathMonitor has actually delivered its first observation.
+    var connectivitySnapshot: ConnectivitySnapshot {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return currentSnapshot
+    }
+
+    var isConnected: Bool { connectivitySnapshot == .online }
 
     /// Callback triggered when network becomes available
     var onNetworkAvailable: (() -> Void)?
 
-    private init() {
+    init() {
         monitor = NWPathMonitor()
     }
 
@@ -31,10 +49,22 @@ final class NetworkMonitor {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
 
-            let wasConnected = self.isConnected
             let nowConnected = path.status == .satisfied
-
-            self.isConnected = nowConnected
+            self.stateLock.lock()
+            let wasConnected = self.currentSnapshot == .online
+            switch path.status {
+            case .satisfied:
+                self.currentSnapshot = .online
+            case .unsatisfied:
+                self.currentSnapshot = .offline
+            case .requiresConnection:
+                // An on-demand connection may still succeed; this is not
+                // positive evidence that dispatch would be offline.
+                self.currentSnapshot = .unknown
+            @unknown default:
+                self.currentSnapshot = .unknown
+            }
+            self.stateLock.unlock()
 
             // Only fire callback when transitioning from disconnected to connected
             if nowConnected && !wasConnected {

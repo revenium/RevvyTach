@@ -131,6 +131,83 @@ final class ClaudeCodeSyncServiceTests: HostedAppTestCase {
 
     // MARK: - Writes must never open a window with no login
 
+    @MainActor
+    func testReplayStoreGuardComparesRefreshTokensAndRereadsKeychain() {
+        let snapshot = #"{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"same-refresh"}}"#
+        var current = #"{"claudeAiOauth":{"accessToken":"different-access","refreshToken":"same-refresh"}}"#
+        var reads = 0
+        let service = makeService(
+            runner: RecordingSecurityRunner(),
+            profileStore: retain(makeIsolatedProfileStore()),
+            keychainCredentialsReader: { _ in
+                reads += 1
+                return current
+            }
+        )
+        XCTAssertTrue(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        current = #"{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"different-refresh"}}"#
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        XCTAssertEqual(reads, 2, "A cached store read cannot authorize a replay")
+    }
+
+    @MainActor
+    func testReplayStoreGuardRequiresCanonicalFileAndCurrentRefreshToken() throws {
+        let snapshot = #"{"claudeAiOauth":{"accessToken":"access","refreshToken":"refresh"}}"#
+        let directory = makeIsolatedClaudeConfigurationDirectory()
+        let file = directory.appendingPathComponent(".credentials.json")
+        let service = makeService(
+            runner: RecordingSecurityRunner(),
+            profileStore: retain(makeIsolatedProfileStore()),
+            keychainCredentialsReader: { _ in nil },
+            credentialsFileDirectory: { _ in directory }
+        )
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        try snapshot.write(
+            to: directory.appendingPathComponent("credentials.json"),
+            atomically: true, encoding: .utf8
+        )
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"),
+                       "Legacy fallback cannot establish current Claude Code ownership")
+        try snapshot.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertTrue(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        try #"{"claudeAiOauth":{"accessToken":"access","refreshToken":"new-refresh"}}"#
+            .write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        try "malformed".write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        try #"{"claudeAiOauth":{"accessToken":"","refreshToken":""}}"#
+            .write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+    }
+
+    @MainActor
+    func testReplayStoreGuardRejectsLoggedOutUnreadableAndMalformedKeychain() throws {
+        let snapshot = #"{"claudeAiOauth":{"accessToken":"access","refreshToken":"refresh"}}"#
+        let directory = makeIsolatedClaudeConfigurationDirectory()
+        try snapshot.write(
+            to: directory.appendingPathComponent(".credentials.json"),
+            atomically: true, encoding: .utf8
+        )
+        var current = #"{"claudeAiOauth":{"accessToken":"","refreshToken":""}}"#
+        var unreadable = false
+        let service = makeService(
+            runner: RecordingSecurityRunner(),
+            profileStore: retain(makeIsolatedProfileStore()),
+            keychainCredentialsReader: { _ in
+                if unreadable { throw CocoaError(.fileReadNoPermission) }
+                return current
+            },
+            credentialsFileDirectory: { _ in directory }
+        )
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        current = "malformed"
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"))
+        current = snapshot
+        unreadable = true
+        XCTAssertFalse(service.refreshTokenMatchesStore(snapshot, forAccountNamed: "work"),
+                       "An unreadable Keychain must not authorize fallback to a stale file")
+    }
+
     /// The regression this file exists for. The previous implementation ran
     /// `delete-generic-password` before adding, so a failure of the add left
     /// the user logged out of Claude Code. `-U` already updates in place.
