@@ -860,18 +860,63 @@ class ClaudeAPIService: APIServiceProtocol {
     ///
     /// Definite failures such as offline and 500 are retried on the next tick.
     /// A timeout after dispatch is different: the server may already have
-    /// rotated the token, so it is tracked separately below and never replayed.
+    /// rotated the token, so it is tracked separately below and only eligible
+    /// for the single guarded recovery attempt described there.
     private var expiredCLILogins: Set<Int> = []
 
     /// Credentials whose token exchange ended without a knowable answer after
     /// dispatch. Retrying one risks submitting a refresh token the server has
-    /// already consumed; only a replacement login may clear this verdict.
+    /// already consumed. This is presentation state; the token-keyed recovery
+    /// record below decides whether the one guarded replay is still available.
     private var indeterminateCLILogins: Set<Int> = []
+
+    /// When an uncertain exchange finished, keyed by the refresh token rather
+    /// than its JSON serialization. The two-minute delay is backoff, not proof
+    /// that the first request missed the server. One normal refresh cycle may
+    /// replay it only after a fresh idle-account check, an authoritative store
+    /// read and the profile's own current credential all agree under the lock.
+    ///
+    /// This accepts a residual risk: another app instance could have renewed
+    /// the account but failed to mirror its replacement into Claude Code's
+    /// store. If the provider uses token-family reuse detection, our replay
+    /// could then invalidate that other instance's replacement. The provider's
+    /// policy is not established here. Restarting the app already replayed the
+    /// token without any of these guards because all verdicts are process-local;
+    /// this bounded recovery avoids making restart the remedy for a lost request.
+    private var uncertainCLIRefreshes: [Int: Date] = [:]
+
+    /// A success response can omit a replacement refresh token, leaving the
+    /// same token current. Keep the recovery budget independently of temporary
+    /// UI state, so clearing an outage cannot give that token another replay
+    /// after a later timeout. Only provably-unsent attempts leave this untouched.
+    private var replayedUncertainRefreshTokens: Set<Int> = []
+
+    static let defaultUncertainCLIRefreshRetryInterval: TimeInterval = 120
+    var uncertainCLIRefreshRetryInterval: TimeInterval =
+        ClaudeAPIService.defaultUncertainCLIRefreshRetryInterval
+    var cliRefreshNow: () -> Date = { Date() }
+
+    /// Reuse the application's monitor. Unknown initial connectivity must not
+    /// behave like confirmed offline; tests supply a snapshot without starting
+    /// a second monitor or depending on the developer's network connection.
+    var connectivitySnapshot: () -> NetworkMonitor.ConnectivitySnapshot = {
+        NetworkMonitor.shared.connectivitySnapshot
+    }
+
+    private func uncertainReplayIsDue(for credentialsJSON: String) -> Bool {
+        guard let token = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON),
+              unsendableRefreshTokens[token.hashValue] == nil,
+              !replayedUncertainRefreshTokens.contains(token.hashValue),
+              let finished = uncertainCLIRefreshes[token.hashValue]
+        else { return false }
+        return cliRefreshNow().timeIntervalSince(finished)
+            >= uncertainCLIRefreshRetryInterval
+    }
 
     /// Refresh tokens this run has sent and must never send again, keyed by
     /// the token's own hash and paired with the answer they got: `.expired`
-    /// for `invalid_grant`, `.indeterminate` for an exchange that ended
-    /// without a knowable answer after dispatch.
+    /// for `invalid_grant`, `.indeterminate` when an unanswered exchange has
+    /// already used its one dispatched recovery attempt.
     ///
     /// The two sets above are keyed by the whole credential blob, and a blob
     /// is not a login. The same refresh token routinely turns up in
@@ -997,13 +1042,21 @@ class ClaudeAPIService: APIServiceProtocol {
     private func knownRefreshFailure(
         for credentialsJSON: String
     ) -> ClaudeCLITokenRefresher.RefreshFailure? {
+        // A replay's explicit refusal outranks the old unanswered blob verdict.
+        // Token identity also survives a store reserialization and an abandoned
+        // waiter, neither of which is permission to spend another recovery try.
+        if let token = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON) {
+            if let failure = unsendableRefreshTokens[token.hashValue] {
+                return failure
+            }
+            if uncertainCLIRefreshes[token.hashValue] != nil {
+                return .indeterminate
+            }
+        }
         let fingerprint = credentialsJSON.hashValue
         if expiredCLILogins.contains(fingerprint) { return .expired }
         if indeterminateCLILogins.contains(fingerprint) { return .indeterminate }
-        guard let refreshToken = ClaudeCLITokenRefresher.refreshToken(
-            in: credentialsJSON
-        ) else { return nil }
-        return unsendableRefreshTokens[refreshToken.hashValue]
+        return nil
     }
 
     /// Files a refusal or an unanswered exchange under a credential blob,
@@ -1015,6 +1068,8 @@ class ClaudeAPIService: APIServiceProtocol {
         switch failure {
         case .expired:
             expiredCLILogins.insert(credentialsJSON.hashValue)
+            indeterminateCLILogins.remove(credentialsJSON.hashValue)
+            deferredCLILogins.remove(credentialsJSON.hashValue)
         case .indeterminate:
             indeterminateCLILogins.insert(credentialsJSON.hashValue)
         case .unavailable:
@@ -1120,6 +1175,25 @@ class ClaudeAPIService: APIServiceProtocol {
         )
     }
 
+    /// A replay needs a new process scan inside the account lock, not the
+    /// detector's ordinary cached answer from before waiting for that lock.
+    var freshAccountIsInUse: (String?) -> Bool = { accountName in
+        ClaudeCodeSyncService.shared.isAccountInUse(
+            forAccountNamed: accountName,
+            bypassCache: true
+        )
+    }
+
+    /// Positive refresh-token equality, including file-backed accounts. Missing,
+    /// unreadable or logged-out storage must never count as an unchanged login.
+    var claudeCodeRefreshTokenMatchesStore: (String, String?) -> Bool = {
+        snapshot, accountName in
+        ClaudeCodeSyncService.shared.refreshTokenMatchesStore(
+            snapshot,
+            forAccountNamed: accountName
+        )
+    }
+
     /// Takes Claude Code's own `<configDir>/.oauth_refresh.lock`.
     ///
     /// A seam for the same reason `accountIsInUse` is one, and for one more:
@@ -1184,6 +1258,10 @@ class ClaudeAPIService: APIServiceProtocol {
         /// token from the one we were about to spend. Somebody already
         /// rotated it; the endpoint was never called.
         case raceResolved
+        /// The profile was removed, re-linked or replaced while this caller
+        /// held its captured snapshot. Neither renewal nor adoption using that
+        /// old account may overwrite the profile's current login.
+        case profileChanged
     }
 
     /// One stored profile credential participating in a shared exchange.
@@ -1432,12 +1510,12 @@ class ClaudeAPIService: APIServiceProtocol {
             // recorded against that, not against the copy we started with.
             // A refresh another process was already performing is a
             // reading that did not arrive, not a credential that failed.
-            if deferredCLILogins.contains(presented.hashValue) {
+            if knownRefreshFailure(for: presented) == .indeterminate
+                || deferredCLILogins.contains(presented.hashValue) {
                 LoggingService.shared.logDebug(
-                    "Profile '\(profile.name)' postponed its Claude Code "
-                    + "token renewal to another process holding the refresh "
-                    + "lock; the member's own extra usage will be read on a "
-                    + "later refresh."
+                    "Profile '\(profile.name)' has a Claude Code token "
+                    + "renewal that was deferred or ended without an answer; "
+                    + "the member's own extra usage is temporarily unavailable."
                 )
                 return .issue(.temporarilyUnavailable)
             }
@@ -1451,7 +1529,7 @@ class ClaudeAPIService: APIServiceProtocol {
                 )
                 return .asleep(since: asleepSince(presented))
             }
-            let expired = expiredCLILogins.contains(presented.hashValue)
+            let expired = knownRefreshFailure(for: presented) == .expired
             LoggingService.shared.logDebug(
                 "Profile '\(profile.name)' has a Claude Code credential that "
                 + "could not be made usable; skipping the member's own extra "
@@ -1730,14 +1808,20 @@ class ClaudeAPIService: APIServiceProtocol {
             // refresh token this credential never had, so it gets the same
             // single, locked renewal any superseded copy gets, on the same
             // throttle adoption already keeps.
-            guard !lookedRecently, !renewingTheStoresOwnCopy else {
-                return nil
+            if known != .indeterminate
+                || !uncertainReplayIsDue(for: credentialsJSON) {
+                guard !lookedRecently, !renewingTheStoresOwnCopy else {
+                    return nil
+                }
+                return await renewTheStoresOwnCopy(
+                    for: profile,
+                    replacing: credentialsJSON,
+                    logNoBrowserRenewal: logNoBrowserRenewal
+                )
             }
-            return await renewTheStoresOwnCopy(
-                for: profile,
-                replacing: credentialsJSON,
-                logNoBrowserRenewal: logNoBrowserRenewal
-            )
+            // Adoption still wins. Only the token that actually had the
+            // uncertain attempt can reach the guarded recovery below; copied
+            // presentation verdicts cannot authorize replay of another login.
         }
 
         guard let outcome = await shieldedCLIRefresh(
@@ -1747,6 +1831,8 @@ class ClaudeAPIService: APIServiceProtocol {
         ) else { return nil }
 
         switch outcome {
+        case .profileChanged:
+            return nil
         case .raceResolved:
             // The store already holds a newer login, written by whoever got
             // there first. Reading it is the whole remedy, and nothing was
@@ -1881,6 +1967,7 @@ class ClaudeAPIService: APIServiceProtocol {
         let staleFingerprint = stale.hashValue
         if liveRefreshToken == ClaudeCLITokenRefresher.refreshToken(in: stale),
            unsendableRefreshTokens[liveRefreshToken.hashValue] == nil,
+           uncertainCLIRefreshes[liveRefreshToken.hashValue] == nil,
            !spentRefreshTokens.contains(liveRefreshToken.hashValue),
            expiredCLILogins.contains(staleFingerprint)
             || indeterminateCLILogins.contains(staleFingerprint) {
@@ -2072,71 +2159,122 @@ class ClaudeAPIService: APIServiceProtocol {
                     return .failed(.unavailable)
                 }
 
-                // Claude Code re-reads its store immediately before posting,
-                // and adopts a sibling's rotated token rather than spending
-                // one that has already been replaced. Same check, same
-                // moment.
-                switch self.claudeCodeStoreComparison(
-                    credentialsJSON,
-                    profile.cliAccountName
-                ) {
-                case .movedOn:
-                    // Unless the store "moved" to a login this run already
-                    // renewed, whose write-back did not land, and ours is
-                    // that renewal's descendant in this app. That store is
-                    // behind us, not ahead: adopting refuses its expired copy
-                    // and renewing it would resend a spent token, so every
-                    // tick locked here to learn nothing while our own copy
-                    // never renewed again. The write-back below still
-                    // measures the store against the token we send, so it
-                    // declines, and the store stays behind; the renewed copy
-                    // is not due again for hours.
-                    if self.storeIsBehindThisApp(
-                        for: profile,
-                        presenting: credentialsJSON
-                    ) {
-                        LoggingService.shared.log(
-                            "Claude Code's own login for profile "
-                            + "'\(profile.name)' is one this app already "
-                            + "renewed and could not write back; renewing "
-                            + "this app's newer copy instead."
-                        )
-                        break
+                // Re-check the verdict under the lock: another presentation of
+                // these same token bytes could have completed while we waited.
+                // In particular, no stale caller can become a third exchange.
+                let known = self.knownRefreshFailure(for: credentialsJSON)
+                let isUncertainReplay = known == .indeterminate
+                if known == .expired {
+                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                    return .failed(.expired)
+                }
+                if isUncertainReplay {
+                    guard self.uncertainReplayIsDue(for: credentialsJSON),
+                          self.connectivitySnapshot() != .offline else {
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        return .failed(.indeterminate)
                     }
-                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
-                    LoggingService.shared.log(
-                        "Claude Code's own login for profile "
-                        + "'\(profile.name)' has already moved past the copy "
-                        + "this app was about to renew; adopting it instead "
-                        + "of spending a token that is no longer current."
-                    )
-                    return .raceResolved
-                case .unreadable:
-                    // A token spent against a store we cannot read is a token
-                    // we cannot mirror back either — the compare-and-swap
-                    // fails closed on the same unreadable item. Skip.
-                    defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
-                    LoggingService.shared.log(
-                        "Could not read Claude Code's own login for profile "
-                        + "'\(profile.name)' under the refresh lock; skipping "
-                        + "this tick rather than spending a token whose "
-                        + "write-back could not be checked."
-                    )
-                    return .deferredToAnotherProcess
-                case .unchanged:
-                    break
+                    guard !self.freshAccountIsInUse(profile.cliAccountName) else {
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        return .deferredToAnotherProcess
+                    }
+                    let token = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON)
+                    let current = self.profileManager.profiles.first {
+                        $0.id == profile.id
+                    }
+                    guard let current,
+                          current.cliAccountName == profile.cliAccountName,
+                          let currentCredential = current.cliCredentialsJSON,
+                          ClaudeCLITokenRefresher.refreshToken(in: currentCredential) == token
+                    else {
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        return .profileChanged
+                    }
+                    guard self.claudeCodeRefreshTokenMatchesStore(
+                        credentialsJSON, profile.cliAccountName
+                    ) else {
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        return .raceResolved
+                    }
                 }
 
+                // The replay's authoritative comparison above measured refresh
+                // tokens, not access-token bytes. Do not overrule that positive
+                // equality with the legacy access-token comparison below: stores
+                // may serialize or update the access part independently.
+                if !isUncertainReplay {
+                    // Claude Code re-reads its store immediately before posting,
+                    // and adopts a sibling's rotated token rather than spending
+                    // one that has already been replaced. Same check, same
+                    // moment.
+                    switch self.claudeCodeStoreComparison(
+                        credentialsJSON,
+                        profile.cliAccountName
+                    ) {
+                    case .movedOn:
+                        // Unless the store "moved" to a login this run already
+                        // renewed, whose write-back did not land, and ours is
+                        // that renewal's descendant in this app. That store is
+                        // behind us, not ahead: adopting refuses its expired copy
+                        // and renewing it would resend a spent token, so every
+                        // tick locked here to learn nothing while our own copy
+                        // never renewed again. The write-back below still
+                        // measures the store against the token we send, so it
+                        // declines, and the store stays behind; the renewed copy
+                        // is not due again for hours.
+                        if self.storeIsBehindThisApp(
+                            for: profile,
+                            presenting: credentialsJSON
+                        ) {
+                            LoggingService.shared.log(
+                                "Claude Code's own login for profile "
+                                + "'\(profile.name)' is one this app already "
+                                + "renewed and could not write back; renewing "
+                                + "this app's newer copy instead."
+                            )
+                            break
+                        }
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        LoggingService.shared.log(
+                            "Claude Code's own login for profile "
+                            + "'\(profile.name)' has already moved past the copy "
+                            + "this app was about to renew; adopting it instead "
+                            + "of spending a token that is no longer current."
+                        )
+                        return .raceResolved
+                    case .unreadable:
+                        // A token spent against a store we cannot read is a token
+                        // we cannot mirror back either — the compare-and-swap
+                        // fails closed on the same unreadable item. Skip.
+                        defer { self.inFlightCLIRefreshes.removeValue(forKey: key) }
+                        LoggingService.shared.log(
+                            "Could not read Claude Code's own login for profile "
+                            + "'\(profile.name)' under the refresh lock; skipping "
+                            + "this tick rather than spending a token whose "
+                            + "write-back could not be checked."
+                        )
+                        return .deferredToAnotherProcess
+                    case .unchanged:
+                        break
+                    }
+
+                }
+
+                var wasProvablyUnsent = false
                 let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
                     from: credentialsJSON,
-                    forAccountNamed: profile.cliAccountName
+                    forAccountNamed: profile.cliAccountName,
+                    connectivitySnapshot: self.connectivitySnapshot,
+                    onUnsentFailure: { wasProvablyUnsent = true }
                 )
                 return self.finishShieldedCLIRefresh(
                     outcome,
                     for: profile,
                     credentialsJSON: credentialsJSON,
                     key: key,
-                    observation: observation
+                    observation: observation,
+                    isUncertainReplay: isUncertainReplay,
+                    wasProvablyUnsent: wasProvablyUnsent
                 )
             }
             refresh = InFlightCLIRefresh(
@@ -2175,7 +2313,9 @@ class ClaudeAPIService: APIServiceProtocol {
         for profile: Profile,
         credentialsJSON: String,
         key: CLIRefreshKey,
-        observation: CLIRefreshObservation
+        observation: CLIRefreshObservation,
+        isUncertainReplay: Bool,
+        wasProvablyUnsent: Bool
     ) -> ShieldedCLIRefreshResult {
         defer { inFlightCLIRefreshes.removeValue(forKey: key) }
         let fingerprint = credentialsJSON.hashValue
@@ -2186,6 +2326,10 @@ class ClaudeAPIService: APIServiceProtocol {
                     baseCredentialFingerprint: fingerprint
                 )
             ]
+        if isUncertainReplay, !wasProvablyUnsent,
+           let token = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON) {
+            replayedUncertainRefreshTokens.insert(token.hashValue)
+        }
         // Recorded before anything below can bail out: a renewal whose
         // access token cannot be read back still spent the refresh token.
         if case .renewed(let refreshed) = outcome,
@@ -2204,11 +2348,28 @@ class ClaudeAPIService: APIServiceProtocol {
             if case .failed(let failure) = outcome {
                 // Recorded here rather than by the caller, because this runs
                 // whether or not anyone is still waiting for it.
-                if failure == .expired || failure == .indeterminate,
-                   let refreshToken = ClaudeCLITokenRefresher.refreshToken(
-                       in: credentialsJSON
-                   ) {
-                    unsendableRefreshTokens[refreshToken.hashValue] = failure
+                if let refreshToken = ClaudeCLITokenRefresher.refreshToken(
+                    in: credentialsJSON
+                ) {
+                    let tokenKey = refreshToken.hashValue
+                    if failure == .expired {
+                        unsendableRefreshTokens[tokenKey] = .expired
+                        uncertainCLIRefreshes.removeValue(forKey: tokenKey)
+                    } else if isUncertainReplay && !wasProvablyUnsent {
+                        // A second dispatched attempt exhausts recovery even
+                        // if it answers 503. That does not reclassify ordinary
+                        // 503 failures: this token already had an unanswered
+                        // exchange. Explicit offline/DNS/connect failures did
+                        // not send it, so they leave its allowance untouched.
+                        unsendableRefreshTokens[tokenKey] = .indeterminate
+                        uncertainCLIRefreshes.removeValue(forKey: tokenKey)
+                    } else if failure == .indeterminate {
+                        if replayedUncertainRefreshTokens.contains(tokenKey) {
+                            unsendableRefreshTokens[tokenKey] = .indeterminate
+                        } else {
+                            uncertainCLIRefreshes[tokenKey] = cliRefreshNow()
+                        }
+                    }
                 }
                 return .failed(failure)
             }
@@ -2217,6 +2378,10 @@ class ClaudeAPIService: APIServiceProtocol {
 
         expiredCLILogins.remove(fingerprint)
         indeterminateCLILogins.remove(fingerprint)
+        deferredCLILogins.remove(fingerprint)
+        if let token = ClaudeCLITokenRefresher.refreshToken(in: credentialsJSON) {
+            uncertainCLIRefreshes.removeValue(forKey: token.hashValue)
+        }
         var persistedAny = false
         for (index, participant) in participants.enumerated() {
             do {
@@ -3326,9 +3491,10 @@ class ClaudeAPIService: APIServiceProtocol {
                 // never silently hides a credential the app already knows
                 // is broken (Greptile finding on PR #98).
                 let asleep = asleepSince(presented)
-                let expired = expiredCLILogins.contains(presented.hashValue)
+                let expired = knownRefreshFailure(for: presented) == .expired
                 let issue: ClaudeUsage.PersonalExtraUsageIssue
-                if deferredCLILogins.contains(presented.hashValue) {
+                if knownRefreshFailure(for: presented) == .indeterminate
+                    || deferredCLILogins.contains(presented.hashValue) {
                     issue = .temporarilyUnavailable
                 } else if asleep != nil {
                     issue = .signInAsleep
@@ -3344,6 +3510,17 @@ class ClaudeAPIService: APIServiceProtocol {
                     profileID: profile.id,
                     knownPersonalExtraUsageIssue: issue,
                     knownClaudeCodeAsleepSince: asleep
+                )
+            }
+            if knownRefreshFailure(for: presented) == .indeterminate
+                || deferredCLILogins.contains(presented.hashValue) {
+                // The engine classifies the code as well as recoverability.
+                // sessionKeyNotFound would turn a lost renewal response into
+                // unauthenticated health and a false red sign-in alarm.
+                throw AppError(
+                    code: .apiServiceUnavailable,
+                    message: "Claude Code sign-in renewal is temporarily unavailable",
+                    isRecoverable: true
                 )
             }
             throw AppError(

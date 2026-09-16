@@ -225,13 +225,16 @@ class ClaudeCodeSyncService {
     /// second implementation of "what did the Keychain say" is exactly how
     /// the two programs drifted apart in the first place.
     func claudeCodeKeychainLookup(
-        forAccountNamed accountName: String? = nil
+        forAccountNamed accountName: String? = nil,
+        requireReadableDocument: Bool = false
     ) throws -> ClaudeCodeKeychainLookup {
         if let keychainCredentialsReader {
             guard let json = try keychainCredentialsReader(accountName) else {
                 return .noItem
             }
-            return Self.classifyKeychainDocument(json)
+            return try classifyReadKeychainDocument(
+                json, requireReadableDocument: requireReadableDocument
+            )
         }
 
         // The item a write would target, named rather than discovered.
@@ -268,9 +271,35 @@ class ClaudeCodeSyncService {
             // Claude Code's own keychain read wraps the parse in a try/catch
             // and answers null when the bytes are unusable, which sends it to
             // the file. Undecodable bytes are the same condition.
+            if requireReadableDocument {
+                throw ClaudeCodeError.keychainReadFailed(
+                    exitCode: 0, message: "The Keychain document is unreadable"
+                )
+            }
             return .noItem
         }
-        return Self.classifyKeychainDocument(value)
+        return try classifyReadKeychainDocument(
+            value, requireReadableDocument: requireReadableDocument
+        )
+    }
+
+    /// Ordinary adoption follows Claude Code's fallback on malformed bytes.
+    /// A replay needs stronger positive evidence: unreadable bytes cannot
+    /// establish that the uncertain token still belongs to this account.
+    private func classifyReadKeychainDocument(
+        _ json: String,
+        requireReadableDocument: Bool
+    ) throws -> ClaudeCodeKeychainLookup {
+        if requireReadableDocument {
+            guard let data = json.data(using: .utf8),
+                  (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                    != nil else {
+                throw ClaudeCodeError.keychainReadFailed(
+                    exitCode: 0, message: "The Keychain document is unreadable"
+                )
+            }
+        }
+        return Self.classifyKeychainDocument(json)
     }
 
     /// Sorts one Keychain document into Claude Code's three answers.
@@ -913,6 +942,50 @@ class ClaudeCodeSyncService {
             return currentToken == snapshotToken ? .unchanged : .movedOn
         case .loggedOut, .noItem:
             return .unchanged
+        }
+    }
+
+    /// Positive evidence for the one delayed replay of an uncertain renewal.
+    /// Call only while holding the account's refresh lock. Unlike the normal
+    /// access-token comparison above, absence is NOT permission: the refresh
+    /// token must still be present in Claude Code's authoritative store and
+    /// equal to the uncertain token. No credential bytes are cached here.
+    ///
+    /// Keychain is authoritative when it has a document, including a logged
+    /// out document. With no Keychain item, read only `.credentials.json`,
+    /// the file Claude Code actually uses. The legacy compatibility filename
+    /// cannot prove current ownership, nor can an unreadable or missing file.
+    func refreshTokenMatchesStore(
+        _ credentialsJSON: String,
+        forAccountNamed accountName: String?
+    ) -> Bool {
+        guard let expected = ClaudeCLITokenRefresher.refreshToken(
+            in: credentialsJSON
+        ) else { return false }
+        do {
+            let current: String?
+            switch try claudeCodeKeychainLookup(
+                forAccountNamed: accountName, requireReadableDocument: true
+            ) {
+            case .login(let json):
+                current = json
+            case .loggedOut:
+                return false
+            case .noItem:
+                current = readCanonicalCredentialsFile(forAccountNamed: accountName)
+            }
+            guard let current, Self.carriesLogin(current),
+                  let actual = ClaudeCLITokenRefresher.refreshToken(in: current)
+            else { return false }
+            return actual == expected
+        } catch {
+            logCredentialDecision(
+                "Could not verify Claude Code's refresh token for "
+                + "\(Self.describeAccount(accountName)) under the refresh lock; "
+                + "deferring uncertain renewal replay: \(error.localizedDescription)",
+                warning: true
+            )
+            return false
         }
     }
 
@@ -2140,10 +2213,14 @@ class ClaudeCodeSyncService {
     /// place so callers cannot each derive the account's configuration
     /// directory their own way. A nil or empty account name means the
     /// default account, `~/.claude`.
-    func isAccountInUse(forAccountNamed accountName: String?) -> Bool {
+    func isAccountInUse(
+        forAccountNamed accountName: String?,
+        bypassCache: Bool = false
+    ) -> Bool {
         liveProcessDetector.isLive(
             configurationDirectory:
-                credentialsDirectory(forAccountNamed: accountName).path
+                credentialsDirectory(forAccountNamed: accountName).path,
+            bypassCache: bypassCache
         )
     }
 

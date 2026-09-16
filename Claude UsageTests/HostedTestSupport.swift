@@ -513,6 +513,11 @@ func makeIsolatedClaudeAPIService(
         loggingService: loggingService
     )
     service.accountIsInUse = accountIsInUse
+    // Guarded retry must remain isolated too: neither a fresh process scan
+    // nor an authoritative store read may reach the developer's account.
+    service.freshAccountIsInUse = accountIsInUse
+    service.claudeCodeRefreshTokenMatchesStore = { _, _ in false }
+    service.connectivitySnapshot = { .unknown }
     useIsolatedClaudeCodeLocks(on: service, in: configurationDirectory)
     return service
 }

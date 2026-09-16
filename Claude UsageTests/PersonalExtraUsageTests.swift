@@ -2083,8 +2083,10 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// the token, so it is never replayed — and that has to hold for the
     /// token, not only for the bytes it arrived in. Here the store hands the
     /// same login back with one unrelated key added, the way a store that
-    /// re-serializes its own file does.
-    func testAStoreCopyCarryingAnUnansweredRefreshTokenIsNeverSentAgain()
+    /// re-serializes its own file does. PRODUCT-3373 adds one guarded delayed
+    /// exception; this case stays before its delay and has no affirmative
+    /// authoritative store check, so that exception does not apply.
+    func testAStoreCopyCarryingAnUnansweredRefreshTokenIsNotSentBeforeReplayGuards()
         async throws
     {
         let scene = try makeDeadIdleLoginScene()
@@ -2097,7 +2099,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         defer { StubClaudeEndpointsURLProtocol.reset() }
 
         let unanswered = try await fetchMemberUsage(scene)
-        XCTAssertEqual(unanswered.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(unanswered.personalExtraUsageIssue, .temporarilyUnavailable)
         XCTAssertEqual(tokenRequestCount, 1)
         let locksBefore = scene.store.locks
 
@@ -2110,12 +2112,12 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertEqual(
             tokenRequestCount,
             1,
-            "a refresh token that may already be spent must never be sent "
-                + "again, whatever bytes it arrives in: "
+            "a refresh token that may already be spent must wait for replay "
+                + "guards, whatever bytes it arrives in: "
                 + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
         )
         XCTAssertEqual(scene.store.locks, locksBefore)
-        XCTAssertEqual(second.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(second.personalExtraUsageIssue, .temporarilyUnavailable)
     }
 
     /// The guarantee a running `claude` depends on survives the dead state.
@@ -2226,7 +2228,7 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// credentials file looks like once its store re-serializes the login
     /// next to its other keys. Keyed on the blob, that looked like a login
     /// nobody had tried, and the possibly-rotated token went out again.
-    func testTheSameRefreshTokenInDifferentBytesIsNeverSentTwice() async throws {
+    func testTheSameRefreshTokenInDifferentBytesIsNotSentBeforeReplayGuards() async throws {
         let stored = Self.credentialsJSON(expiresAt: 1_000)
         let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
         StubClaudeEndpointsURLProtocol.install(
@@ -2238,7 +2240,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         defer { StubClaudeEndpointsURLProtocol.reset() }
 
         let unanswered = try await fetchMemberUsage(scene)
-        XCTAssertEqual(unanswered.personalExtraUsageIssue, .signInUnusable)
+        XCTAssertEqual(unanswered.personalExtraUsageIssue, .temporarilyUnavailable)
         XCTAssertEqual(tokenRequestCount, 1)
         let locksBefore = scene.store.locks
 
@@ -2248,7 +2250,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             let usage = try await fetchMemberUsage(scene)
             XCTAssertEqual(
                 usage.personalExtraUsageIssue,
-                .signInUnusable,
+                .temporarilyUnavailable,
                 "refresh \(refresh)"
             )
         }
@@ -2256,7 +2258,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertEqual(
             tokenRequestCount,
             1,
-            "the same refresh token must never be sent twice: "
+            "rewritten bytes must not bypass the replay guards: "
                 + "\(StubClaudeEndpointsURLProtocol.requestedURLs)"
         )
         XCTAssertEqual(scene.store.locks, locksBefore)
@@ -2786,7 +2788,7 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// cancelled mid-exchange records nothing, so the next refresh found no
     /// verdict and sent the token again. What the exchange itself records
     /// does not depend on who is still listening.
-    func testAnUnansweredRefreshTokenIsNeverSentAgainAfterItsCallerWasCancelled()
+    func testAnUnansweredRefreshTokenWaitsForReplayGuardsAfterItsCallerWasCancelled()
         async throws
     {
         let stored = Self.credentialsJSON(expiresAt: 1_000)
@@ -3975,6 +3977,340 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertNil(renewed.personalExtraUsageIssue)
     }
 
+    // MARK: - Interrupted renewal recovery
+
+    /// The clock and authoritative store answer are deliberate seams: the
+    /// test has no live Claude process, Keychain item, or Anthropic request.
+    /// Store equality is checked by refresh token, so rewriting the document
+    /// without changing the token cannot manufacture a different login.
+    private func makeInterruptedRenewalScene() throws -> DeadIdleLoginScene {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        let scene = try makeDeadIdleLoginScene(stored: stored, storeCopy: stored)
+        scene.service.cliRefreshNow = { scene.store.now }
+        scene.service.uncertainCLIRefreshRetryInterval = 120
+        scene.service.liveCLILoginAdoptionRetryInterval = 0
+        scene.service.freshAccountIsInUse = { _ in false }
+        scene.service.claudeCodeRefreshTokenMatchesStore = { token, _ in
+            ClaudeCLITokenRefresher.refreshToken(in: scene.store.copy)
+                == ClaudeCLITokenRefresher.refreshToken(in: token)
+        }
+        return scene
+    }
+
+    private func installInterruptedRenewal(rotatesBeforeTimeout: Bool = false) {
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            transportErrors: [ClaudeCLITokenRefresher.tokenEndpoint: .timedOut],
+            rotatesBeforeTokenTimeout: rotatesBeforeTimeout
+        )
+    }
+
+    func testInterruptedTransportClassificationPreservesUnsentRetryability() async {
+        let stored = Self.credentialsJSON(expiresAt: 1_000)
+        for code: URLError.Code in [.timedOut, .cancelled, .networkConnectionLost] {
+            StubClaudeEndpointsURLProtocol.install(
+                cliOrganizationID: teamOrganizationID,
+                transportErrors: [ClaudeCLITokenRefresher.tokenEndpoint: code]
+            )
+            var unsent = false
+            let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
+                from: stored,
+                connectivitySnapshot: { .unknown },
+                onUnsentFailure: { unsent = true }
+            )
+            XCTAssertEqual(outcome, .failed(.indeterminate), "\(code)")
+            XCTAssertFalse(unsent, "\(code) may have reached the server")
+        }
+        for code: URLError.Code in [
+            .notConnectedToInternet, .cannotFindHost,
+            .dnsLookupFailed, .cannotConnectToHost
+        ] {
+            StubClaudeEndpointsURLProtocol.install(
+                cliOrganizationID: teamOrganizationID,
+                transportErrors: [ClaudeCLITokenRefresher.tokenEndpoint: code]
+            )
+            var unsent = false
+            let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
+                from: stored,
+                connectivitySnapshot: { .unknown },
+                onUnsentFailure: { unsent = true }
+            )
+            XCTAssertEqual(outcome, .failed(.unavailable), "\(code)")
+            XCTAssertTrue(unsent, "\(code) must leave replay allowance available")
+        }
+    }
+
+    func testMalformedOrUnmergeableSuccessIsAnUncertainRenewal() async {
+        for body in ["not JSON", #"{"expires_in":28800}"#] {
+            StubClaudeEndpointsURLProtocol.install(cliOrganizationID: teamOrganizationID)
+            StubClaudeEndpointsURLProtocol.setTokenResponse(statusCode: 200, body: body)
+            let outcome = await ClaudeCLITokenRefresher.refreshOutcome(
+                from: Self.credentialsJSON(expiresAt: 1_000),
+                connectivitySnapshot: { .unknown }
+            )
+            XCTAssertEqual(outcome, .failed(.indeterminate))
+            XCTAssertEqual(tokenRequestCount, 1)
+        }
+    }
+
+    func testProfileCredentialChangedWhileTakingLockPreventsOldTokenReplay() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        let acquire = scene.service.acquireRefreshLock
+        scene.service.acquireRefreshLock = { account in
+            let lock = try acquire(account)
+            // The captured request was current when queued. Another profile
+            // edit replaced it before the replay took the account lock.
+            scene.manager.profiles[0].cliCredentialsJSON = Self.liveLoginJSON(expiresAt: 1_000)
+            // A usable login in the old account makes an accidental adoption
+            // observable: the old request must not overwrite the new profile.
+            scene.store.copy = Self.signInAgainJSON(
+                expiresAt: Date().addingTimeInterval(28_800).timeIntervalSince1970 * 1000
+            )
+            return lock
+        }
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    func testConfirmedOfflineSendsNoRenewalAndReconnectPersistsOne() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        scene.service.connectivitySnapshot = { .offline }
+        StubClaudeEndpointsURLProtocol.install(cliOrganizationID: teamOrganizationID)
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 0)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+
+        scene.service.connectivitySnapshot = { .online }
+        let recovered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+        XCTAssertTrue(scene.renewals.carriesAccessToken("renewed-access", for: scene.profile.id))
+    }
+
+    func testIdleTimeoutShowsTemporaryAvailabilityThenReplaysAfterDelay() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        let interrupted = try await fetchMemberUsage(scene)
+        XCTAssertEqual(interrupted.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        scene.store.now = scene.store.now.addingTimeInterval(119)
+        let waiting = try await fetchMemberUsage(scene)
+        XCTAssertEqual(waiting.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertEqual(tokenRequestCount, 1, "119 seconds is still before the replay boundary")
+        scene.store.now = scene.store.now.addingTimeInterval(1)
+        let recovered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 2)
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+        XCTAssertTrue(scene.renewals.carriesAccessToken("renewed-access", for: scene.profile.id))
+    }
+
+    func testTimeoutAfterServerRotationReplaysOnceAndExpiresWithoutDeletingCredential() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal(rotatesBeforeTimeout: true)
+        let interrupted = try await fetchMemberUsage(scene)
+        XCTAssertEqual(interrupted.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertTrue(StubClaudeEndpointsURLProtocol.didRotateBeforeTimeout)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+
+        for _ in 0..<3 {
+            let expired = try await fetchMemberUsage(scene)
+            XCTAssertEqual(expired.personalExtraUsageIssue, .signInExpired)
+        }
+        XCTAssertEqual(tokenRequestCount, 2)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+        XCTAssertEqual(scene.store.copy, scene.profile.cliCredentialsJSON)
+        XCTAssertEqual(
+            try scene.profileStore.loadProfileCredentials(scene.profile.id).cliCredentialsJSON,
+            scene.profile.cliCredentialsJSON
+        )
+    }
+
+    func testSecondTimeoutExhaustsReplayAndNeverSendsAThirdPOST() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        for _ in 0..<3 {
+            scene.store.now = scene.store.now.addingTimeInterval(120)
+            let unavailable = try await fetchMemberUsage(scene)
+            XCTAssertEqual(unavailable.personalExtraUsageIssue, .temporarilyUnavailable)
+        }
+        XCTAssertEqual(tokenRequestCount, 2)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    func testSuccessfulReplayKeepingTheSameRefreshTokenCannotResetItsAllowance() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        // A provider may omit refresh_token on success. Merging keeps the
+        // previous token, whose one replay has still been spent. A zero
+        // access-token lifetime makes its next renewal due without sleeping.
+        StubClaudeEndpointsURLProtocol.setTokenResponse(
+            statusCode: 200,
+            body: #"{"access_token":"renewed-access","expires_in":0}"#
+        )
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 2)
+        XCTAssertTrue(scene.renewals.carriesAccessToken("renewed-access", for: scene.profile.id))
+        // Model the shielded writer's successful Claude Code mirror too.
+        scene.store.copy = try XCTUnwrap(scene.renewals.writes.last).json
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(.timedOut)
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 3, "an ordinary later renewal is still allowed")
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        let unavailable = try await fetchMemberUsage(scene)
+        XCTAssertEqual(unavailable.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertEqual(tokenRequestCount, 3, "the same refresh token cannot gain a second guarded replay")
+    }
+
+    func testUnsentReplayFailureDoesNotConsumeTheReplayAllowance() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(.dnsLookupFailed)
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 2)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        let recovered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 3)
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+        XCTAssertTrue(scene.renewals.carriesAccessToken("renewed-access", for: scene.profile.id))
+    }
+
+    func testSentServerFailureOnReplayExhaustsAllowanceWithoutChangingInitial503Recovery() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        StubClaudeEndpointsURLProtocol.setTokenResponse(statusCode: 503)
+        for _ in 0..<3 {
+            let unavailable = try await fetchMemberUsage(scene)
+            XCTAssertEqual(unavailable.personalExtraUsageIssue, .temporarilyUnavailable)
+            scene.store.now = scene.store.now.addingTimeInterval(120)
+        }
+        XCTAssertEqual(tokenRequestCount, 2, "a sent replay cannot be spent again after an HTTP failure")
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    func testReplayWaitsWhileConnectivityIsConfirmedOffline() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        scene.service.connectivitySnapshot = { .offline }
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 1)
+        scene.service.connectivitySnapshot = { .unknown }
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        let recovered = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 2, "unknown connectivity must not block a replay")
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+    }
+
+    func testReplayChecksFreshAccountUseInsideTheRefreshLock() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        var freshChecks = 0
+        scene.service.freshAccountIsInUse = { _ in
+            freshChecks += 1
+            XCTAssertTrue(FileManager.default.fileExists(atPath: scene.store.lockPath))
+            return true
+        }
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(freshChecks, 1)
+        XCTAssertEqual(tokenRequestCount, 1)
+        scene.service.freshAccountIsInUse = { _ in false }
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        _ = try await fetchMemberUsage(scene)
+        XCTAssertEqual(tokenRequestCount, 2)
+    }
+
+    func testReplayRequiresAnAuthoritativeMatchingRefreshTokenInsideTheLock() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        var storeChecks = 0
+        scene.service.claudeCodeRefreshTokenMatchesStore = { token, _ in
+            storeChecks += 1
+            XCTAssertEqual(ClaudeCLITokenRefresher.refreshToken(in: token), "fixture-refresh-token")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: scene.store.lockPath))
+            // Missing, unreadable, and a different refresh token all yield
+            // false from the authoritative store reader; none is equality.
+            return false
+        }
+        for _ in 0..<3 {
+            _ = try await fetchMemberUsage(scene)
+        }
+        XCTAssertEqual(storeChecks, 3)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertTrue(scene.renewals.writes.isEmpty)
+    }
+
+    func testNewStoreLoginAfterTimeoutIsAdoptedWithoutReplayingOldToken() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        scene.store.copy = Self.signInAgainJSON(
+            expiresAt: Date().addingTimeInterval(28_800).timeIntervalSince1970 * 1000
+        )
+        let recovered = try await fetchMemberUsage(scene)
+        XCTAssertNil(recovered.personalExtraUsageIssue)
+        XCTAssertEqual(tokenRequestCount, 1)
+        XCTAssertTrue(scene.renewals.carriesAccessToken("relogin-access-token", for: scene.profile.id))
+    }
+
+    func testConcurrentReplayCallersShareExactlyOnePOST() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        _ = try await fetchMemberUsage(scene)
+        scene.store.now = scene.store.now.addingTimeInterval(120)
+        StubClaudeEndpointsURLProtocol.setTokenTransportError(nil)
+        let started = expectation(description: "guarded replay started")
+        started.assertForOverFulfill = false
+        StubClaudeEndpointsURLProtocol.holdNextTokenRefresh { started.fulfill() }
+        let first = Task { @MainActor in try await self.fetchMemberUsage(scene) }
+        await fulfillment(of: [started], timeout: 2)
+        let second = Task { @MainActor in try await self.fetchMemberUsage(scene) }
+        for _ in 0..<20 { await Task.yield() }
+        StubClaudeEndpointsURLProtocol.releaseTokenRefreshResponse()
+        let firstUsage = try await first.value
+        let secondUsage = try await second.value
+        XCTAssertNil(firstUsage.personalExtraUsageIssue)
+        XCTAssertNil(secondUsage.personalExtraUsageIssue)
+        XCTAssertEqual(tokenRequestCount, 2, "one original attempt plus exactly one shared replay")
+    }
+
+    func testBrowserFallbackAfterTimeoutShowsTemporaryAvailability() async throws {
+        let scene = try makeInterruptedRenewalScene()
+        installInterruptedRenewal()
+        let request = try await scene.service.captureUsageRequestPreparingTerminalSignIn(for: scene.profile)
+        XCTAssertEqual(request.source, .claudeAI)
+        let usage = try await scene.service.fetchUsageData(using: request)
+        XCTAssertEqual(usage.personalExtraUsageIssue, .temporarilyUnavailable)
+        XCTAssertNil(MenuBarAttentionSignal.attention(
+            cliSignInIssue: usage.personalExtraUsageIssue,
+            credentialFailureStreak: 0,
+            healthStatus: .degraded
+        ))
+        XCTAssertEqual(tokenRequestCount, 1)
+    }
+
     // MARK: - One login per account
 
     /// Claude Code stores one Keychain item per configuration directory,
@@ -4547,7 +4883,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
-    func testTimedOutTokenExchangeIsNotRetriedWithTheSameRefreshToken()
+    func testTerminalTimeoutIsAvailabilityThroughEngineAndRaisesNoAuthAttention()
         async throws
     {
         let expired = Self.credentialsJSON(expiresAt: 1_000)
@@ -4574,7 +4910,22 @@ final class PersonalExtraUsageTests: XCTestCase {
                     .captureUsageRequestPreparingTerminalSignIn(for: profile)
                 XCTFail("an exchange with no knowable result is not usable")
             } catch let error as AppError {
-                XCTAssertEqual(error.code, .sessionKeyNotFound)
+                XCTAssertEqual(error.code, .apiServiceUnavailable)
+                let failure = ProviderRefreshFailure(
+                    kind: UsageRefreshEngine.refreshFailureKind(for: error.code),
+                    occurredAt: Date(),
+                    isRecoverable: error.isRecoverable,
+                    consecutiveCount: 2
+                )
+                XCTAssertEqual(failure.kind, .serverError)
+                XCTAssertFalse(failure.isCredentialFailure)
+                XCTAssertNil(MenuBarAttentionSignal.attention(
+                    cliSignInIssue: nil,
+                    credentialFailureStreak: failure.isCredentialFailure
+                        ? failure.sameKindConsecutiveCount : 0,
+                    healthStatus: .degraded,
+                    setupState: .terminalOnly
+                ))
             }
         }
 
@@ -4583,7 +4934,7 @@ final class PersonalExtraUsageTests: XCTestCase {
                 $0 == ClaudeCLITokenRefresher.tokenEndpoint
             }.count,
             1,
-            "a timeout may have spent the token, so the old token is never replayed"
+            "a timeout may have spent the token, so it cannot be replayed before the delay"
         )
     }
 
@@ -6355,6 +6706,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         var copy: String
         var reads = 0
         var locks = 0
+        var now = Date()
         let lockPath: String
 
         init(copy: String, lockPath: String) {
@@ -6368,6 +6720,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let service: ClaudeAPIService
         let renewals: RenewedCredentialRecorder
         let store: StagedClaudeCodeStore
+        let profileStore: ProfileStore
+        let manager: ProfileManager
     }
 
     /// The idle account from PRODUCT-3329: a browser-backed profile whose
@@ -6442,7 +6796,9 @@ final class PersonalExtraUsageTests: XCTestCase {
             profile: profile,
             service: service,
             renewals: renewals,
-            store: staged
+            store: staged,
+            profileStore: profileStore,
+            manager: manager
         )
     }
 
@@ -6632,6 +6988,8 @@ private final class TerminalRenewalSecurityRunner: SecurityCommandRunning {
 private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var responses: [String: (Int, Data)] = [:]
     nonisolated(unsafe) private static var isActive = false
+    nonisolated(unsafe) private static var rotatesBeforeTokenTimeout = false
+    nonisolated(unsafe) private(set) static var didRotateBeforeTimeout = false
     nonisolated(unsafe) private(set) static var requestedURLs: [String] = []
 
     /// URLs answered with a transport error instead of a response, keyed by
@@ -6677,11 +7035,14 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         // when `/api/oauth/usage` does not answer.
         messagesRateLimitHeaders: [String: String] = [:],
         transportErrors: [String: URLError.Code] = [:],
+        rotatesBeforeTokenTimeout: Bool = false,
         holdTokenRefreshResponse: Bool = false,
         onTokenRefreshStarted: (() -> Void)? = nil
     ) {
         requestedURLs = []
         Self.transportErrors = transportErrors
+        Self.rotatesBeforeTokenTimeout = rotatesBeforeTokenTimeout
+        Self.didRotateBeforeTimeout = false
         tokenRefreshResponseGate = holdTokenRefreshResponse
             ? DispatchSemaphore(value: 0)
             : nil
@@ -6788,6 +7149,22 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         messagesRateLimitHeaders = [:]
     }
 
+    static func setTokenTransportError(_ code: URLError.Code?) {
+        transportErrors[ClaudeCLITokenRefresher.tokenEndpoint] = code
+    }
+
+    static func setTokenResponse(statusCode: Int, body: String? = nil) {
+        responses[ClaudeCLITokenRefresher.tokenEndpoint] = (
+            statusCode,
+            Data((body ?? tokenBody(for: statusCode, errorCode: "service_unavailable")).utf8)
+        )
+    }
+
+    static func holdNextTokenRefresh(onStarted: @escaping () -> Void) {
+        tokenRefreshResponseGate = DispatchSemaphore(value: 0)
+        onTokenRefreshStarted = onStarted
+    }
+
     static func releaseTokenRefreshResponse() {
         // Several signals make a failing de-duplication test fail its count
         // assertion instead of hanging a second accidental request forever.
@@ -6824,6 +7201,13 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
             Self.tokenRefreshResponseGate?.wait()
         }
         if let code = Self.transportErrors[url.absoluteString] {
+            if url.absoluteString == ClaudeCLITokenRefresher.tokenEndpoint,
+               code == .timedOut, Self.rotatesBeforeTokenTimeout {
+                Self.didRotateBeforeTimeout = true
+                Self.responses[url.absoluteString] = (
+                    400, Data(#"{"error":"invalid_grant"}"#.utf8)
+                )
+            }
             client?.urlProtocol(self, didFailWithError: URLError(code))
             return
         }
