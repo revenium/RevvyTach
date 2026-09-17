@@ -217,12 +217,20 @@ enum ClaudeUsageProviderAdapter {
 
         // No capacity figure at all. The one thing the app exists to show is
         // missing, so this is not a partial answer — it is no answer.
+        //
+        // The reason is checked before the shape of the response, because
+        // there is one case where the app knows exactly why there are no
+        // figures: it refused to publish another account's. Reporting that
+        // as `responseInvalid` would blame a server that answered perfectly
+        // and send the reader looking for a fault that is not there.
         if !usage.sessionPercentageAvailable,
            !usage.weeklyPercentageAvailable {
             return ProviderHealth(
                 status: .unavailable,
                 checkedAt: base.checkedAt,
-                issue: .responseInvalid
+                issue: usage.personalExtraUsageIssue == .differentAccount
+                    ? .authenticationRequired
+                    : .responseInvalid
             )
         }
         if !usage.sessionPercentageAvailable
@@ -237,7 +245,11 @@ enum ClaudeUsageProviderAdapter {
         // leave a permanent complaint on a correctly configured profile.
         switch usage.personalExtraUsageIssue {
         case .signInExpired, .signInHasNoToken, .signInUnusable,
-             .claudeAccountUnresolved:
+             .claudeAccountUnresolved, .differentAccount:
+            // `.differentAccount` belongs with the broken sign-ins rather
+            // than with `.differentOrganization` beneath it: the linked
+            // login is not this profile's, so the account really does need
+            // attention before its figures mean anything.
             return degraded(.authenticationRequired)
         case .temporarilyUnavailable, .signInAsleep:
             // A reading that did not arrive this time, with nothing said or

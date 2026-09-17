@@ -887,6 +887,7 @@
 "popover.banner.cli_sign_in_expired" = "L'accesso a Claude Code di questo account è scaduto. Accedi di nuovo.";
 "popover.banner.cli_signed_out" = "Claude Code è disconnesso dall'account collegato qui.";
 "popover.banner.cli_sign_in_unusable" = "L'accesso a Claude Code di questo account non funziona.";
+"popover.banner.cli_different_account" = "L'accesso a Claude Code di questo profilo appartiene a un altro account. Ricollegalo in Impostazioni affinché questi numeri siano di questo account.";
 "popover.banner.refresh_failed" = "Aggiornamento fallito %d volte";
 "popover.banner.updated_ago" = "Aggiornato %dm fa";
 "popover.banner.last_success" = "Ultimo aggiornamento riuscito: %@";
@@ -1308,6 +1309,7 @@
 "cli.login_expired_explain" = "Risincronizzare non serve: copia l'accesso di questo account, e quell'accesso è scaduto. Esegui questo nel Terminale per accedere di nuovo.";
 "cli.login_expired_then_resync" = "Una volta effettuato l'accesso, torna qui e premi Risincronizza.";
 "popover.extra_usage.cli_other_organization" = "Questo è il totale della tua organizzazione. L'account Claude Code collegato appartiene a un'altra organizzazione, quindi il suo utilizzo non viene mostrato qui.";
+"popover.extra_usage.cli_different_account" = "L'accesso a Claude Code collegato qui appartiene a un altro account, quindi il suo utilizzo non viene mostrato in questo profilo. Ricollega l'account in Impostazioni.";
 "popover.extra_usage.claude_account_unresolved" = "Questo è il totale della tua organizzazione. Non è stato possibile abbinare il tuo utilizzo a questa organizzazione: ricollega il tuo account in Impostazioni → Account Claude.";
 "popover.extra_usage.absent.cli_not_linked" = "Il tuo utilizzo aggiuntivo proviene da Claude Code, che non è ancora collegato a questo account: aggiungilo in Impostazioni → Account CLI.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Non è possibile leggere il tuo utilizzo aggiuntivo: l'accesso a Claude Code per questo account è scaduto. Accedi di nuovo a Claude Code e il valore ricomparirà da sé.";
@@ -1315,6 +1317,7 @@
 "popover.extra_usage.absent.cli_sign_in_unusable" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo con l'account Claude Code collegato qui.";
 "popover.extra_usage.absent.cli_temporarily_unavailable" = "Questa volta non è stato possibile leggere il tuo utilizzo aggiuntivo. Verrà riprovato automaticamente.";
 "popover.extra_usage.absent.cli_other_organization" = "Il tuo utilizzo aggiuntivo non viene mostrato: l'account Claude Code collegato appartiene a un'altra organizzazione.";
+"popover.extra_usage.absent.cli_different_account" = "Questi numeri non vengono mostrati: l'accesso a Claude Code collegato appartiene a un altro account. Ricollega l'account in Impostazioni.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Non è stato possibile abbinare il tuo utilizzo aggiuntivo a questa organizzazione: ricollega il tuo account in Impostazioni → Account Claude.";
 "popover.extra_usage.organization_lookup_failed" = "Non è stato possibile leggere il tuo utilizzo aggiuntivo in questo momento. Aggiorna per riprovare.";
 
@@ -1377,6 +1380,12 @@
 "claude_account.terminal.link" = "Collega Claude Code…";
 "claude_account.terminal.not_linked_detail" = "Non collegato — Collega l'account Claude Code usato per questa organizzazione.";
 "claude_account.terminal.detail" = "Account Claude Code %@ · rinnovato %@ · riscritto in Claude Code";
+"claude_account.terminal.different_account_detail" = "Questo accesso a Claude Code appartiene a un account diverso da quello di questo profilo. Accedi con l'account corretto in questa directory dell'account, oppure collegane un altro.";
+"claude_identity.browser.different_account" = "Questo accesso appartiene a %@, non all'account di questo profilo. Accedi con l'account a cui corrisponde questo profilo, oppure crea un profilo separato per l'altro.";
+"claude_identity.browser.already_bound" = "Il profilo '%@' ha già effettuato l'accesso a questo account.";
+"claude_identity.terminal.different_account" = "Questa directory dell'account Claude Code ha effettuato l'accesso con un account diverso da quello a cui è stato collegato questo profilo. Accedi di nuovo qui con quell'account, oppure usa Scollega e poi Collega per puntare questo profilo all'account che la directory contiene ora.";
+"claude_identity.terminal.different_account_named" = "Questa directory dell'account Claude Code ha effettuato l'accesso come %@, che non è l'account a cui è stato collegato questo profilo. Accedi di nuovo qui con quell'account, oppure usa Scollega e poi Collega per puntare questo profilo all'account che la directory contiene ora.";
+"claude_identity.terminal.already_bound" = "Il profilo '%@' usa già questo account Claude Code e due profili sullo stesso account mostrano gli stessi numeri. Accedi in questa directory con un altro account, oppure scollegala prima da '%@'.";
 "claude_account.terminal.link_sheet.title" = "Accesso terminale (Claude Code)";
 "claude_account.terminal.link_sheet.subtitle" = "Crea la directory, accedi con Claude Code e verifica l'accesso.";
 "claude_account.sync.title" = "Sincronizzazione Claude Code";

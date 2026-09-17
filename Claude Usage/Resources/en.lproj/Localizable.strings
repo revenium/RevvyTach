@@ -982,6 +982,7 @@
 "popover.banner.cli_sign_in_expired" = "Claude Code's sign-in for this account has expired. Sign in again.";
 "popover.banner.cli_signed_out" = "Claude Code is signed out of the account linked here.";
 "popover.banner.cli_sign_in_unusable" = "This account's Claude Code sign-in isn't working.";
+"popover.banner.cli_different_account" = "This profile's Claude Code sign-in belongs to a different account. Re-link it in Settings so these numbers are this account's.";
 "popover.banner.refresh_failed" = "Refresh failed %d times";
 "popover.banner.updated_ago" = "Updated %dm ago";
 "popover.banner.last_success" = "Last successful refresh: %@";
@@ -1323,6 +1324,7 @@
 "cli.login_expired_explain" = "Re-syncing won't help: it copies this account's sign-in, and that sign-in has expired. Run this in Terminal to sign in again.";
 "cli.login_expired_then_resync" = "Once you're signed in, come back and press Re-sync.";
 "popover.extra_usage.cli_other_organization" = "This is your organization's total. Your linked Claude Code account belongs to a different organization, so its usage isn't shown here.";
+"popover.extra_usage.cli_different_account" = "The Claude Code sign-in linked here belongs to a different account, so its usage isn't shown under this profile. Re-link the account in Settings.";
 "popover.extra_usage.claude_account_unresolved" = "This is your organization's total. Your own usage couldn't be matched to this organization — reconnect your account in Settings → Claude Account.";
 "popover.extra_usage.absent.cli_not_linked" = "Your extra usage comes from Claude Code, which isn't linked to this account yet — add it in Settings → CLI Account.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Your extra usage can't be read: Claude Code's sign-in for this account has expired. Sign in to Claude Code again and it will reappear on its own.";
@@ -1330,6 +1332,7 @@
 "popover.extra_usage.absent.cli_sign_in_unusable" = "Your extra usage couldn't be read with the Claude Code account linked here.";
 "popover.extra_usage.absent.cli_temporarily_unavailable" = "Your extra usage couldn't be read this time. It will be retried automatically.";
 "popover.extra_usage.absent.cli_other_organization" = "Your extra usage isn't shown: the linked Claude Code account belongs to a different organization.";
+"popover.extra_usage.absent.cli_different_account" = "These numbers aren't shown: the linked Claude Code sign-in belongs to a different account. Re-link the account in Settings.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Your extra usage couldn't be matched to this organization — reconnect your account in Settings → Claude Account.";
 "popover.extra_usage.organization_lookup_failed" = "Your extra usage couldn't be read just now. Refresh to try again.";
 
@@ -1392,6 +1395,12 @@
 "claude_account.terminal.link" = "Link Claude Code…";
 "claude_account.terminal.not_linked_detail" = "Not linked — Link the Claude Code account you use for this organization.";
 "claude_account.terminal.detail" = "Claude Code account %@ · renewed %@ · written back to Claude Code";
+"claude_account.terminal.different_account_detail" = "This Claude Code sign-in belongs to a different account than this profile. Sign in to the right account in this account directory, or link a different one.";
+"claude_identity.browser.different_account" = "This sign-in belongs to %@, not to this profile's account. Sign in to the account this profile is for, or set up a separate profile for that one.";
+"claude_identity.browser.already_bound" = "Profile '%@' is already signed in to this account.";
+"claude_identity.terminal.different_account" = "This Claude Code account directory is signed in as a different account than this profile was linked to. Sign in to that account again here, or use Unlink and then Link to point this profile at the account the directory now holds.";
+"claude_identity.terminal.different_account_named" = "This Claude Code account directory is signed in as %@, which is not the account this profile was linked to. Sign in to that account again here, or use Unlink and then Link to point this profile at the account the directory now holds.";
+"claude_identity.terminal.already_bound" = "Profile '%@' is already using this Claude Code account, and two profiles on one account show the same numbers. Sign this directory in to a different account, or unlink it from '%@' first.";
 "claude_account.terminal.link_sheet.title" = "Terminal sign-in (Claude Code)";
 "claude_account.terminal.link_sheet.subtitle" = "Create the account directory, sign in with Claude Code, then check for the sign-in.";
 "claude_account.sync.title" = "Claude Code sync";

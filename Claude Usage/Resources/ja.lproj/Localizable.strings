@@ -889,6 +889,7 @@
 "popover.banner.cli_sign_in_expired" = "Claude Code のサインインが期限切れです。再度サインインしてください。";
 "popover.banner.cli_signed_out" = "ここにリンクされたアカウントで Claude Code がサインアウトされています。";
 "popover.banner.cli_sign_in_unusable" = "このアカウントの Claude Code のサインインが機能していません。";
+"popover.banner.cli_different_account" = "このプロファイルの Claude Code のサインインは別のアカウントのものです。これらの数値がこのアカウントのものになるよう、「設定」で連携し直してください。";
 "popover.banner.refresh_failed" = "更新が%d回失敗しました";
 "popover.banner.updated_ago" = "%d分前に更新";
 "popover.banner.last_success" = "前回の更新成功: %@";
@@ -1308,6 +1309,7 @@
 "cli.login_expired_explain" = "再同期では解決しません。再同期はこのアカウントのサインインを複製するもので、そのサインイン自体が期限切れです。ターミナルで次を実行して再度サインインしてください。";
 "cli.login_expired_then_resync" = "サインインが完了したら、ここに戻って「再同期」を押してください。";
 "popover.extra_usage.cli_other_organization" = "これは組織全体の合計です。連携されている Claude Code アカウントは別の組織に属しているため、その使用量はここには表示されません。";
+"popover.extra_usage.cli_different_account" = "ここに連携されている Claude Code のサインインは別のアカウントのものであるため、その使用量はこのプロファイルには表示されません。「設定」でアカウントを連携し直してください。";
 "popover.extra_usage.claude_account_unresolved" = "これは組織全体の合計です。ご自身の使用量をこの組織と照合できませんでした。「設定 → Claude アカウント」でアカウントを再接続してください。";
 "popover.extra_usage.absent.cli_not_linked" = "ご自身の追加使用量は Claude Code から取得されますが、このアカウントにはまだ連携されていません。「設定 → CLI アカウント」で追加してください。";
 "popover.extra_usage.absent.cli_sign_in_expired" = "ご自身の追加使用量を読み取れません。このアカウントの Claude Code のサインインは期限切れです。Claude Code に再度サインインすれば、自動的に再表示されます。";
@@ -1315,6 +1317,7 @@
 "popover.extra_usage.absent.cli_sign_in_unusable" = "ここにリンクされている Claude Code アカウントでは、追加使用量を読み取れませんでした。";
 "popover.extra_usage.absent.cli_temporarily_unavailable" = "今回は追加使用量を読み取れませんでした。自動的に再試行されます。";
 "popover.extra_usage.absent.cli_other_organization" = "ご自身の追加使用量は表示されません。連携されている Claude Code アカウントは別の組織に属しています。";
+"popover.extra_usage.absent.cli_different_account" = "これらの数値は表示されません。連携されている Claude Code のサインインは別のアカウントのものです。「設定」でアカウントを連携し直してください。";
 "popover.extra_usage.absent.claude_account_unresolved" = "ご自身の追加使用量をこの組織と照合できませんでした。「設定 → Claude アカウント」でアカウントを再接続してください。";
 "popover.extra_usage.organization_lookup_failed" = "ご自身の追加使用量を今回読み取れませんでした。更新して再試行してください。";
 
@@ -1377,6 +1380,12 @@
 "claude_account.terminal.link" = "Claude Code を連携…";
 "claude_account.terminal.not_linked_detail" = "未連携 — この組織で使う Claude Code アカウントを連携します。";
 "claude_account.terminal.detail" = "Claude Code アカウント %@ · %@ に更新 · Claude Code へ書き戻し済み";
+"claude_account.terminal.different_account_detail" = "この Claude Code のサインインは、このプロファイルとは別のアカウントのものです。このアカウントディレクトリで正しいアカウントにサインインするか、別のアカウントを連携してください。";
+"claude_identity.browser.different_account" = "このサインインは %@ のものであり、このプロファイルのアカウントではありません。このプロファイルに対応するアカウントでサインインするか、そのアカウント用に別のプロファイルを作成してください。";
+"claude_identity.browser.already_bound" = "プロファイル「%@」はすでにこのアカウントにサインインしています。";
+"claude_identity.terminal.different_account" = "この Claude Code アカウントディレクトリは、このプロファイルが連携されたアカウントとは別のアカウントでサインインしています。ここで再びそのアカウントにサインインするか、「リンク解除」してから「連携」を行い、このプロファイルを現在ディレクトリが保持しているアカウントに向けてください。";
+"claude_identity.terminal.different_account_named" = "この Claude Code アカウントディレクトリは %@ としてサインインしており、これはこのプロファイルが連携されたアカウントではありません。ここで再びそのアカウントにサインインするか、「リンク解除」してから「連携」を行い、このプロファイルを現在ディレクトリが保持しているアカウントに向けてください。";
+"claude_identity.terminal.already_bound" = "プロファイル「%@」はすでにこの Claude Code アカウントを使用しており、1 つのアカウントに 2 つのプロファイルがあると同じ数値が表示されます。このディレクトリを別のアカウントでサインインするか、先に「%@」との連携を解除してください。";
 "claude_account.terminal.link_sheet.title" = "ターミナルサインイン (Claude Code)";
 "claude_account.terminal.link_sheet.subtitle" = "ディレクトリを作成し、Claude Code にサインインして確認します。";
 "claude_account.sync.title" = "Claude Code 同期";

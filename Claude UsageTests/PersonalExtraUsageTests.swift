@@ -11,7 +11,7 @@ import UsageCore
 /// Every figure here is a real response captured from a Team member's account
 /// on 2026-08-22.
 @MainActor
-final class PersonalExtraUsageTests: XCTestCase {
+final class PersonalExtraUsageTests: HostedAppTestCase {
 
     /// The organization the maintainer's claude.ai session belongs to.
     private let teamOrganizationID = "665a6475-2eb6-4da8-8379-d5529d283568"
@@ -289,7 +289,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let issues: [ClaudeUsage.PersonalExtraUsageIssue] = [
             .notLinked, .signInExpired, .signInHasNoToken,
             .signInUnusable, .temporarilyUnavailable,
-            .differentOrganization, .claudeAccountUnresolved
+            .differentOrganization, .claudeAccountUnresolved,
+            .differentAccount
         ]
         for issue in issues {
             var usage = ClaudeUsage.empty
@@ -519,6 +520,136 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
 
         XCTAssertEqual(usage.organizationExtraUsageIssue, .notEnabled)
+    }
+
+    // MARK: - The browser credential mark
+
+    /// The mark has to describe the key a request would send, not the
+    /// characters someone pasted. `testSessionKey` authenticates with the
+    /// validated key and `saveSessionKey` stores that same value, so marking
+    /// the raw paste would let one stored credential and the same credential
+    /// pasted with surrounding whitespace look like two accounts, and the
+    /// collision the browser path exists to refuse would go unrefused.
+    func testTheBrowserCredentialMarkMatchesTheStoredCredential() throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        let organizations = [
+            ClaudeAPIService.AccountInfo(
+                uuid: teamOrganizationID,
+                name: "Team",
+                capabilities: ["chat", "raven"],
+                ravenType: "team"
+            )
+        ]
+        let key = "sk-ant-sid01-fixture-session-key-value"
+
+        let pasted = service.browserSignIn(
+            organizations: organizations,
+            key: "  \(key)\n"
+        )
+        let clean = service.browserSignIn(
+            organizations: organizations,
+            key: key
+        )
+        XCTAssertEqual(
+            pasted.credentialMark,
+            clean.credentialMark,
+            "surrounding whitespace must not produce a second identity"
+        )
+        XCTAssertEqual(
+            clean.credentialMark,
+            ClaudeAPIService.identityBinding(
+                try seededProfile(profileID)
+            ).browserCredentialMark,
+            "the pasted key and the stored credential must mark the same"
+        )
+        XCTAssertNotNil(clean.credentialMark)
+
+        // A key that cannot validate never reaches a request, so it
+        // establishes nothing rather than carrying a mark nothing matches.
+        XCTAssertNil(
+            service.browserSignIn(
+                organizations: organizations,
+                key: "not-a-session-key"
+            ).credentialMark
+        )
+
+        // A Team organization is never offered as an account identity.
+        XCTAssertEqual(clean.personalOrganizationUUIDs, [])
+    }
+
+    // MARK: - The account-mismatch fallback publishes no supplementary figure
+
+    /// The control. With no mismatch the member's own figure is fetched and
+    /// published exactly as before, so the assertion below is about the
+    /// mismatch and not about a stub that answers nothing.
+    func testTheMemberFigureIsPublishedWhenTheIdentityMatches() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertNotNil(
+            usage.personalCostUsed,
+            "the control must produce a member figure, or the mismatch "
+            + "assertion proves nothing"
+        )
+        XCTAssertNotEqual(usage.personalExtraUsageIssue, .differentAccount)
+    }
+
+    /// The member figure is fetched with the profile's Claude Code
+    /// credential. Once that credential has been found to belong to another
+    /// account the figure is another account's too, so refusing the session
+    /// and weekly percentages while publishing it beside them showed a
+    /// number the profile did not earn — and the popover treats any present
+    /// figure as authoritative, so the explanation never reached the screen.
+    func testAnAccountMismatchPublishesNoMemberFigure() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID),
+            claudeCodeIdentityMismatch: true
+        )
+
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertNil(usage.personalCostLimit)
+        XCTAssertNil(usage.personalCostCurrency)
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
     }
 
     /// The shape classifier itself, which is what keeps a genuine shape
@@ -916,16 +1047,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         // Routed through the isolated builder, not `ClaudeAPIService(...)`
         // directly: the bare initialiser leaves `renewedCredentialWriter`
         // resolving to `ProfileStore.shared`, which reads every stored secret
         // out of the developer's login Keychain.
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
 
         let request = try service.captureUsageRequest(for: profile)
 
@@ -1194,8 +1325,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1203,12 +1334,12 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         // A 400 from the token endpoint is what sends the app down the
         // adoption path rather than the renewal path.
@@ -1255,8 +1386,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1264,12 +1395,12 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -1323,8 +1454,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1332,13 +1463,13 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1382,17 +1513,17 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1439,16 +1570,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: RenewedCredentialRecorder(),
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -1489,8 +1620,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1498,13 +1629,13 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1556,17 +1687,17 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1612,16 +1743,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
         service.acquireRefreshLock = { _ in
             throw ClaudeCodeStoreLock.AcquisitionFailure.heldByAnotherProcess
         }
@@ -1673,8 +1804,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1682,12 +1813,12 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -1747,20 +1878,20 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         // Newer than the app's copy — a different refresh token entirely —
         // and expired, which is the whole shape of the defect.
         let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { storeCopy },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -1819,18 +1950,18 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { storeCopy },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -2474,7 +2605,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         }
         let manager = ProfileManager(profileStore: pair.profileStore)
         manager.profiles = reloaded
-        retained.append(manager)
+        _ = retain(manager)
         let restarted = makeDeadIdleLoginScene(
             profile: reloaded[0],
             manager: manager,
@@ -2858,8 +2989,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(stored, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let scene = makeDeadIdleLoginScene(
             profile: profile,
             manager: manager,
@@ -2904,16 +3035,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -2964,8 +3095,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -2973,13 +3104,13 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3020,16 +3151,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3063,17 +3194,17 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let expiredLive = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { expiredLive },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3110,16 +3241,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { Self.signedOutCredentialsJSON },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3158,16 +3289,16 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { stored },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3201,8 +3332,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -3210,12 +3341,12 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3257,18 +3388,18 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
                 readCount += 1
                 return nil
             }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3316,12 +3447,12 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -3333,7 +3464,7 @@ final class PersonalExtraUsageTests: XCTestCase {
                 )
             },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3379,12 +3510,12 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -3396,7 +3527,7 @@ final class PersonalExtraUsageTests: XCTestCase {
                 )
             },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3439,8 +3570,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var signedIn = false
         let live = Self.liveLoginJSON(
@@ -3449,12 +3580,12 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .timeIntervalSince1970 * 1000
         )
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { signedIn ? live : nil },
             renewals: renewals
-        )
+        ))
         // Isolates this test from real wall-clock time: the throttle exists
         // to bound Keychain reads across the seconds-apart ticks of a real
         // refresh timer, not to stand between two calls made back-to-back
@@ -3543,8 +3674,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let b = profileBValue
         manager.profiles = [a, b]
         manager.activeProfile = a
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let live = Self.liveLoginJSON(
             expiresAt: Date()
@@ -3554,12 +3685,12 @@ final class PersonalExtraUsageTests: XCTestCase {
         let renewals = RenewedCredentialRecorder()
         // Left at the default: this test is about the interval the app
         // actually ships with, not a zeroed-out stand-in for it.
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4584,11 +4715,11 @@ final class PersonalExtraUsageTests: XCTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4637,11 +4768,11 @@ final class PersonalExtraUsageTests: XCTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [firstProfile, joiningProfile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4707,11 +4838,11 @@ final class PersonalExtraUsageTests: XCTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [firstProfile, joiningProfile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4833,10 +4964,10 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(expired, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4893,10 +5024,10 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(expired, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             transportErrors: [
@@ -4954,7 +5085,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         manager.profiles = [profile]
         var liveReads = 0
         var logMessages: [String] = []
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -4964,7 +5095,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             loggingService: LoggingService {
                 logMessages.append($0)
             }
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             tokenRefreshStatusCode: 400
@@ -5008,11 +5139,11 @@ final class PersonalExtraUsageTests: XCTestCase {
         manager.profiles = [profile]
         manager.activeProfile = profile
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let completed = expectation(description: "live refresh completed")
         let runtime = UsageRefreshRuntime.live(
             profileManager: manager,
@@ -5066,7 +5197,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         manager.profiles = [profile]
         var liveReads = 0
         var logMessages: [String] = []
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -5076,7 +5207,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             loggingService: LoggingService {
                 logMessages.append($0)
             }
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             tokenRefreshStatusCode: 400
@@ -5129,10 +5260,10 @@ final class PersonalExtraUsageTests: XCTestCase {
         try seedProfilesForTesting([profile], in: store)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
         )
@@ -6644,6 +6775,417 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
+    // MARK: - Whose account these percentages are
+
+    /// The session and weekly percentages are the numbers people actually
+    /// read, and until this guard existed nothing checked that the Claude
+    /// Code login producing them belonged to the profile they appear under.
+    /// A profile is bound to a Claude Code *directory name*, and two
+    /// directories can hold one account's login.
+    ///
+    /// Terminal-only, so there is no browser sign-in to fall back to and the
+    /// refusal has to surface as a thrown error rather than as a quieter
+    /// reading from claude.ai.
+    func testACLILoginForAnotherAccountDoesNotPublishItsPercentages()
+        async throws
+    {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        var profile = Profile(
+            id: UUID(),
+            name: "Terminal-only fixture",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        // The account this profile accepted when it was linked.
+        profile.cliAccountUUID = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(credentials, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        _ = retain(manager)
+        _ = retain(store)
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        ))
+        // Someone signed that account directory in as a different account.
+        // Injected rather than read from disk: a test must never decide
+        // anything from the developer's own `~/.claude-accounts`.
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "ed73b56e-85e9-4a68-81e6-e7db3e26c2b9",
+                emailAddress: "someone.else@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(for: profile)
+        XCTAssertEqual(request.source, .profileCLI)
+
+        let usage = try await service.fetchUsageData(using: request)
+
+        // Refused, and the refusal says so on screen rather than throwing:
+        // an empty panel with no explanation is a second defect wearing the
+        // first one's clothes.
+        XCTAssertFalse(usage.sessionPercentageAvailable)
+        XCTAssertFalse(usage.weeklyPercentageAvailable)
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "the refusal must come before the request, not after it"
+        )
+    }
+
+    /// The same refusal on a profile that also holds a browser sign-in. One
+    /// credential being wrong never loses the numbers the other can still
+    /// produce, so the reading comes from claude.ai — this profile's own
+    /// account — and names the Claude Code problem beside it.
+    func testABrowserBackedProfileFallsBackWhenItsCLILoginIsAnotherAccount()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        var profile = try seededProfile(profileID)
+        // The account this profile accepted when it was linked.
+        profile.cliAccountUUID = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        _ = retain(manager)
+        _ = retain(store)
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        ))
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "ed73b56e-85e9-4a68-81e6-e7db3e26c2b9",
+                emailAddress: "someone.else@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(for: profile)
+        let usage = try await service.fetchUsageData(using: request)
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertTrue(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0 == "https://claude.ai/api/organizations/"
+                    + "\(teamOrganizationID)/usage"
+            },
+            "a profile whose Claude Code login is another account's must "
+                + "read its numbers from its own claude.ai organization "
+                + "instead"
+        )
+    }
+
+    /// The state this machine is actually in: two profiles, two Claude Code
+    /// directories, one account, neither profile carrying a recorded
+    /// identity. BOTH are refused, and that is the intended answer — with one
+    /// account behind two profiles there is no non-arbitrary winner, and
+    /// picking one would publish a number under a name that did not earn it.
+    /// Each of them says why on screen instead of going blank.
+    func testTwoProfilesBoundToOneAccountAreBothRefused() async throws {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let sharedAccount = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let first = Profile(
+            id: UUID(),
+            name: "daithi-walsh",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-walsh"
+        )
+        let second = Profile(
+            id: UUID(),
+            name: "daithi-ie",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-ie"
+        )
+        try seedProfilesForTesting([first, second], in: store)
+        try store.saveCLIProfileCredential(credentials, for: first.id)
+        try store.saveCLIProfileCredential(credentials, for: second.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [first, second]
+        _ = retain(manager)
+        _ = retain(store)
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        ))
+        // Both directories are signed in as the same account.
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: sharedAccount,
+                emailAddress: "one.person@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        // `otherProfileBindings` reads the other profile's directory when it
+        // has no recorded identity of its own, so the collision is visible
+        // from both sides on the very first reading — which is the point: a
+        // machine already in this state must not publish one account twice
+        // while it waits for a profile to record something.
+        let firstUsage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: first)
+        )
+        XCTAssertEqual(firstUsage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(firstUsage.sessionPercentageAvailable)
+
+        let secondUsage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: second)
+        )
+        XCTAssertEqual(secondUsage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(secondUsage.sessionPercentageAvailable)
+
+        // Neither of them recorded the shared account: recording happens only
+        // on a verdict that passed, so a refused profile never adopts the
+        // account it was refused for.
+        XCTAssertNil(
+            manager.profiles.first { $0.id == first.id }?.cliAccountUUID
+        )
+        XCTAssertNil(
+            manager.profiles.first { $0.id == second.id }?.cliAccountUUID
+        )
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "neither profile may reach the usage endpoint with a login that "
+                + "is not its own"
+        )
+    }
+
+    /// The single-profile case the test above must not be confused with: one
+    /// profile, one directory, nothing recorded, no other profile holding
+    /// that account. It adopts and publishes.
+    func testALoneProfileAdoptsTheAccountItIsSignedInAs() async throws {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let sharedAccount = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let profile = Profile(
+            id: UUID(),
+            name: "daithi-ie",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-ie"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(credentials, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        _ = retain(manager)
+        _ = retain(store)
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        ))
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: sharedAccount,
+                emailAddress: "one.person@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: profile)
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(
+            manager.profiles.first { $0.id == profile.id }?.cliAccountUUID,
+            sharedAccount
+        )
+    }
+
+    /// The identity comes from the bound account directory's own
+    /// `.claude.json` first. The `/api/oauth/profile` account is a secondary
+    /// that only fills a gap the file left, and a profile with no directory
+    /// and no lookup behind it answers with nothing at all rather than with a
+    /// guess.
+    func testTheOnDiskIdentityIsTheOneTheGuardReads() throws {
+        let store = makeIsolatedProfileStore()
+        let profile = Profile(
+            id: UUID(),
+            name: "Fixture",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: nil,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        _ = retain(manager)
+        _ = retain(store)
+        let service = retain(makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        ))
+
+        var directoriesRead: [String] = []
+        service.claudeCodeAccountIdentityReader = { directoryName in
+            directoriesRead.append(directoryName)
+            return ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "048a9b16-1391-4949-94be-b4f0f3c866c3",
+                emailAddress: "someone@example.com"
+            )
+        }
+        XCTAssertEqual(
+            service.boundClaudeCodeAccount(for: profile)?.uuid,
+            "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        )
+        XCTAssertEqual(directoriesRead, ["fixture-account"])
+
+        // Nothing on disk and no lookup behind it: the guard must be told
+        // nothing was established, not handed a substitute.
+        service.claudeCodeAccountIdentityReader = { _ in nil }
+        XCTAssertNil(service.boundClaudeCodeAccount(for: profile))
+
+        // A profile with no linked directory never reads one.
+        var unlinked = profile
+        unlinked.cliAccountName = nil
+        service.claudeCodeAccountIdentityReader = { _ in
+            XCTFail("a profile with no linked account read a directory")
+            return nil
+        }
+        XCTAssertNil(service.boundClaudeCodeAccount(for: unlinked))
+    }
+
+    /// The secondary identity is remembered against the credential it was
+    /// read for, and a profile presenting a different credential cannot be
+    /// answered from it.
+    ///
+    /// The commonest way the primary source answers nothing is a directory
+    /// with no `oauthAccount`, which is exactly what linking creates — so
+    /// without the fingerprint a freshly re-linked profile would be handed
+    /// the previous account's uuid, and `claudeCodeIdentityVerdict` would
+    /// persist it.
+    ///
+    /// Driven through the claude.ai-sourced fetch on purpose. That is the
+    /// only path that reaches the write: it runs inside `cliOrganizationID`,
+    /// whose single caller is `personalExtraUsage`, whose single caller is
+    /// `applyPersonalExtraUsage`, which this overload calls and the
+    /// CLI-sourced one does not. A profile holding a usable Claude Code
+    /// token routes to `.profileCLI`, never asks `/api/oauth/profile`, and
+    /// would leave the cache empty — so the first assertion below is also
+    /// this test's positive control: if the lookup did not happen, it fails
+    /// rather than passing vacuously.
+    func testTheSecondaryIdentityIsForgottenWhenTheCredentialChanges()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        // The directory answers nothing, which is what sends the guard to
+        // the secondary source in the first place.
+        service.claudeCodeAccountIdentityReader = { _ in nil }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthProfileAccountUUID: "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let profile = try seededProfile(profileID)
+        _ = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(
+            StubClaudeEndpointsURLProtocol.requestedURLs.filter {
+                $0.hasSuffix("/api/oauth/profile")
+            }.count,
+            1,
+            "the lookup the secondary identity rides on must have happened, "
+                + "or the rest of this test proves nothing"
+        )
+        XCTAssertEqual(
+            service.boundClaudeCodeAccount(for: profile)?.uuid,
+            "048a9b16-1391-4949-94be-b4f0f3c866c3",
+            "the account that lookup reported is available for the "
+                + "credential it was reported for"
+        )
+
+        // The same profile, re-linked: a different credential, and nothing
+        // established about the account behind it.
+        var relinked = profile
+        relinked.cliCredentialsJSON = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        XCTAssertNil(
+            service.boundClaudeCodeAccount(for: relinked),
+            "a credential the lookup never saw must not be answered from "
+                + "the account the previous one belonged to"
+        )
+
+        // And a profile with no stored credential at all has no fingerprint
+        // to match, which is the same answer: nothing established.
+        var withoutCredential = profile
+        withoutCredential.cliCredentialsJSON = nil
+        XCTAssertNil(service.boundClaudeCodeAccount(for: withoutCredential))
+    }
+
     private static func credentialsJSON(expiresAt: Double) -> String {
         """
         {"claudeAiOauth":{"accessToken":"fixture-access-token",\
@@ -6743,8 +7285,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(profileStore)
+        _ = retain(manager)
+        _ = retain(profileStore)
         return makeDeadIdleLoginScene(
             profile: profile,
             manager: manager,
@@ -6767,7 +7309,7 @@ final class PersonalExtraUsageTests: XCTestCase {
                 .path
         )
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: profileStore,
             systemCredentials: {
@@ -6776,7 +7318,7 @@ final class PersonalExtraUsageTests: XCTestCase {
             },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: configurationDirectory,
@@ -6834,8 +7376,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         }
         let manager = ProfileManager(profileStore: store)
         manager.profiles = profiles
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let scene = makeDeadIdleLoginScene(
             profile: profiles[0],
             manager: manager,
@@ -6950,16 +7492,15 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
-        return makeIsolatedClaudeAPIService(
+        _ = retain(manager)
+        _ = retain(store)
+        return retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
     }
 
-    private var retained: [AnyObject] = []
 }
 
 private final class TerminalRenewalSecurityRunner: SecurityCommandRunning {
@@ -7004,6 +7545,23 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var messagesRateLimitHeaders:
         [String: String] = [:]
 
+    /// The `/api/oauth/profile` body, with or without each of the two
+    /// identities it can carry.
+    static func oauthProfileBody(
+        organizationUUID: String?,
+        accountUUID: String?
+    ) -> String {
+        var account = "\"email_address\":\"fixture@example.com\""
+        if let accountUUID {
+            account = "\"uuid\":\"\(accountUUID)\"," + account
+        }
+        var fields = ["\"account\":{\(account)}"]
+        if let organizationUUID {
+            fields.insert("\"organization\":{\"uuid\":\"\(organizationUUID)\"}", at: 0)
+        }
+        return "{" + fields.joined(separator: ",") + "}"
+    }
+
     static func install(
         cliOrganizationID: String,
         tokenRefreshStatusCode: Int = 200,
@@ -7025,6 +7583,11 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         // A profile response with no `organization` key at all: what a
         // personal Max/Pro account looks like, as opposed to a team one.
         oauthProfileCarriesOrganization: Bool = true,
+        // The account uuid the profile response carries, if it carries one.
+        // Nothing in the app had ever decoded this field before the identity
+        // guard, so it is off by default and only the tests that exercise the
+        // secondary identity source switch it on.
+        oauthProfileAccountUUID: String? = nil,
         // The CLI usage source. `/api/oauth/usage` carries the session and
         // weekly windows, the model-scoped `limits` array and the member's
         // own extra usage in one body, so these two control every figure a
@@ -7067,14 +7630,12 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
             "https://api.anthropic.com/api/oauth/profile": (
                 oauthProfileStatusCode,
                 Data(
-                    oauthProfileCarriesOrganization
-                        ? """
-                          {"organization":{"uuid":"\(cliOrganizationID)"},
-                           "account":{"email_address":"fixture@example.com"}}
-                          """.utf8
-                        : """
-                          {"account":{"email_address":"fixture@example.com"}}
-                          """.utf8
+                    Self.oauthProfileBody(
+                        organizationUUID: oauthProfileCarriesOrganization
+                            ? cliOrganizationID
+                            : nil,
+                        accountUUID: oauthProfileAccountUUID
+                    ).utf8
                 )
             ),
             "https://api.anthropic.com/api/oauth/usage": (
