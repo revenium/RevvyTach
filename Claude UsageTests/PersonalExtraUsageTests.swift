@@ -11,7 +11,7 @@ import UsageCore
 /// Every figure here is a real response captured from a Team member's account
 /// on 2026-08-22.
 @MainActor
-final class PersonalExtraUsageTests: XCTestCase {
+final class PersonalExtraUsageTests: HostedAppTestCase {
 
     /// The organization the maintainer's claude.ai session belongs to.
     private let teamOrganizationID = "665a6475-2eb6-4da8-8379-d5529d283568"
@@ -985,8 +985,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         // Routed through the isolated builder, not `ClaudeAPIService(...)`
         // directly: the bare initialiser leaves `renewedCredentialWriter`
         // resolving to `ProfileStore.shared`, which reads every stored secret
@@ -1263,8 +1263,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1324,8 +1324,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1392,8 +1392,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1451,8 +1451,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -1508,8 +1508,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
@@ -1558,8 +1558,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1625,8 +1625,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -1681,8 +1681,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -1742,8 +1742,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -1816,8 +1816,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         // Newer than the app's copy — a different refresh token entirely —
@@ -1888,8 +1888,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
@@ -2543,7 +2543,7 @@ final class PersonalExtraUsageTests: XCTestCase {
         }
         let manager = ProfileManager(profileStore: pair.profileStore)
         manager.profiles = reloaded
-        retained.append(manager)
+        _ = retain(manager)
         let restarted = makeDeadIdleLoginScene(
             profile: reloaded[0],
             manager: manager,
@@ -2927,8 +2927,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(stored, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let scene = makeDeadIdleLoginScene(
             profile: profile,
             manager: manager,
@@ -2973,8 +2973,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -3033,8 +3033,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -3089,8 +3089,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -3132,8 +3132,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let expiredLive = Self.liveLoginJSON(expiresAt: 1_000)
@@ -3179,8 +3179,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -3227,8 +3227,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let service = makeIsolatedClaudeAPIService(
@@ -3270,8 +3270,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
         let live = Self.liveLoginJSON(
@@ -3326,8 +3326,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
         let service = makeIsolatedClaudeAPIService(
@@ -3385,8 +3385,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
@@ -3448,8 +3448,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
@@ -3508,8 +3508,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         var signedIn = false
         let live = Self.liveLoginJSON(
@@ -3612,8 +3612,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let b = profileBValue
         manager.profiles = [a, b]
         manager.activeProfile = a
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
 
         let live = Self.liveLoginJSON(
             expiresAt: Date()
@@ -6749,8 +6749,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
@@ -6809,8 +6809,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
@@ -6879,8 +6879,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(credentials, for: second.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [first, second]
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
@@ -6957,8 +6957,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         try store.saveCLIProfileCredential(credentials, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
@@ -7005,8 +7005,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         try seedProfilesForTesting([profile], in: store)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let service = makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
@@ -7223,8 +7223,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let profile = try seededProfile(profileID)
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(profileStore)
+        _ = retain(manager)
+        _ = retain(profileStore)
         return makeDeadIdleLoginScene(
             profile: profile,
             manager: manager,
@@ -7314,8 +7314,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         }
         let manager = ProfileManager(profileStore: store)
         manager.profiles = profiles
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         let scene = makeDeadIdleLoginScene(
             profile: profiles[0],
             manager: manager,
@@ -7430,8 +7430,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         manager.profiles = [profile]
         manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
+        _ = retain(manager)
+        _ = retain(store)
         return makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
@@ -7439,7 +7439,6 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
     }
 
-    private var retained: [AnyObject] = []
 }
 
 private final class TerminalRenewalSecurityRunner: SecurityCommandRunning {
