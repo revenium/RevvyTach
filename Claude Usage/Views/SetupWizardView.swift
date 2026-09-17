@@ -1309,13 +1309,16 @@ struct EnterKeyStepSetup: View {
     /// The profile a pasted key is being validated for, as the identity
     /// guard reads it.
     ///
-    /// A target that is not a profile yet — the wizard's commonest case —
-    /// answers with an empty binding under a throwaway id, so the "this key
-    /// is not this profile's account" half cannot fire on a profile that has
-    /// no account yet, while the "another profile already holds this account"
-    /// half still does. That second half is the one this screen needs: a new
-    /// profile bound to a taken account is exactly how two profiles come to
-    /// show one account's numbers.
+    /// A target that is not a profile yet answers with an empty binding under
+    /// a throwaway id, so the check cannot fire on a profile that has no
+    /// organization to compare against.
+    ///
+    /// In practice that branch is unreachable: `SetupTargetFreshness.isCurrent`
+    /// accepts `.newProfile` only when no Claude profile exists at all, and
+    /// `captureNewTarget` above chooses it on the same condition — so there is
+    /// never a peer profile on screen when it is taken. The binding exists so
+    /// the property holds if that ever changes, not because it does work
+    /// today.
     private func identityBindingForTarget()
         -> ClaudeAccountIdentityGuard.ProfileBinding {
         if let profile = targetProfile() {

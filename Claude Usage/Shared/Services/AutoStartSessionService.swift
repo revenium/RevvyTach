@@ -222,21 +222,28 @@ final class AutoStartSessionService {
         // `ClaudeAPIService.fetchUsageData(using:)` never sees it — and it
         // deliberately carries no account guard of its own.
         //
-        // It cannot produce the collision that guard exists for.
-        // `fetchUsageData(for:)` below authenticates with
-        // `profile.claudeSessionKey` and addresses
-        // `/organizations/\(orgId)/usage` built from `profile.organizationId`
-        // (the guard clause and the URL a few lines down in this file). Both
-        // are per-profile stored credentials. It never reads
-        // `cliAccountName`, `cliCredentialsJSON` or the Claude Code account
-        // directory, which is where a directory *name* stands in for an
-        // identity and two profiles come to share one login.
+        // It cannot produce the collision that guard exists for, and neither
+        // kind of collision check belongs here.
         //
-        // Nor may it refuse two profiles that share an organization: that is
-        // a supported setup (two seats on one team), stated twice in
-        // `ClaudeAPIService.swift` — "organization id which more than one
-        // profile can share". An organization-scoped figure being equal for
-        // two seats is the endpoint answering correctly, not a collision.
+        // Not an account check: every request this file makes is
+        // browser-credential, organization-scoped. `fetchUsageData(for:)`
+        // below guards on `profile.claudeSessionKey`, sends it as
+        // `Cookie: sessionKey=…`, and addresses
+        // `/organizations/\(orgId)/usage` built from `profile.organizationId`.
+        // There is no `Authorization` header and no `Bearer` token anywhere in
+        // this file. It never reads `cliAccountName`, `cliCredentialsJSON` or
+        // the Claude Code account directory — which is where a directory
+        // *name* stands in for an identity and two profiles come to share one
+        // login — so the Claude Code verdict says nothing about what this
+        // path publishes, and applying it would lose a profile's own numbers
+        // over a credential this request does not use.
+        //
+        // Not an organization check either: two profiles on one organization
+        // is a supported setup, two seats with two sets of member figures,
+        // and `ClaudeAPIService.swift` says so twice — "organization id which
+        // more than one profile can share". An organization-scoped figure
+        // being equal for two seats is the endpoint answering correctly, not
+        // one login read twice.
         //
         // What it must not do is erase the explanation the guarded path put
         // on screen. This response carries no verdict about the Claude Code

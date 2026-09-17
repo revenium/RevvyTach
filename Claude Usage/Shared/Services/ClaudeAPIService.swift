@@ -1423,7 +1423,7 @@ class ClaudeAPIService: APIServiceProtocol {
     private var cliLoginsWithoutOrganization: [UUID: Int] = [:]
 
     /// The account uuid `GET /api/oauth/profile` reported for a profile, if
-    /// it reports one at all.
+    /// it reports one at all, with the credential it was reported for.
     ///
     /// A secondary identity, recorded only as a by-product of a lookup that
     /// was already being made for the organization, so it costs no request of
@@ -1431,7 +1431,18 @@ class ClaudeAPIService: APIServiceProtocol {
     /// directory's `.claude.json` — could not answer, and it never overrides
     /// it: one source is known to be present on disk, the other is a field
     /// nothing in this app has ever seen the endpoint return.
-    private var cliAccountUUIDFromOAuthProfile: [UUID: String] = [:]
+    ///
+    /// Keyed on `credentialsJSON.hashValue` for the same reason every other
+    /// per-credential cache in this class is, and for one that is sharper
+    /// here: the commonest way the file answers nothing is a directory with
+    /// no `oauthAccount`, which is exactly what `linkAccount` creates. An
+    /// entry with no fingerprint would hand a freshly re-linked profile the
+    /// PREVIOUS account's uuid, and `claudeCodeIdentityVerdict` would then
+    /// write that through `updateCliAccountUUID` — turning a stale in-memory
+    /// answer into durable persisted state. The fingerprint makes a stale
+    /// entry unreadable rather than merely unlikely to be read.
+    private var cliAccountUUIDFromOAuthProfile:
+        [UUID: (fingerprint: Int, uuid: String)] = [:]
 
     /// The member's figure, or the reason it is missing. The reason reaches
     /// the popover: "link an account" and "renew the one you have" send a
@@ -2808,7 +2819,16 @@ class ClaudeAPIService: APIServiceProtocol {
         }
 
         if let accountUUID = response.account?.uuid, !accountUUID.isEmpty {
-            cliAccountUUIDFromOAuthProfile[profile.id] = accountUUID
+            cliAccountUUIDFromOAuthProfile[profile.id] = (
+                fingerprint: fingerprint,
+                uuid: accountUUID
+            )
+        } else {
+            // The response was read and carries no account. Dropping the
+            // entry rather than leaving the previous one standing: a stale
+            // answer about a credential that no longer exists is the shape
+            // this cache must not have.
+            cliAccountUUIDFromOAuthProfile.removeValue(forKey: profile.id)
         }
 
         guard let uuid = response.organization?.uuid else {
@@ -2926,10 +2946,20 @@ class ClaudeAPIService: APIServiceProtocol {
         // directory that has not been read, or one whose `.claude.json`
         // carries no `oauthAccount`. Never overrides the file, because the
         // file is the source that is known to exist.
-        guard let fromAPI = cliAccountUUIDFromOAuthProfile[profile.id] else {
+        //
+        // Used only when it was recorded for the credential this profile
+        // holds now. A profile re-linked since the lookup presents a
+        // different credential, and answering it from the previous account's
+        // uuid would be a wrong verdict that `claudeCodeIdentityVerdict` then
+        // persists. No fingerprint to compare — a profile whose credential
+        // lives only in the system Keychain — is the same answer: nothing
+        // established.
+        guard let recorded = cliAccountUUIDFromOAuthProfile[profile.id],
+              let fingerprint = profile.cliCredentialsJSON?.hashValue,
+              recorded.fingerprint == fingerprint else {
             return nil
         }
-        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(uuid: fromAPI)
+        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(uuid: recorded.uuid)
     }
 
     /// The same question, asked at the moment a Claude Code account is being

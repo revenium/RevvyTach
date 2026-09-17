@@ -6973,6 +6973,80 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertNil(service.boundClaudeCodeAccount(for: unlinked))
     }
 
+    /// The secondary identity is remembered against the credential it was
+    /// read for, and a profile presenting a different credential cannot be
+    /// answered from it.
+    ///
+    /// The commonest way the primary source answers nothing is a directory
+    /// with no `oauthAccount`, which is exactly what linking creates — so
+    /// without the fingerprint a freshly re-linked profile would be handed
+    /// the previous account's uuid, and the verdict would persist it.
+    func testTheSecondaryIdentityIsForgottenWhenTheCredentialChanges()
+        async throws
+    {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let profile = Profile(
+            id: UUID(),
+            name: "Fixture",
+            claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            organizationIsPersonal: false,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(credentials, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+        // The directory answers nothing, which is what sends the guard to the
+        // secondary source in the first place.
+        service.claudeCodeAccountIdentityReader = { _ in nil }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID,
+            oauthProfileAccountUUID: "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        // One refresh, which performs the organization lookup the secondary
+        // identity rides on.
+        _ = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: profile)
+        )
+        XCTAssertEqual(
+            service.boundClaudeCodeAccount(for: profile)?.uuid,
+            "048a9b16-1391-4949-94be-b4f0f3c866c3",
+            "the account the lookup reported is available for this credential"
+        )
+
+        // The same profile, re-linked: a different credential, and nothing
+        // established about the account behind it.
+        var relinked = profile
+        relinked.cliCredentialsJSON = Self.liveLoginJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        XCTAssertNil(
+            service.boundClaudeCodeAccount(for: relinked),
+            "a credential the lookup never saw must not be answered from the "
+                + "account the previous one belonged to"
+        )
+    }
+
     private static func credentialsJSON(expiresAt: Double) -> String {
         """
         {"claudeAiOauth":{"accessToken":"fixture-access-token",\
@@ -7333,6 +7407,23 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var messagesRateLimitHeaders:
         [String: String] = [:]
 
+    /// The `/api/oauth/profile` body, with or without each of the two
+    /// identities it can carry.
+    static func oauthProfileBody(
+        organizationUUID: String?,
+        accountUUID: String?
+    ) -> String {
+        var account = "\"email_address\":\"fixture@example.com\""
+        if let accountUUID {
+            account = "\"uuid\":\"\(accountUUID)\"," + account
+        }
+        var fields = ["\"account\":{\(account)}"]
+        if let organizationUUID {
+            fields.insert("\"organization\":{\"uuid\":\"\(organizationUUID)\"}", at: 0)
+        }
+        return "{" + fields.joined(separator: ",") + "}"
+    }
+
     static func install(
         cliOrganizationID: String,
         tokenRefreshStatusCode: Int = 200,
@@ -7354,6 +7445,11 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
         // A profile response with no `organization` key at all: what a
         // personal Max/Pro account looks like, as opposed to a team one.
         oauthProfileCarriesOrganization: Bool = true,
+        // The account uuid the profile response carries, if it carries one.
+        // Nothing in the app had ever decoded this field before the identity
+        // guard, so it is off by default and only the tests that exercise the
+        // secondary identity source switch it on.
+        oauthProfileAccountUUID: String? = nil,
         // The CLI usage source. `/api/oauth/usage` carries the session and
         // weekly windows, the model-scoped `limits` array and the member's
         // own extra usage in one body, so these two control every figure a
@@ -7396,14 +7492,12 @@ private nonisolated final class StubClaudeEndpointsURLProtocol: URLProtocol {
             "https://api.anthropic.com/api/oauth/profile": (
                 oauthProfileStatusCode,
                 Data(
-                    oauthProfileCarriesOrganization
-                        ? """
-                          {"organization":{"uuid":"\(cliOrganizationID)"},
-                           "account":{"email_address":"fixture@example.com"}}
-                          """.utf8
-                        : """
-                          {"account":{"email_address":"fixture@example.com"}}
-                          """.utf8
+                    Self.oauthProfileBody(
+                        organizationUUID: oauthProfileCarriesOrganization
+                            ? cliOrganizationID
+                            : nil,
+                        accountUUID: oauthProfileAccountUUID
+                    ).utf8
                 )
             ),
             "https://api.anthropic.com/api/oauth/usage": (
