@@ -6980,39 +6980,31 @@ final class PersonalExtraUsageTests: XCTestCase {
     /// The commonest way the primary source answers nothing is a directory
     /// with no `oauthAccount`, which is exactly what linking creates — so
     /// without the fingerprint a freshly re-linked profile would be handed
-    /// the previous account's uuid, and the verdict would persist it.
+    /// the previous account's uuid, and `claudeCodeIdentityVerdict` would
+    /// persist it.
+    ///
+    /// Driven through the claude.ai-sourced fetch on purpose. That is the
+    /// only path that reaches the write: it runs inside `cliOrganizationID`,
+    /// whose single caller is `personalExtraUsage`, whose single caller is
+    /// `applyPersonalExtraUsage`, which this overload calls and the
+    /// CLI-sourced one does not. A profile holding a usable Claude Code
+    /// token routes to `.profileCLI`, never asks `/api/oauth/profile`, and
+    /// would leave the cache empty — so the first assertion below is also
+    /// this test's positive control: if the lookup did not happen, it fails
+    /// rather than passing vacuously.
     func testTheSecondaryIdentityIsForgottenWhenTheCredentialChanges()
         async throws
     {
+        let profileID = UUID()
         let store = makeIsolatedProfileStore()
-        let credentials = Self.credentialsJSON(
-            expiresAt: Date()
-                .addingTimeInterval(8 * 3600)
-                .timeIntervalSince1970 * 1000
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
         )
-        let profile = Profile(
-            id: UUID(),
-            name: "Fixture",
-            claudeSessionKey: "sk-ant-sid01-fixture-session-key-value",
-            organizationId: teamOrganizationID,
-            organizationIsPersonal: false,
-            cliCredentialsJSON: credentials,
-            hasCliAccount: true,
-            cliAccountName: "fixture-account"
-        )
-        try seedProfilesForTesting([profile], in: store)
-        try store.saveCLIProfileCredential(credentials, for: profile.id)
-        let manager = ProfileManager(profileStore: store)
-        manager.profiles = [profile]
-        manager.activeProfile = profile
-        retained.append(manager)
-        retained.append(store)
-        let service = makeIsolatedClaudeAPIService(
-            profileManager: manager,
-            store: store
-        )
-        // The directory answers nothing, which is what sends the guard to the
-        // secondary source in the first place.
+        let service = try makeService(profileID: profileID, store: store)
+        // The directory answers nothing, which is what sends the guard to
+        // the secondary source in the first place.
         service.claudeCodeAccountIdentityReader = { _ in nil }
 
         StubClaudeEndpointsURLProtocol.install(
@@ -7021,15 +7013,26 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         defer { StubClaudeEndpointsURLProtocol.reset() }
 
-        // One refresh, which performs the organization lookup the secondary
-        // identity rides on.
+        let profile = try seededProfile(profileID)
         _ = try await service.fetchUsageData(
-            using: try service.captureUsageRequest(for: profile)
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: profile
+        )
+
+        XCTAssertEqual(
+            StubClaudeEndpointsURLProtocol.requestedURLs.filter {
+                $0.hasSuffix("/api/oauth/profile")
+            }.count,
+            1,
+            "the lookup the secondary identity rides on must have happened, "
+                + "or the rest of this test proves nothing"
         )
         XCTAssertEqual(
             service.boundClaudeCodeAccount(for: profile)?.uuid,
             "048a9b16-1391-4949-94be-b4f0f3c866c3",
-            "the account the lookup reported is available for this credential"
+            "the account that lookup reported is available for the "
+                + "credential it was reported for"
         )
 
         // The same profile, re-linked: a different credential, and nothing
@@ -7042,9 +7045,15 @@ final class PersonalExtraUsageTests: XCTestCase {
         )
         XCTAssertNil(
             service.boundClaudeCodeAccount(for: relinked),
-            "a credential the lookup never saw must not be answered from the "
-                + "account the previous one belonged to"
+            "a credential the lookup never saw must not be answered from "
+                + "the account the previous one belonged to"
         )
+
+        // And a profile with no stored credential at all has no fingerprint
+        // to match, which is the same answer: nothing established.
+        var withoutCredential = profile
+        withoutCredential.cliCredentialsJSON = nil
+        XCTAssertNil(service.boundClaudeCodeAccount(for: withoutCredential))
     }
 
     private static func credentialsJSON(expiresAt: Double) -> String {
