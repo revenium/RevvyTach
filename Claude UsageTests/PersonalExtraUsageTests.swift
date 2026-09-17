@@ -991,10 +991,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         // directly: the bare initialiser leaves `renewedCredentialWriter`
         // resolving to `ProfileStore.shared`, which reads every stored secret
         // out of the developer's login Keychain.
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
 
         let request = try service.captureUsageRequest(for: profile)
 
@@ -1272,12 +1272,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         // A 400 from the token endpoint is what sends the app down the
         // adoption path rather than the renewal path.
@@ -1333,12 +1333,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -1401,13 +1401,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1455,13 +1455,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1511,13 +1511,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(manager)
         _ = retain(store)
 
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: RenewedCredentialRecorder(),
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -1567,13 +1567,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1629,13 +1629,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -1685,12 +1685,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
         service.acquireRefreshLock = { _ in
             throw ClaudeCodeStoreLock.AcquisitionFailure.heldByAnotherProcess
         }
@@ -1751,12 +1751,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -1823,13 +1823,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         // Newer than the app's copy — a different refresh token entirely —
         // and expired, which is the whole shape of the defect.
         let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { storeCopy },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -1893,13 +1893,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
 
         let renewals = RenewedCredentialRecorder()
         let storeCopy = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { storeCopy },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -2977,12 +2977,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: makeIsolatedClaudeConfigurationDirectory(),
@@ -3042,13 +3042,13 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals,
             accountIsInUse: { _ in true }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3093,12 +3093,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { nil },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3137,12 +3137,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
 
         let renewals = RenewedCredentialRecorder()
         let expiredLive = Self.liveLoginJSON(expiresAt: 1_000)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { expiredLive },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3183,12 +3183,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { Self.signedOutCredentialsJSON },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3231,12 +3231,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { stored },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3279,12 +3279,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .addingTimeInterval(8 * 3600)
                 .timeIntervalSince1970 * 1000
         )
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3330,14 +3330,14 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         _ = retain(store)
 
         var readCount = 0
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
                 readCount += 1
                 return nil
             }
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3390,7 +3390,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -3402,7 +3402,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 )
             },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -3453,7 +3453,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
 
         var readCount = 0
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -3465,7 +3465,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 )
             },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
@@ -3518,12 +3518,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .timeIntervalSince1970 * 1000
         )
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { signedIn ? live : nil },
             renewals: renewals
-        )
+        ))
         // Isolates this test from real wall-clock time: the throttle exists
         // to bound Keychain reads across the seconds-apart ticks of a real
         // refresh timer, not to stand between two calls made back-to-back
@@ -3623,12 +3623,12 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         let renewals = RenewedCredentialRecorder()
         // Left at the default: this test is about the interval the app
         // actually ships with, not a zeroed-out stand-in for it.
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: { live },
             renewals: renewals
-        )
+        ))
 
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4653,11 +4653,11 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4706,11 +4706,11 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [firstProfile, joiningProfile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4776,11 +4776,11 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [firstProfile, joiningProfile]
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4902,10 +4902,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         try store.saveCLIProfileCredential(expired, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         let refreshStarted = expectation(description: "token refresh started")
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
@@ -4962,10 +4962,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         try store.saveCLIProfileCredential(expired, for: profile.id)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             transportErrors: [
@@ -5023,7 +5023,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [profile]
         var liveReads = 0
         var logMessages: [String] = []
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -5033,7 +5033,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
             loggingService: LoggingService {
                 logMessages.append($0)
             }
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             tokenRefreshStatusCode: 400
@@ -5077,11 +5077,11 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [profile]
         manager.activeProfile = profile
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
         let completed = expectation(description: "live refresh completed")
         let runtime = UsageRefreshRuntime.live(
             profileManager: manager,
@@ -5135,7 +5135,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [profile]
         var liveReads = 0
         var logMessages: [String] = []
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             systemCredentials: {
@@ -5145,7 +5145,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
             loggingService: LoggingService {
                 logMessages.append($0)
             }
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID,
             tokenRefreshStatusCode: 400
@@ -5198,10 +5198,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         try seedProfilesForTesting([profile], in: store)
         let manager = ProfileManager(profileStore: store)
         manager.profiles = [profile]
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         StubClaudeEndpointsURLProtocol.install(
             cliOrganizationID: teamOrganizationID
         )
@@ -6751,10 +6751,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.activeProfile = profile
         _ = retain(manager)
         _ = retain(store)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         // Someone signed that account directory in as a different account.
         // Injected rather than read from disk: a test must never decide
         // anything from the developer's own `~/.claude-accounts`.
@@ -6811,10 +6811,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.activeProfile = profile
         _ = retain(manager)
         _ = retain(store)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         service.claudeCodeAccountIdentityReader = { _ in
             ClaudeAccountIdentityGuard.ClaudeCodeAccount(
                 uuid: "ed73b56e-85e9-4a68-81e6-e7db3e26c2b9",
@@ -6881,10 +6881,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [first, second]
         _ = retain(manager)
         _ = retain(store)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         // Both directories are signed in as the same account.
         service.claudeCodeAccountIdentityReader = { _ in
             ClaudeAccountIdentityGuard.ClaudeCodeAccount(
@@ -6959,10 +6959,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [profile]
         _ = retain(manager)
         _ = retain(store)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
         service.claudeCodeAccountIdentityReader = { _ in
             ClaudeAccountIdentityGuard.ClaudeCodeAccount(
                 uuid: sharedAccount,
@@ -7007,10 +7007,10 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.profiles = [profile]
         _ = retain(manager)
         _ = retain(store)
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store
-        )
+        ))
 
         var directoriesRead: [String] = []
         service.claudeCodeAccountIdentityReader = { directoryName in
@@ -7247,7 +7247,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
                 .path
         )
         let renewals = RenewedCredentialRecorder()
-        let service = makeIsolatedClaudeAPIService(
+        let service = retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: profileStore,
             systemCredentials: {
@@ -7256,7 +7256,7 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
             },
             renewals: renewals,
             accountIsInUse: { _ in false }
-        )
+        ))
         useIsolatedClaudeCodeLocks(
             on: service,
             in: configurationDirectory,
@@ -7432,11 +7432,11 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         manager.activeProfile = profile
         _ = retain(manager)
         _ = retain(store)
-        return makeIsolatedClaudeAPIService(
+        return retain(makeIsolatedClaudeAPIService(
             profileManager: manager,
             store: store,
             renewals: renewals
-        )
+        ))
     }
 
 }
