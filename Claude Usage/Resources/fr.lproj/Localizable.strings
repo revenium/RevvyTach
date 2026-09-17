@@ -869,6 +869,7 @@
 "popover.banner.cli_sign_in_expired" = "La connexion Claude Code de ce compte a expiré. Reconnectez-vous.";
 "popover.banner.cli_signed_out" = "Claude Code est déconnecté du compte lié ici.";
 "popover.banner.cli_sign_in_unusable" = "La connexion Claude Code de ce compte ne fonctionne pas.";
+"popover.banner.cli_different_account" = "La connexion Claude Code de ce profil appartient à un autre compte. Reliez-la à nouveau dans Réglages pour que ces chiffres soient ceux de ce compte.";
 "popover.banner.refresh_failed" = "Échec de l'actualisation %d fois";
 "popover.banner.updated_ago" = "Mis à jour il y a %dm";
 "popover.banner.last_success" = "Dernière actualisation réussie : %@";
@@ -1288,6 +1289,7 @@
 "cli.login_expired_explain" = "Une resynchronisation n'y changera rien : elle copie la connexion de ce compte, et cette connexion a expiré. Exécutez ceci dans le Terminal pour vous reconnecter.";
 "cli.login_expired_then_resync" = "Une fois connecté, revenez ici et appuyez sur Resynchroniser.";
 "popover.extra_usage.cli_other_organization" = "Il s'agit du total de votre organisation. Votre compte Claude Code lié appartient à une autre organisation, son utilisation n'est donc pas affichée ici.";
+"popover.extra_usage.cli_different_account" = "La connexion Claude Code liée ici appartient à un autre compte, son utilisation n'est donc pas affichée sous ce profil. Reliez à nouveau le compte dans Réglages.";
 "popover.extra_usage.claude_account_unresolved" = "Il s'agit du total de votre organisation. Votre propre utilisation n'a pas pu être associée à cette organisation — reconnectez votre compte dans Réglages → Compte Claude.";
 "popover.extra_usage.absent.cli_not_linked" = "Votre utilisation supplémentaire provient de Claude Code, qui n'est pas encore lié à ce compte — ajoutez-le dans Réglages → Compte CLI.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "Votre utilisation supplémentaire ne peut pas être lue : la connexion Claude Code de ce compte a expiré. Reconnectez-vous à Claude Code et la valeur réapparaîtra d'elle-même.";
@@ -1295,6 +1297,7 @@
 "popover.extra_usage.absent.cli_sign_in_unusable" = "Votre utilisation supplémentaire n'a pas pu être lue avec le compte Claude Code lié ici.";
 "popover.extra_usage.absent.cli_temporarily_unavailable" = "Votre utilisation supplémentaire n'a pas pu être lue cette fois-ci. Une nouvelle tentative aura lieu automatiquement.";
 "popover.extra_usage.absent.cli_other_organization" = "Votre utilisation supplémentaire n'est pas affichée : le compte Claude Code lié appartient à une autre organisation.";
+"popover.extra_usage.absent.cli_different_account" = "Ces chiffres ne sont pas affichés : la connexion Claude Code liée appartient à un autre compte. Reliez à nouveau le compte dans Réglages.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Votre utilisation supplémentaire n'a pas pu être associée à cette organisation — reconnectez votre compte dans Réglages → Compte Claude.";
 "popover.extra_usage.organization_lookup_failed" = "Votre utilisation supplémentaire n'a pas pu être lue à l'instant. Actualisez pour réessayer.";
 
@@ -1357,6 +1360,12 @@
 "claude_account.terminal.link" = "Lier Claude Code…";
 "claude_account.terminal.not_linked_detail" = "Non liée — Liez le compte Claude Code utilisé pour cette organisation.";
 "claude_account.terminal.detail" = "Compte Claude Code %@ · renouvelé %@ · réécrit dans Claude Code";
+"claude_account.terminal.different_account_detail" = "Cette connexion Claude Code appartient à un compte différent de celui de ce profil. Connectez-vous au bon compte dans ce répertoire de compte, ou liez-en un autre.";
+"claude_identity.browser.different_account" = "Cette connexion appartient à %@, et non au compte de ce profil. Connectez-vous au compte auquel ce profil correspond, ou créez un profil distinct pour l'autre compte.";
+"claude_identity.browser.already_bound" = "Le profil '%@' est déjà connecté à ce compte.";
+"claude_identity.terminal.different_account" = "Ce répertoire de compte Claude Code est connecté à un compte différent de celui auquel ce profil a été lié. Reconnectez-vous ici à ce compte, ou utilisez Délier puis Lier pour pointer ce profil vers le compte que le répertoire contient désormais.";
+"claude_identity.terminal.different_account_named" = "Ce répertoire de compte Claude Code est connecté en tant que %@, qui n'est pas le compte auquel ce profil a été lié. Reconnectez-vous ici à ce compte, ou utilisez Délier puis Lier pour pointer ce profil vers le compte que le répertoire contient désormais.";
+"claude_identity.terminal.already_bound" = "Le profil '%@' utilise déjà ce compte Claude Code, et deux profils sur un même compte affichent les mêmes chiffres. Connectez ce répertoire à un autre compte, ou déliez-le d'abord de '%@'.";
 "claude_account.terminal.link_sheet.title" = "Connexion terminal (Claude Code)";
 "claude_account.terminal.link_sheet.subtitle" = "Créez le dossier, connectez Claude Code, puis vérifiez la connexion.";
 "claude_account.sync.title" = "Synchronisation Claude Code";
