@@ -1326,7 +1326,8 @@ struct EnterKeyStepSetup: View {
         }
         return ClaudeAccountIdentityGuard.ProfileBinding(
             id: UUID(),
-            name: wizardState.targetProfileName,
+            name: wizardState.targetProfileName
+                ?? "chrome_assisted.new_claude_profile".localized,
             organizationUUID: nil,
             accountUUID: nil
         )
