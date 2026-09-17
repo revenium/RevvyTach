@@ -3002,7 +3002,21 @@ class ClaudeAPIService: APIServiceProtocol {
     /// subscription, and a mark for the key itself. Beside
     /// `identityBinding` because both sign-in sheets need the two together,
     /// and because the key must never travel further than its hash.
-    static func browserSignIn(
+    ///
+    /// An instance method rather than a static one so it marks the key
+    /// through the same validator the requests use. The mark has to describe
+    /// the key a request would actually send, and that is the VALIDATED one:
+    /// `testSessionKey` authenticates with `sessionKeyValidator.validate(key)`
+    /// and `saveSessionKey` stores that same value, so marking the raw paste
+    /// would let one stored credential and the same credential pasted with
+    /// surrounding whitespace look like two different accounts, and the
+    /// collision would go unrefused.
+    ///
+    /// Derived from the validator rather than restated here, so the
+    /// normalization cannot drift from the one the credential path applies.
+    /// A key that does not validate establishes nothing rather than carrying
+    /// a mark nothing can match: it never reaches a request either.
+    func browserSignIn(
         organizations: [AccountInfo],
         key: String
     ) -> ClaudeAccountIdentityGuard.BrowserSignIn {
@@ -3011,7 +3025,7 @@ class ClaudeAPIService: APIServiceProtocol {
             personalOrganizationUUIDs: organizations
                 .filter { ClaudeOrganizationClassifier.isPersonal($0) == true }
                 .map(\.uuid),
-            credentialMark: key.hashValue
+            credentialMark: (try? sessionKeyValidator.validate(key))?.hashValue
         )
     }
 

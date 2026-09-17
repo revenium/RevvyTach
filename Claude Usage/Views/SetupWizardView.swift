@@ -1167,7 +1167,7 @@ struct EnterKeyStepSetup: View {
                     // percentages with nothing on screen to say why.
                     let signInVerdict = ClaudeAccountIdentityGuard
                         .browserSignInVerdict(
-                            ClaudeAPIService.browserSignIn(
+                            apiService.browserSignIn(
                                 organizations: organizations,
                                 key: key
                             ),

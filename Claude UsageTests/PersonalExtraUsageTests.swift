@@ -522,6 +522,68 @@ final class PersonalExtraUsageTests: HostedAppTestCase {
         XCTAssertEqual(usage.organizationExtraUsageIssue, .notEnabled)
     }
 
+    // MARK: - The browser credential mark
+
+    /// The mark has to describe the key a request would send, not the
+    /// characters someone pasted. `testSessionKey` authenticates with the
+    /// validated key and `saveSessionKey` stores that same value, so marking
+    /// the raw paste would let one stored credential and the same credential
+    /// pasted with surrounding whitespace look like two accounts, and the
+    /// collision the browser path exists to refuse would go unrefused.
+    func testTheBrowserCredentialMarkMatchesTheStoredCredential() throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+        let organizations = [
+            ClaudeAPIService.AccountInfo(
+                uuid: teamOrganizationID,
+                name: "Team",
+                capabilities: ["chat", "raven"],
+                ravenType: "team"
+            )
+        ]
+        let key = "sk-ant-sid01-fixture-session-key-value"
+
+        let pasted = service.browserSignIn(
+            organizations: organizations,
+            key: "  \(key)\n"
+        )
+        let clean = service.browserSignIn(
+            organizations: organizations,
+            key: key
+        )
+        XCTAssertEqual(
+            pasted.credentialMark,
+            clean.credentialMark,
+            "surrounding whitespace must not produce a second identity"
+        )
+        XCTAssertEqual(
+            clean.credentialMark,
+            ClaudeAPIService.identityBinding(
+                try seededProfile(profileID)
+            ).browserCredentialMark,
+            "the pasted key and the stored credential must mark the same"
+        )
+        XCTAssertNotNil(clean.credentialMark)
+
+        // A key that cannot validate never reaches a request, so it
+        // establishes nothing rather than carrying a mark nothing matches.
+        XCTAssertNil(
+            service.browserSignIn(
+                organizations: organizations,
+                key: "not-a-session-key"
+            ).credentialMark
+        )
+
+        // A Team organization is never offered as an account identity.
+        XCTAssertEqual(clean.personalOrganizationUUIDs, [])
+    }
+
     // MARK: - The account-mismatch fallback publishes no supplementary figure
 
     /// The control. With no mismatch the member's own figure is fetched and

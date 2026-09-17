@@ -362,7 +362,7 @@ struct EnterKeyStep: View {
                     // nothing on screen says why.
                     let signInVerdict = ClaudeAccountIdentityGuard
                         .browserSignInVerdict(
-                            ClaudeAPIService.browserSignIn(
+                            apiService.browserSignIn(
                                 organizations: organizations,
                                 key: key
                             ),
