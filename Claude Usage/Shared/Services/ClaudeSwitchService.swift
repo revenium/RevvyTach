@@ -284,22 +284,30 @@ class ClaudeSwitchService {
         }
     }
 
-    /// Reads credentials JSON from the linked account directory.
-    /// Tries .credentials.json first, falls back to extracting from .claude.json.
+    /// The credential a linked account directory will authenticate with, and
+    /// the identity that same credential carries.
     ///
-    /// Both branches now have to produce something that can actually
-    /// authenticate. `.credentials.json` was previously returned verbatim on
-    /// the strength of being a non-empty string — not even parsed — and this
-    /// is the *first* source the re-sync button consults, so a file holding
-    /// only MCP server logins, or a truncated one, was stored over a working
-    /// credential and then read back as valid.
+    /// One value so the token and the identity can never come from different
+    /// files. A guard that inspects `.claude.json` while the request goes out
+    /// with `.credentials.json` holds only by coincidence, and the two files
+    /// can name different accounts.
+    struct LinkedAccountCredential {
+        /// What an authenticated request will send.
+        let credentialsJSON: String
+        /// Who that credential says it is, or nil when the winning source
+        /// carries no account uuid. Nil is "not established", never
+        /// "different": a source with no identity field must not blank a
+        /// working reading.
+        let account: ClaudeAccountIdentityGuard.ClaudeCodeAccount?
+    }
+
     /// Who a linked Claude Code account directory is currently signed in as.
     ///
-    /// Read from the same `oauthAccount` object `readLinkedAccountCredentials`
-    /// below already parses out of `.claude.json`; this takes the identity
-    /// beside the token rather than the token. Nil when there is no
-    /// directory, no `.claude.json`, no `oauthAccount`, or no `accountUuid`
-    /// in it — all of which mean "not established", never "different".
+    /// Taken from whichever credential `readLinkedAccountCredentials` would
+    /// actually hand to a request, through the same resolver, so the identity
+    /// checked and the token sent cannot drift apart. Nil when there is no
+    /// directory, no usable credential, or no `accountUuid` beside the token
+    /// — all of which mean "not established", never "different".
     ///
     /// No request is made and nothing is written. A profile is bound to a
     /// *directory name*, and two directories can hold one account's login, so
@@ -309,24 +317,32 @@ class ClaudeSwitchService {
     func linkedAccountIdentity(
         directoryName: String
     ) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? {
-        let dir = (try? validatedAccountDir(for: directoryName))
-            ?? accountDirectoryPath(for: directoryName)
-        let claudeJson = dir.appendingPathComponent(".claude.json")
-        guard let data = try? Data(contentsOf: claudeJson),
-              let parsed = try? JSONSerialization.jsonObject(with: data)
-                as? [String: Any],
-              let oauthAccount = parsed["oauthAccount"] as? [String: Any],
-              let accountUUID = oauthAccount["accountUuid"] as? String,
-              !accountUUID.isEmpty else {
-            return nil
-        }
-        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(
-            uuid: accountUUID,
-            emailAddress: oauthAccount["emailAddress"] as? String
-        )
+        resolveLinkedAccountCredential(directoryName: directoryName)?.account
     }
 
     func readLinkedAccountCredentials(directoryName: String) -> String? {
+        resolveLinkedAccountCredential(
+            directoryName: directoryName
+        )?.credentialsJSON
+    }
+
+    /// Reads credentials JSON from the linked account directory, and the
+    /// identity that credential carries.
+    /// Tries .credentials.json first, falls back to extracting from .claude.json.
+    ///
+    /// The single place that precedence is decided, so every caller that
+    /// needs the token and every caller that needs the identity read one
+    /// answer.
+    ///
+    /// Both branches have to produce something that can actually
+    /// authenticate. `.credentials.json` was previously returned verbatim on
+    /// the strength of being a non-empty string — not even parsed — and this
+    /// is the *first* source the re-sync button consults, so a file holding
+    /// only MCP server logins, or a truncated one, was stored over a working
+    /// credential and then read back as valid.
+    private func resolveLinkedAccountCredential(
+        directoryName: String
+    ) -> LinkedAccountCredential? {
         let dir = (try? validatedAccountDir(for: directoryName)) ?? accountDirectoryPath(for: directoryName)
 
         // Try .credentials.json first
@@ -334,7 +350,15 @@ class ClaudeSwitchService {
         if let data = try? Data(contentsOf: credFile),
            let json = String(data: data, encoding: .utf8),
            ClaudeCodeSyncService.carriesLogin(json) {
-            return json
+            // Claude Code's own credential file is a token store and is not
+            // known to carry an account uuid, so this is usually nil and the
+            // verdict is then `.undetermined`. That is the honest answer:
+            // this is the credential the request will send, and it does not
+            // say who it is.
+            return LinkedAccountCredential(
+                credentialsJSON: json,
+                account: Self.accountIdentity(inCredentialJSON: json)
+            )
         }
 
         // Fall back to .claude.json — extract OAuth if present
@@ -353,11 +377,53 @@ class ClaudeSwitchService {
             let dict: [String: Any] = ["claudeAiOauth": ["accessToken": accessToken]]
             if let jsonData = try? JSONSerialization.data(withJSONObject: dict),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                return jsonString
+                return LinkedAccountCredential(
+                    credentialsJSON: jsonString,
+                    account: Self.accountIdentity(in: oauthAccount)
+                )
             }
         }
 
         return nil
+    }
+
+    /// The account a credential JSON names, if it names one.
+    ///
+    /// Both shapes are looked for because the two files are written by
+    /// different code paths: `oauthAccount` at the top level, the way
+    /// `.claude.json` carries it, and inside `claudeAiOauth`, the way a
+    /// credential store nests it.
+    static func accountIdentity(
+        inCredentialJSON json: String
+    ) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? {
+        guard let data = json.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any] else {
+            return nil
+        }
+        if let oauthAccount = parsed["oauthAccount"] as? [String: Any],
+           let account = accountIdentity(in: oauthAccount) {
+            return account
+        }
+        if let oauth = parsed["claudeAiOauth"] as? [String: Any] {
+            return accountIdentity(in: oauth)
+        }
+        return nil
+    }
+
+    /// The account uuid and email beside a token, or nil when the object
+    /// carries no usable uuid.
+    static func accountIdentity(
+        in oauthAccount: [String: Any]
+    ) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? {
+        guard let accountUUID = oauthAccount["accountUuid"] as? String,
+              !accountUUID.isEmpty else {
+            return nil
+        }
+        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+            uuid: accountUUID,
+            emailAddress: oauthAccount["emailAddress"] as? String
+        )
     }
 
     // MARK: - Switching

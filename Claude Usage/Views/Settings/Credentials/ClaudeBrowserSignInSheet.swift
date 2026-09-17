@@ -362,7 +362,10 @@ struct EnterKeyStep: View {
                     // nothing on screen says why.
                     let signInVerdict = ClaudeAccountIdentityGuard
                         .browserSignInVerdict(
-                            organizationUUIDs: organizations.map(\.uuid),
+                            ClaudeAPIService.browserSignIn(
+                                organizations: organizations,
+                                key: key
+                            ),
                             for: ClaudeAPIService.identityBinding(target),
                             otherProfiles: ProfileManager.shared.profiles
                                 .filter { $0.id != target.id }

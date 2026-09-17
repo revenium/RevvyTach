@@ -26,13 +26,29 @@ final class ClaudeAccountIdentityGuardTests: XCTestCase {
         _ id: UUID,
         _ name: String,
         organization: String? = nil,
-        account: String? = nil
+        account: String? = nil,
+        organizationIsPersonal: Bool? = nil,
+        browserCredentialMark: Int? = nil
     ) -> ClaudeAccountIdentityGuard.ProfileBinding {
         ClaudeAccountIdentityGuard.ProfileBinding(
             id: id,
             name: name,
             organizationUUID: organization,
-            accountUUID: account
+            accountUUID: account,
+            organizationIsPersonal: organizationIsPersonal,
+            browserCredentialMark: browserCredentialMark
+        )
+    }
+
+    private func signIn(
+        _ organizations: [String],
+        personal: [String] = [],
+        mark: Int? = nil
+    ) -> ClaudeAccountIdentityGuard.BrowserSignIn {
+        ClaudeAccountIdentityGuard.BrowserSignIn(
+            organizationUUIDs: organizations,
+            personalOrganizationUUIDs: personal,
+            credentialMark: mark
         )
     }
 
@@ -174,7 +190,7 @@ final class ClaudeAccountIdentityGuardTests: XCTestCase {
     func testAPastedKeyForAnotherAccountIsRefused() {
         XCTAssertEqual(
             ClaudeAccountIdentityGuard.browserSignInVerdict(
-                organizationUUIDs: [secondOrganization],
+                signIn([secondOrganization]),
                 for: binding(
                     firstID,
                     "first",
@@ -202,13 +218,122 @@ final class ClaudeAccountIdentityGuardTests: XCTestCase {
     func testTwoProfilesOnOneOrganizationIsAllowed() {
         XCTAssertEqual(
             ClaudeAccountIdentityGuard.browserSignInVerdict(
-                organizationUUIDs: [secondOrganization],
+                signIn([secondOrganization]),
                 for: binding(UUID(), "second seat"),
                 otherProfiles: [
                     binding(
                         secondID,
                         "existing",
-                        organization: secondOrganization
+                        organization: secondOrganization,
+                        organizationIsPersonal: false,
+                        browserCredentialMark: 11
+                    )
+                ]
+            ),
+            .belongsToThisProfile
+        )
+    }
+
+    // MARK: - The browser path's own account check
+
+    /// The same key pasted into a second profile. One credential is one
+    /// account by construction, whatever kind of organization it belongs to,
+    /// so this is refused on a Team organization where the organization
+    /// comparison says nothing at all.
+    func testAReusedBrowserKeyIsRefused() {
+        XCTAssertEqual(
+            ClaudeAccountIdentityGuard.browserSignInVerdict(
+                signIn([secondOrganization], mark: 4242),
+                for: binding(firstID, "second seat"),
+                otherProfiles: [
+                    binding(
+                        secondID,
+                        "existing",
+                        organization: secondOrganization,
+                        organizationIsPersonal: false,
+                        browserCredentialMark: 4242
+                    )
+                ]
+            ),
+            .mismatch(.accountAlreadyBound(profileName: "existing"))
+        )
+    }
+
+    /// A different key for the same personal subscription. A personal
+    /// organization has one member, so the organization IS the account there
+    /// and a second profile on it is that account twice.
+    func testASecondKeyForOnePersonalOrganizationIsRefused() {
+        XCTAssertEqual(
+            ClaudeAccountIdentityGuard.browserSignInVerdict(
+                signIn(
+                    [firstOrganization],
+                    personal: [firstOrganization],
+                    mark: 1
+                ),
+                for: binding(firstID, "new"),
+                otherProfiles: [
+                    binding(
+                        secondID,
+                        "existing",
+                        organization: firstOrganization,
+                        organizationIsPersonal: true,
+                        browserCredentialMark: 2
+                    )
+                ]
+            ),
+            .mismatch(.accountAlreadyBound(profileName: "existing"))
+        )
+    }
+
+    /// Not yet determined is not personal. Reading a nil as "one member"
+    /// would refuse the two-seat setup the test above protects, so an
+    /// unknown must pass.
+    func testAnUndeterminedOrganizationKindDoesNotRefuse() {
+        XCTAssertEqual(
+            ClaudeAccountIdentityGuard.browserSignInVerdict(
+                signIn(
+                    [firstOrganization],
+                    personal: [firstOrganization],
+                    mark: 1
+                ),
+                for: binding(firstID, "new"),
+                otherProfiles: [
+                    binding(
+                        secondID,
+                        "existing",
+                        organization: firstOrganization,
+                        browserCredentialMark: 2
+                    )
+                ]
+            ),
+            .belongsToThisProfile
+        )
+    }
+
+    /// The profile being signed in is never its own clash, even when a
+    /// caller leaves it in the peer list.
+    func testAProfileDoesNotCollideWithItself() {
+        XCTAssertEqual(
+            ClaudeAccountIdentityGuard.browserSignInVerdict(
+                signIn(
+                    [firstOrganization],
+                    personal: [firstOrganization],
+                    mark: 7
+                ),
+                for: binding(
+                    firstID,
+                    "itself",
+                    organization: firstOrganization,
+                    organizationIsPersonal: true,
+                    browserCredentialMark: 7
+                ),
+                otherProfiles: [
+                    binding(
+                        firstID,
+                        "itself",
+                        organization: firstOrganization,
+                        organizationIsPersonal: true,
+                        browserCredentialMark: 7
                     )
                 ]
             ),
@@ -219,7 +344,7 @@ final class ClaudeAccountIdentityGuardTests: XCTestCase {
     func testAPastedKeyForThisProfilesOwnOrganizationIsAccepted() {
         XCTAssertEqual(
             ClaudeAccountIdentityGuard.browserSignInVerdict(
-                organizationUUIDs: [firstOrganization, secondOrganization],
+                signIn([firstOrganization, secondOrganization]),
                 for: binding(
                     firstID,
                     "first",
@@ -234,7 +359,7 @@ final class ClaudeAccountIdentityGuardTests: XCTestCase {
     func testAnEmptyOrganizationListEstablishesNothing() {
         XCTAssertEqual(
             ClaudeAccountIdentityGuard.browserSignInVerdict(
-                organizationUUIDs: [],
+                signIn([]),
                 for: binding(
                     firstID,
                     "first",

@@ -48,17 +48,64 @@ enum ClaudeAccountIdentityGuard {
         /// The Anthropic account its Claude Code login carried when the
         /// binding was last accepted. Nil until the first reading.
         let accountUUID: String?
+        /// Whether `organizationUUID` is one person's subscription rather
+        /// than a shared Team or Enterprise organization. A personal
+        /// organization has exactly one member, so it identifies an account;
+        /// a shared one identifies a company and cannot. Nil means not yet
+        /// determined and is read as shared, because an unknown must never
+        /// be the thing that refuses a legal two-seat setup.
+        let organizationIsPersonal: Bool?
+        /// A stable mark for the claude.ai credential this profile already
+        /// holds, never the credential itself. Two profiles carrying one
+        /// mark carry one key, and one key is one account by construction.
+        /// Nil when the profile holds no browser credential, or when it
+        /// could not be read.
+        let browserCredentialMark: Int?
 
+        /// Both browser-side fields default to nil. The Claude Code verdict
+        /// reads neither, so a caller on that path supplies neither.
         init(
             id: UUID,
             name: String,
             organizationUUID: String?,
-            accountUUID: String?
+            accountUUID: String?,
+            organizationIsPersonal: Bool? = nil,
+            browserCredentialMark: Int? = nil
         ) {
             self.id = id
             self.name = name
             self.organizationUUID = organizationUUID
             self.accountUUID = accountUUID
+            self.organizationIsPersonal = organizationIsPersonal
+            self.browserCredentialMark = browserCredentialMark
+        }
+    }
+
+    /// A pasted claude.ai sign-in, as this decision reads it.
+    ///
+    /// A value type rather than three loose parameters, so a caller cannot
+    /// supply the organizations and quietly leave the identity out: the
+    /// browser path was unguarded for exactly that reason.
+    struct BrowserSignIn: Equatable, Sendable {
+        /// Every organization the key can see, from `GET /api/organizations`.
+        let organizationUUIDs: [String]
+        /// The subset of those that are one person's subscription, by
+        /// `ClaudeOrganizationClassifier.isPersonal`. Only these answer the
+        /// question "is this the same account", because only these have a
+        /// single member.
+        let personalOrganizationUUIDs: [String]
+        /// A stable mark for the pasted key, never the key. Compared against
+        /// `ProfileBinding.browserCredentialMark`.
+        let credentialMark: Int?
+
+        init(
+            organizationUUIDs: [String],
+            personalOrganizationUUIDs: [String] = [],
+            credentialMark: Int? = nil
+        ) {
+            self.organizationUUIDs = organizationUUIDs
+            self.personalOrganizationUUIDs = personalOrganizationUUIDs
+            self.credentialMark = credentialMark
         }
     }
 
@@ -140,42 +187,91 @@ enum ClaudeAccountIdentityGuard {
         return .belongsToThisProfile
     }
 
-    /// The verdict on a claude.ai browser sign-in, which names organizations
-    /// rather than an account.
+    /// The verdict on a claude.ai browser sign-in.
     ///
     /// Kept separate from the Claude Code verdict because the two credentials
     /// carry different identities: the browser sign-in can see a list of
     /// organizations, and the terminal sign-in belongs to an account.
     ///
+    /// Two questions, in order. First, can this key see the organization the
+    /// profile displays at all. Then, is the account behind it an account
+    /// another profile is already showing — the same rule the Claude Code
+    /// verdict enforces, which this path used to leave unchecked.
+    ///
     /// - Parameters:
-    ///   - organizationUUIDs: every organization the pasted key can see, from
-    ///     `GET /api/organizations`.
+    ///   - signIn: the pasted key, as `BrowserSignIn` describes it.
     static func browserSignInVerdict(
-        organizationUUIDs: [String],
+        _ signIn: BrowserSignIn,
         for profile: ProfileBinding,
         otherProfiles: [ProfileBinding]
     ) -> Verdict {
-        guard !organizationUUIDs.isEmpty else { return .undetermined }
+        guard !signIn.organizationUUIDs.isEmpty else { return .undetermined }
 
         if let expected = profile.organizationUUID,
-           !organizationUUIDs.contains(expected) {
+           !signIn.organizationUUIDs.contains(expected) {
             return .mismatch(
                 .differentOrganization(
                     expected: expected,
-                    actual: organizationUUIDs[0]
+                    actual: signIn.organizationUUIDs[0]
                 )
             )
         }
 
-        // Deliberately NOT refusing a key whose organization another profile
-        // already shows. Two profiles on one ORGANIZATION is a supported
-        // setup — a team with two seats, two people, two sets of member
-        // figures — and this codebase says so twice, at
-        // `ClaudeAPIService.swift`'s `fetchUsageData(using:)` ("organization
-        // id which more than one profile can share") and on
-        // `CapturedUsageRequest.profileID` ("which two profiles can share").
-        // Two profiles on one ACCOUNT is the defect; one organization is not.
+        if let clash = browserAccountClash(
+            signIn,
+            for: profile,
+            otherProfiles: otherProfiles
+        ) {
+            return .mismatch(.accountAlreadyBound(profileName: clash.name))
+        }
+
         return .belongsToThisProfile
+    }
+
+    /// The profile already showing the account behind a pasted key, or nil.
+    ///
+    /// Organization membership is deliberately not the test. Two profiles on
+    /// one ORGANIZATION is a supported setup — a team with two seats, two
+    /// people, two sets of member figures — and this codebase says so twice,
+    /// at `ClaudeAPIService.swift`'s `fetchUsageData(using:)` ("organization
+    /// id which more than one profile can share") and on
+    /// `CapturedUsageRequest.profileID` ("which two profiles can share").
+    /// Refusing that made a documented configuration impossible to set up.
+    /// Two profiles on one ACCOUNT is the defect, and these are the two ways
+    /// the browser credential can show it.
+    private static func browserAccountClash(
+        _ signIn: BrowserSignIn,
+        for profile: ProfileBinding,
+        otherProfiles: [ProfileBinding]
+    ) -> ProfileBinding? {
+        let peers = otherProfiles.filter { $0.id != profile.id }
+
+        // One key in two profiles. The same credential is the same account
+        // whatever kind of organization it belongs to, so this is what
+        // catches a reused key on a Team or Enterprise organization, where
+        // the organization says nothing about who is signed in.
+        if let mark = signIn.credentialMark,
+           let clash = peers.first(where: {
+               $0.browserCredentialMark == mark
+           }) {
+            return clash
+        }
+
+        // A second key for one account. A personal organization has one
+        // member, so the organization IS the account there, and a profile
+        // already showing it is that account a second time. Only positively
+        // personal organizations on both sides count: nil is not yet
+        // determined, and reading it as personal would refuse the two-seat
+        // case this whole function protects.
+        guard !signIn.personalOrganizationUUIDs.isEmpty else { return nil }
+        let personal = Set(signIn.personalOrganizationUUIDs)
+        return peers.first { peer in
+            guard peer.organizationIsPersonal == true,
+                  let organization = peer.organizationUUID else {
+                return false
+            }
+            return personal.contains(organization)
+        }
     }
 
     // MARK: - Refusals people read
@@ -201,9 +297,10 @@ enum ClaudeAccountIdentityGuard {
                 name
             )
         case .accountAlreadyBound(let profileName):
-            // Not reachable from `browserSignInVerdict`, which no longer
-            // refuses a shared organization. Kept because `Mismatch` is
-            // shared with the Claude Code verdict and this switch is total.
+            // Reached when the pasted key is the account another profile
+            // already shows — the same key, or a second key for one
+            // personal organization. A shared organization never reaches
+            // here, because two seats on one team is a supported setup.
             return string(
                 "claude_identity.browser.already_bound",
                 default: "Profile '%@' is already signed in to this "

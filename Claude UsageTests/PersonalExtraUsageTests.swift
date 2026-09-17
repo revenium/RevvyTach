@@ -522,6 +522,74 @@ final class PersonalExtraUsageTests: XCTestCase {
         XCTAssertEqual(usage.organizationExtraUsageIssue, .notEnabled)
     }
 
+    // MARK: - The account-mismatch fallback publishes no supplementary figure
+
+    /// The control. With no mismatch the member's own figure is fetched and
+    /// published exactly as before, so the assertion below is about the
+    /// mismatch and not about a stub that answers nothing.
+    func testTheMemberFigureIsPublishedWhenTheIdentityMatches() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID)
+        )
+
+        XCTAssertNotNil(
+            usage.personalCostUsed,
+            "the control must produce a member figure, or the mismatch "
+            + "assertion proves nothing"
+        )
+        XCTAssertNotEqual(usage.personalExtraUsageIssue, .differentAccount)
+    }
+
+    /// The member figure is fetched with the profile's Claude Code
+    /// credential. Once that credential has been found to belong to another
+    /// account the figure is another account's too, so refusing the session
+    /// and weekly percentages while publishing it beside them showed a
+    /// number the profile did not earn — and the popover treats any present
+    /// figure as authoritative, so the explanation never reached the screen.
+    func testAnAccountMismatchPublishesNoMemberFigure() async throws {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        let service = try makeService(profileID: profileID, store: store)
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            sessionKey: "sk-ant-sid01-fixture-session-key-value",
+            organizationId: teamOrganizationID,
+            profile: try seededProfile(profileID),
+            claudeCodeIdentityMismatch: true
+        )
+
+        XCTAssertNil(usage.personalCostUsed)
+        XCTAssertNil(usage.personalCostLimit)
+        XCTAssertNil(usage.personalCostCurrency)
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
+    }
+
     /// The shape classifier itself, which is what keeps a genuine shape
     /// change out of the settled bucket. Content never reaches it — only the
     /// top-level kind — so this is also the guard that no response body can

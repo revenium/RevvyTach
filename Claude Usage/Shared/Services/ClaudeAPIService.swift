@@ -2997,6 +2997,24 @@ class ClaudeAPIService: APIServiceProtocol {
         }
     }
 
+    /// A pasted claude.ai key as the identity guard reads it: the
+    /// organizations it can see, which of those are one person's
+    /// subscription, and a mark for the key itself. Beside
+    /// `identityBinding` because both sign-in sheets need the two together,
+    /// and because the key must never travel further than its hash.
+    static func browserSignIn(
+        organizations: [AccountInfo],
+        key: String
+    ) -> ClaudeAccountIdentityGuard.BrowserSignIn {
+        ClaudeAccountIdentityGuard.BrowserSignIn(
+            organizationUUIDs: organizations.map(\.uuid),
+            personalOrganizationUUIDs: organizations
+                .filter { ClaudeOrganizationClassifier.isPersonal($0) == true }
+                .map(\.uuid),
+            credentialMark: key.hashValue
+        )
+    }
+
     static func identityBinding(
         _ profile: Profile
     ) -> ClaudeAccountIdentityGuard.ProfileBinding {
@@ -3004,7 +3022,9 @@ class ClaudeAPIService: APIServiceProtocol {
             id: profile.id,
             name: profile.name,
             organizationUUID: profile.organizationId,
-            accountUUID: profile.cliAccountUUID
+            accountUUID: profile.cliAccountUUID,
+            organizationIsPersonal: profile.organizationIsPersonal,
+            browserCredentialMark: profile.claudeSessionKey?.hashValue
         )
     }
 
@@ -3416,11 +3436,19 @@ class ClaudeAPIService: APIServiceProtocol {
     ///     nil only when no specific profile identity is available; the
     ///     member figure is then left unset instead of being guessed.
     /// - Returns: ClaudeUsage data for the profile
+    /// - Parameter claudeCodeIdentityMismatch: the caller has already found
+    ///   that this profile's Claude Code sign-in belongs to another account.
+    ///   The member's own extra-usage figure is fetched with that very
+    ///   credential, so it is not fetched at all when this is true: a
+    ///   supplementary number from the wrong account, published beside a
+    ///   refusal to show the percentages, reads as a figure that can be
+    ///   trusted.
     func fetchUsageData(
         sessionKey: String,
         organizationId: String,
         profile: Profile?,
-        checkOverageLimitEnabled: Bool = true
+        checkOverageLimitEnabled: Bool = true,
+        claudeCodeIdentityMismatch: Bool = false
     ) async throws -> ClaudeUsage {
         // Sequenced rather than fired concurrently (async let): three
         // simultaneous requests per profile, multiplied across every
@@ -3447,11 +3475,23 @@ class ClaudeAPIService: APIServiceProtocol {
         // figure, and skipped entirely unless the linked Claude Code account
         // belongs to the organization on screen.
         if checkOverageLimitEnabled, let profile {
-            await applyPersonalExtraUsage(
-                to: &claudeUsage,
-                profile: profile,
-                organizationId: organizationId
-            )
+            if claudeCodeIdentityMismatch {
+                // The member figure comes from the Claude Code credential,
+                // and that credential has already been found to belong to
+                // someone else. Not requested, and the three cost fields are
+                // left empty on purpose so the popover has no figure to
+                // short-circuit on and prints the explanation instead.
+                claudeUsage.personalCostUsed = nil
+                claudeUsage.personalCostLimit = nil
+                claudeUsage.personalCostCurrency = nil
+                claudeUsage.personalExtraUsageIssue = .differentAccount
+            } else {
+                await applyPersonalExtraUsage(
+                    to: &claudeUsage,
+                    profile: profile,
+                    organizationId: organizationId
+                )
+            }
         } else if checkOverageLimitEnabled, claudeUsage.costUsed != nil {
             // No profile survived to check against — it was removed, or the
             // request's captured id no longer resolves — yet the
@@ -3873,8 +3913,16 @@ class ClaudeAPIService: APIServiceProtocol {
                                 sessionKey: sessionKey,
                                 organizationId: organizationID,
                                 profile: profile,
-                                checkOverageLimitEnabled: request.checkOverage
+                                checkOverageLimitEnabled: request.checkOverage,
+                                claudeCodeIdentityMismatch: true
                             )
+                            // Belt and braces with the suppression inside
+                            // that call: whatever route populated them, no
+                            // figure earned by another account leaves here,
+                            // and the explanation is what the profile shows.
+                            usage.personalCostUsed = nil
+                            usage.personalCostLimit = nil
+                            usage.personalCostCurrency = nil
                             usage.personalExtraUsageIssue = .differentAccount
                             return usage
                         } catch {
