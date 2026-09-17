@@ -1160,6 +1160,26 @@ struct EnterKeyStepSetup: View {
                         )
                         return
                     }
+                    // The same two checks the Claude Account sign-in sheet
+                    // makes, because a profile created here can be bound to
+                    // an account another profile is already showing just as
+                    // easily — and then both publish one account's
+                    // percentages with nothing on screen to say why.
+                    let signInVerdict = ClaudeAccountIdentityGuard
+                        .browserSignInVerdict(
+                            organizationUUIDs: organizations.map(\.uuid),
+                            for: identityBindingForTarget(),
+                            otherProfiles: otherProfileBindingsForTarget()
+                        )
+                    if case .mismatch(let mismatch) = signInVerdict {
+                        wizardState.validationState = .error(
+                            ClaudeAccountIdentityGuard.browserSignInRefusal(
+                                mismatch,
+                                accountName: organizations.first?.name
+                            )
+                        )
+                        return
+                    }
                     wizardState.testedOrganizations = organizations
                     // Never start on a console/API organization: that is the
                     // choice that leaves the popover permanently unavailable.
@@ -1283,6 +1303,49 @@ struct EnterKeyStepSetup: View {
             wizardState.claudeSetupTarget = .newProfile
             wizardState.targetProfileName =
                 "chrome_assisted.new_claude_profile".localized
+        }
+    }
+
+    /// The profile a pasted key is being validated for, as the identity
+    /// guard reads it.
+    ///
+    /// A target that is not a profile yet — the wizard's commonest case —
+    /// answers with an empty binding under a throwaway id, so the "this key
+    /// is not this profile's account" half cannot fire on a profile that has
+    /// no account yet, while the "another profile already holds this account"
+    /// half still does. That second half is the one this screen needs: a new
+    /// profile bound to a taken account is exactly how two profiles come to
+    /// show one account's numbers.
+    private func identityBindingForTarget()
+        -> ClaudeAccountIdentityGuard.ProfileBinding {
+        if let profile = targetProfile() {
+            return ClaudeAPIService.identityBinding(profile)
+        }
+        return ClaudeAccountIdentityGuard.ProfileBinding(
+            id: UUID(),
+            name: wizardState.targetProfileName,
+            organizationUUID: nil,
+            accountUUID: nil
+        )
+    }
+
+    private func otherProfileBindingsForTarget()
+        -> [ClaudeAccountIdentityGuard.ProfileBinding] {
+        let targetID = targetProfile()?.id
+        return dependencies.profileManager.profiles
+            .filter { $0.id != targetID }
+            .map(ClaudeAPIService.identityBinding)
+    }
+
+    private func targetProfile() -> Profile? {
+        switch wizardState.claudeSetupTarget {
+        case .existing(let id), .createdProfile(let id):
+            return dependencies.profileManager.profiles
+                .first { $0.id == id }
+        case .compatibilityCurrent:
+            return dependencies.profileManager.activeClaudeProfile
+        case .newProfile, nil:
+            return nil
         }
     }
 

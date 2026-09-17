@@ -289,7 +289,8 @@ final class PersonalExtraUsageTests: XCTestCase {
         let issues: [ClaudeUsage.PersonalExtraUsageIssue] = [
             .notLinked, .signInExpired, .signInHasNoToken,
             .signInUnusable, .temporarilyUnavailable,
-            .differentOrganization, .claudeAccountUnresolved
+            .differentOrganization, .claudeAccountUnresolved,
+            .differentAccount
         ]
         for issue in issues {
             var usage = ClaudeUsage.empty
@@ -6642,6 +6643,334 @@ final class PersonalExtraUsageTests: XCTestCase {
                 fetchedAt: fetchedAt
             )
         )
+    }
+
+    // MARK: - Whose account these percentages are
+
+    /// The session and weekly percentages are the numbers people actually
+    /// read, and until this guard existed nothing checked that the Claude
+    /// Code login producing them belonged to the profile they appear under.
+    /// A profile is bound to a Claude Code *directory name*, and two
+    /// directories can hold one account's login.
+    ///
+    /// Terminal-only, so there is no browser sign-in to fall back to and the
+    /// refusal has to surface as a thrown error rather than as a quieter
+    /// reading from claude.ai.
+    func testACLILoginForAnotherAccountDoesNotPublishItsPercentages()
+        async throws
+    {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        var profile = Profile(
+            id: UUID(),
+            name: "Terminal-only fixture",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        // The account this profile accepted when it was linked.
+        profile.cliAccountUUID = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(credentials, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+        // Someone signed that account directory in as a different account.
+        // Injected rather than read from disk: a test must never decide
+        // anything from the developer's own `~/.claude-accounts`.
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "ed73b56e-85e9-4a68-81e6-e7db3e26c2b9",
+                emailAddress: "someone.else@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(for: profile)
+        XCTAssertEqual(request.source, .profileCLI)
+
+        let usage = try await service.fetchUsageData(using: request)
+
+        // Refused, and the refusal says so on screen rather than throwing:
+        // an empty panel with no explanation is a second defect wearing the
+        // first one's clothes.
+        XCTAssertFalse(usage.sessionPercentageAvailable)
+        XCTAssertFalse(usage.weeklyPercentageAvailable)
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "the refusal must come before the request, not after it"
+        )
+    }
+
+    /// The same refusal on a profile that also holds a browser sign-in. One
+    /// credential being wrong never loses the numbers the other can still
+    /// produce, so the reading comes from claude.ai — this profile's own
+    /// account — and names the Claude Code problem beside it.
+    func testABrowserBackedProfileFallsBackWhenItsCLILoginIsAnotherAccount()
+        async throws
+    {
+        let profileID = UUID()
+        let store = makeIsolatedProfileStore()
+        try seedProfile(
+            id: profileID,
+            organizationID: teamOrganizationID,
+            in: store
+        )
+        var profile = try seededProfile(profileID)
+        // The account this profile accepted when it was linked.
+        profile.cliAccountUUID = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        manager.activeProfile = profile
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "ed73b56e-85e9-4a68-81e6-e7db3e26c2b9",
+                emailAddress: "someone.else@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let request = try service.captureUsageRequest(for: profile)
+        let usage = try await service.fetchUsageData(using: request)
+
+        XCTAssertEqual(usage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertTrue(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0 == "https://claude.ai/api/organizations/"
+                    + "\(teamOrganizationID)/usage"
+            },
+            "a profile whose Claude Code login is another account's must "
+                + "read its numbers from its own claude.ai organization "
+                + "instead"
+        )
+    }
+
+    /// The state this machine is actually in: two profiles, two Claude Code
+    /// directories, one account, neither profile carrying a recorded
+    /// identity. BOTH are refused, and that is the intended answer — with one
+    /// account behind two profiles there is no non-arbitrary winner, and
+    /// picking one would publish a number under a name that did not earn it.
+    /// Each of them says why on screen instead of going blank.
+    func testTwoProfilesBoundToOneAccountAreBothRefused() async throws {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let sharedAccount = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let first = Profile(
+            id: UUID(),
+            name: "daithi-walsh",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-walsh"
+        )
+        let second = Profile(
+            id: UUID(),
+            name: "daithi-ie",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-ie"
+        )
+        try seedProfilesForTesting([first, second], in: store)
+        try store.saveCLIProfileCredential(credentials, for: first.id)
+        try store.saveCLIProfileCredential(credentials, for: second.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [first, second]
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+        // Both directories are signed in as the same account.
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: sharedAccount,
+                emailAddress: "one.person@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        // `otherProfileBindings` reads the other profile's directory when it
+        // has no recorded identity of its own, so the collision is visible
+        // from both sides on the very first reading — which is the point: a
+        // machine already in this state must not publish one account twice
+        // while it waits for a profile to record something.
+        let firstUsage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: first)
+        )
+        XCTAssertEqual(firstUsage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(firstUsage.sessionPercentageAvailable)
+
+        let secondUsage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: second)
+        )
+        XCTAssertEqual(secondUsage.personalExtraUsageIssue, .differentAccount)
+        XCTAssertFalse(secondUsage.sessionPercentageAvailable)
+
+        // Neither of them recorded the shared account: recording happens only
+        // on a verdict that passed, so a refused profile never adopts the
+        // account it was refused for.
+        XCTAssertNil(
+            manager.profiles.first { $0.id == first.id }?.cliAccountUUID
+        )
+        XCTAssertNil(
+            manager.profiles.first { $0.id == second.id }?.cliAccountUUID
+        )
+        XCTAssertFalse(
+            StubClaudeEndpointsURLProtocol.requestedURLs.contains {
+                $0.hasSuffix("/api/oauth/usage")
+            },
+            "neither profile may reach the usage endpoint with a login that "
+                + "is not its own"
+        )
+    }
+
+    /// The single-profile case the test above must not be confused with: one
+    /// profile, one directory, nothing recorded, no other profile holding
+    /// that account. It adopts and publishes.
+    func testALoneProfileAdoptsTheAccountItIsSignedInAs() async throws {
+        let store = makeIsolatedProfileStore()
+        let credentials = Self.credentialsJSON(
+            expiresAt: Date()
+                .addingTimeInterval(8 * 3600)
+                .timeIntervalSince1970 * 1000
+        )
+        let sharedAccount = "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        let profile = Profile(
+            id: UUID(),
+            name: "daithi-ie",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: credentials,
+            hasCliAccount: true,
+            cliAccountName: "daithi-ie"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        try store.saveCLIProfileCredential(credentials, for: profile.id)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+        service.claudeCodeAccountIdentityReader = { _ in
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: sharedAccount,
+                emailAddress: "one.person@example.com"
+            )
+        }
+
+        StubClaudeEndpointsURLProtocol.install(
+            cliOrganizationID: teamOrganizationID
+        )
+        defer { StubClaudeEndpointsURLProtocol.reset() }
+
+        let usage = try await service.fetchUsageData(
+            using: try service.captureUsageRequest(for: profile)
+        )
+
+        XCTAssertNil(usage.personalExtraUsageIssue)
+        XCTAssertEqual(
+            manager.profiles.first { $0.id == profile.id }?.cliAccountUUID,
+            sharedAccount
+        )
+    }
+
+    /// The identity comes from the bound account directory's own
+    /// `.claude.json` first. The `/api/oauth/profile` account is a secondary
+    /// that only fills a gap the file left, and a profile with no directory
+    /// and no lookup behind it answers with nothing at all rather than with a
+    /// guess.
+    func testTheOnDiskIdentityIsTheOneTheGuardReads() throws {
+        let store = makeIsolatedProfileStore()
+        let profile = Profile(
+            id: UUID(),
+            name: "Fixture",
+            claudeSessionKey: nil,
+            organizationId: nil,
+            cliCredentialsJSON: nil,
+            hasCliAccount: true,
+            cliAccountName: "fixture-account"
+        )
+        try seedProfilesForTesting([profile], in: store)
+        let manager = ProfileManager(profileStore: store)
+        manager.profiles = [profile]
+        retained.append(manager)
+        retained.append(store)
+        let service = makeIsolatedClaudeAPIService(
+            profileManager: manager,
+            store: store
+        )
+
+        var directoriesRead: [String] = []
+        service.claudeCodeAccountIdentityReader = { directoryName in
+            directoriesRead.append(directoryName)
+            return ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+                uuid: "048a9b16-1391-4949-94be-b4f0f3c866c3",
+                emailAddress: "someone@example.com"
+            )
+        }
+        XCTAssertEqual(
+            service.boundClaudeCodeAccount(for: profile)?.uuid,
+            "048a9b16-1391-4949-94be-b4f0f3c866c3"
+        )
+        XCTAssertEqual(directoriesRead, ["fixture-account"])
+
+        // Nothing on disk and no lookup behind it: the guard must be told
+        // nothing was established, not handed a substitute.
+        service.claudeCodeAccountIdentityReader = { _ in nil }
+        XCTAssertNil(service.boundClaudeCodeAccount(for: profile))
+
+        // A profile with no linked directory never reads one.
+        var unlinked = profile
+        unlinked.cliAccountName = nil
+        service.claudeCodeAccountIdentityReader = { _ in
+            XCTFail("a profile with no linked account read a directory")
+            return nil
+        }
+        XCTAssertNil(service.boundClaudeCodeAccount(for: unlinked))
     }
 
     private static func credentialsJSON(expiresAt: Double) -> String {

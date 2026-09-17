@@ -111,6 +111,16 @@ class ClaudeAPIService: APIServiceProtocol {
         fileprivate let sessionKey: String?
         fileprivate let organizationID: String?
         fileprivate let oauthAccessToken: String?
+        /// Who the bound Claude Code account directory was signed in as when
+        /// this request was captured.
+        ///
+        /// Stamped here rather than resolved during the fetch because the
+        /// answer comes from a local file — `~/.claude-accounts/<name>/
+        /// .claude.json` — so reading it is synchronous, costs no request,
+        /// and cannot be rate limited. It is an identity, never a
+        /// credential: the uuid and the email beside it, not the token.
+        fileprivate let claudeCodeAccount:
+            ClaudeAccountIdentityGuard.ClaudeCodeAccount?
         /// The profile's own extra-usage preference, carried on the request
         /// rather than on the source so it applies to both.
         fileprivate let checkOverage: Bool
@@ -140,6 +150,8 @@ class ClaudeAPIService: APIServiceProtocol {
             oauthAccessToken: String?,
             checkOverage: Bool,
             profileID: UUID,
+            claudeCodeAccount:
+                ClaudeAccountIdentityGuard.ClaudeCodeAccount? = nil,
             knownPersonalExtraUsageIssue:
                 ClaudeUsage.PersonalExtraUsageIssue? = nil,
             knownClaudeCodeAsleepSince: Date? = nil
@@ -148,6 +160,7 @@ class ClaudeAPIService: APIServiceProtocol {
             self.sessionKey = sessionKey
             self.organizationID = organizationID
             self.oauthAccessToken = oauthAccessToken
+            self.claudeCodeAccount = claudeCodeAccount
             self.checkOverage = checkOverage
             self.profileID = profileID
             self.knownPersonalExtraUsageIssue = knownPersonalExtraUsageIssue
@@ -172,6 +185,7 @@ class ClaudeAPIService: APIServiceProtocol {
                 oauthAccessToken: oauthAccessToken,
                 checkOverage: checkOverage,
                 profileID: profileID,
+                claudeCodeAccount: claudeCodeAccount,
                 knownPersonalExtraUsageIssue: knownPersonalExtraUsageIssue,
                 knownClaudeCodeAsleepSince: knownClaudeCodeAsleepSince
             )
@@ -1175,6 +1189,21 @@ class ClaudeAPIService: APIServiceProtocol {
         )
     }
 
+    /// Who a linked Claude Code account directory is signed in as.
+    ///
+    /// A settable property for the same reason as `accountIsInUse` above,
+    /// and for one more: production reads
+    /// `~/.claude-accounts/<name>/.claude.json`, and a test must never read
+    /// the developer's real account directories to decide whether a profile
+    /// may publish its numbers.
+    var claudeCodeAccountIdentityReader:
+        (String) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? = {
+            accountName in
+            ClaudeSwitchService.shared.linkedAccountIdentity(
+                directoryName: accountName
+            )
+        }
+
     /// A replay needs a new process scan inside the account lock, not the
     /// detector's ordinary cached answer from before waiting for that lock.
     var freshAccountIsInUse: (String?) -> Bool = { accountName in
@@ -1392,6 +1421,17 @@ class ClaudeAPIService: APIServiceProtocol {
     /// `profile.cliOrganizationId` — would reinstate the cross-account
     /// attribution that guard exists to stop.
     private var cliLoginsWithoutOrganization: [UUID: Int] = [:]
+
+    /// The account uuid `GET /api/oauth/profile` reported for a profile, if
+    /// it reports one at all.
+    ///
+    /// A secondary identity, recorded only as a by-product of a lookup that
+    /// was already being made for the organization, so it costs no request of
+    /// its own. It is read only when the primary source — the bound account
+    /// directory's `.claude.json` — could not answer, and it never overrides
+    /// it: one source is known to be present on disk, the other is a field
+    /// nothing in this app has ever seen the endpoint return.
+    private var cliAccountUUIDFromOAuthProfile: [UUID: String] = [:]
 
     /// The member's figure, or the reason it is missing. The reason reaches
     /// the popover: "link an account" and "renew the one you have" send a
@@ -2767,6 +2807,10 @@ class ClaudeAPIService: APIServiceProtocol {
             )
         }
 
+        if let accountUUID = response.account?.uuid, !accountUUID.isEmpty {
+            cliAccountUUIDFromOAuthProfile[profile.id] = accountUUID
+        }
+
         guard let uuid = response.organization?.uuid else {
             // The response is intact and simply carries no organization,
             // which is what a personal Max/Pro subscription looks like. Not
@@ -2793,6 +2837,145 @@ class ClaudeAPIService: APIServiceProtocol {
             profileManager.updateCliOrganizationId(uuid, for: profile.id)
         }
         return .resolved(uuid)
+    }
+
+    /// Whether the Claude Code account directory this profile is bound to is
+    /// still the account the profile stands for.
+    ///
+    /// Asked before the percentages are published, not after: a profile is
+    /// bound to a Claude Code *directory name*, two directories can hold one
+    /// account's login, and when that happens two profiles fetch one
+    /// account's numbers and show them as two independent readings.
+    ///
+    /// The identity is the one stamped on the request at capture time, read
+    /// from the bound directory's own `.claude.json`. Deliberately not
+    /// `/api/oauth/profile`: that endpoint answers with an organization, a
+    /// personal Max/Pro subscription has none, and `CLIOrganizationLookup`
+    /// says so in as many words — "carries no identifier, deliberately, so it
+    /// cannot satisfy the caller's `cliOrganizationId == organizationId`
+    /// guard by any route". Two personal accounts are exactly the case this
+    /// guard exists for, so an organization comparison would never fire on
+    /// them.
+    ///
+    /// Fails open by design. No directory, no `oauthAccount`, or an
+    /// unreadable file all answer `.undetermined`: blanking a working reading
+    /// because a file could not be read would be a worse defect than the one
+    /// this guards against.
+    func claudeCodeIdentityVerdict(
+        for profile: Profile,
+        account: ClaudeAccountIdentityGuard.ClaudeCodeAccount?
+    ) -> ClaudeAccountIdentityGuard.Verdict {
+        let binding = Self.identityBinding(profile)
+        let verdict = ClaudeAccountIdentityGuard.verdict(
+            claudeCodeAccount: account,
+            for: binding,
+            otherProfiles: otherProfileBindings(besides: profile.id)
+        )
+        if case .belongsToThisProfile = verdict,
+           ClaudeAccountIdentityGuard.shouldRecordAccountUUID(
+                account?.uuid,
+                on: binding
+           ) {
+            // Recorded once, on the first reading that passes. From then on a
+            // directory that is signed in to a different account is a
+            // mismatch rather than a silent re-binding.
+            profileManager.updateCliAccountUUID(account?.uuid, for: profile.id)
+        }
+        return verdict
+    }
+
+    /// Every other profile, as the guard reads them.
+    ///
+    /// A profile that has not been read yet has no recorded account, so its
+    /// identity is taken from its own bound directory instead. Without that
+    /// fallback the clash check would only start working after every profile
+    /// had refreshed once — and a machine that is already in the broken state
+    /// would publish one account twice in the meantime. The read is skipped
+    /// entirely once a profile has an identity recorded, which is after its
+    /// first reading.
+    private func otherProfileBindings(
+        besides profileID: UUID
+    ) -> [ClaudeAccountIdentityGuard.ProfileBinding] {
+        profileManager.profiles
+            .filter { $0.id != profileID }
+            .map { other in
+                let binding = Self.identityBinding(other)
+                guard binding.accountUUID == nil else { return binding }
+                return ClaudeAccountIdentityGuard.ProfileBinding(
+                    id: binding.id,
+                    name: binding.name,
+                    organizationUUID: binding.organizationUUID,
+                    accountUUID: boundClaudeCodeAccount(for: other)?.uuid
+                )
+            }
+    }
+
+    /// Who the Claude Code account directory bound to this profile is signed
+    /// in as, or nil when nothing can be established.
+    ///
+    /// Local, synchronous and read-only. Injectable so a test never reaches
+    /// the developer's own `~/.claude-accounts`.
+    func boundClaudeCodeAccount(
+        for profile: Profile
+    ) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? {
+        if let accountName = profile.cliAccountName,
+           let onDisk = claudeCodeAccountIdentityReader(accountName) {
+            return onDisk
+        }
+        // Secondary, and only ever where the file could not answer: a
+        // directory that has not been read, or one whose `.claude.json`
+        // carries no `oauthAccount`. Never overrides the file, because the
+        // file is the source that is known to exist.
+        guard let fromAPI = cliAccountUUIDFromOAuthProfile[profile.id] else {
+            return nil
+        }
+        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(uuid: fromAPI)
+    }
+
+    /// The same question, asked at the moment a Claude Code account is being
+    /// bound to a profile rather than at refresh time.
+    func claudeCodeLinkVerdict(
+        for profileID: UUID
+    ) -> ClaudeAccountIdentityGuard.Verdict {
+        guard let profile = profileManager.profiles.first(
+            where: { $0.id == profileID }
+        ) else {
+            return .undetermined
+        }
+        return ClaudeAccountIdentityGuard.verdict(
+            claudeCodeAccount: boundClaudeCodeAccount(for: profile),
+            for: Self.identityBinding(profile),
+            otherProfiles: otherProfileBindings(besides: profileID)
+        )
+    }
+
+    /// A one-line technical description of a mismatch, for the log and the
+    /// error's technical details. Identifiers only: no token, no email.
+    static func identityMismatchDetail(
+        _ mismatch: ClaudeAccountIdentityGuard.Mismatch
+    ) -> String {
+        switch mismatch {
+        case .differentAccount(let expected, let actual):
+            return "the linked directory is signed in as account \(actual), "
+                + "this profile accepted account \(expected)"
+        case .accountAlreadyBound(let profileName):
+            return "profile '\(profileName)' is already bound to this "
+                + "Claude Code account"
+        case .differentOrganization(let expected, let actual):
+            return "the sign-in is in organization \(actual), this profile "
+                + "shows organization \(expected)"
+        }
+    }
+
+    static func identityBinding(
+        _ profile: Profile
+    ) -> ClaudeAccountIdentityGuard.ProfileBinding {
+        ClaudeAccountIdentityGuard.ProfileBinding(
+            id: profile.id,
+            name: profile.name,
+            organizationUUID: profile.organizationId,
+            accountUUID: profile.cliAccountUUID
+        )
     }
 
     /// Records a genuine organization-lookup failure and answers with it.
@@ -3368,7 +3551,8 @@ class ClaudeAPIService: APIServiceProtocol {
                 organizationID: organizationID,
                 oauthAccessToken: accessToken,
                 checkOverage: checkOverage,
-                profileID: profile.id
+                profileID: profile.id,
+                claudeCodeAccount: boundClaudeCodeAccount(for: profile)
             )
         }
         // `try?` rather than `try`: a Keychain read that fails must not stop
@@ -3392,7 +3576,8 @@ class ClaudeAPIService: APIServiceProtocol {
                 organizationID: organizationID,
                 oauthAccessToken: accessToken,
                 checkOverage: checkOverage,
-                profileID: profile.id
+                profileID: profile.id,
+                claudeCodeAccount: boundClaudeCodeAccount(for: profile)
             )
         }
         if let sessionKey, let organizationID {
@@ -3538,7 +3723,8 @@ class ClaudeAPIService: APIServiceProtocol {
             organizationID: organizationID,
             oauthAccessToken: usable.accessToken,
             checkOverage: checkOverage,
-            profileID: profile.id
+            profileID: profile.id,
+            claudeCodeAccount: boundClaudeCodeAccount(for: profile)
         )
     }
 
@@ -3623,6 +3809,79 @@ class ClaudeAPIService: APIServiceProtocol {
                     isRecoverable: false
                 )
             }
+
+            // Whose account these percentages will describe, asked before
+            // they are published rather than after. The member's extra-usage
+            // row has always been guarded this way; the session and weekly
+            // percentages — the figures anyone actually reads — were not,
+            // so a profile bound to a Claude Code directory holding another
+            // account's login showed that account's usage as its own, with
+            // nothing on screen to say so.
+            if let profile {
+                let verdict = claudeCodeIdentityVerdict(
+                    for: profile,
+                    account: request.claudeCodeAccount
+                )
+                if case .mismatch(let mismatch) = verdict {
+                    loggingService.logWarning(
+                        "The Claude Code sign-in linked to profile "
+                        + "'\(profile.name)' does not belong to this "
+                        + "profile's account "
+                        + "(\(Self.identityMismatchDetail(mismatch))); its "
+                        + "percentages are another account's and are not "
+                        + "being shown here."
+                    )
+                    // The same rule the 401 fallback below follows: one
+                    // credential being unusable never loses the numbers the
+                    // other credential can still produce. A browser-backed
+                    // profile falls back to claude.ai — its own account's
+                    // data — and names the Claude Code problem alongside it.
+                    if let sessionKey = request.sessionKey,
+                       let organizationID = request.organizationID {
+                        do {
+                            var usage = try await fetchUsageData(
+                                sessionKey: sessionKey,
+                                organizationId: organizationID,
+                                profile: profile,
+                                checkOverageLimitEnabled: request.checkOverage
+                            )
+                            usage.personalExtraUsageIssue = .differentAccount
+                            return usage
+                        } catch {
+                            // Both credentials are unusable: one belongs to
+                            // another account, the other was refused. Falling
+                            // through to the verdict below rather than
+                            // throwing this error, because the browser
+                            // refusal is the smaller fact — a profile that
+                            // reports "your sign-in expired" while its
+                            // Claude Code account is the actual problem sends
+                            // someone to fix the wrong credential.
+                            loggingService.logDebug(
+                                "The browser fallback for profile "
+                                + "'\(profile.name)' was also refused; "
+                                + "reporting the account mismatch, which is "
+                                + "the fact that explains the empty panel."
+                            )
+                        }
+                    }
+                    // Nothing can be published for this profile, and the
+                    // reason has to reach the screen: an empty panel with no
+                    // explanation is a second defect wearing the first one's
+                    // clothes. `ClaudeUsage.empty` carries
+                    // `sessionPercentageAvailable = false`, which is exactly
+                    // the record the popover's absence statement exists for,
+                    // and `.differentAccount` is the sentence it prints
+                    // beside it. Deliberately not a thrown error: a throw
+                    // blanks the display and reports a failed refresh, which
+                    // is how "your numbers vanished" reaches a user instead
+                    // of "this profile's Claude Code sign-in is not this
+                    // profile's account".
+                    var refused = ClaudeUsage.empty
+                    refused.personalExtraUsageIssue = .differentAccount
+                    return refused
+                }
+            }
+
             do {
                 var usage = try await fetchUsageData(
                     oauthAccessToken: accessToken,

@@ -293,6 +293,39 @@ class ClaudeSwitchService {
     /// is the *first* source the re-sync button consults, so a file holding
     /// only MCP server logins, or a truncated one, was stored over a working
     /// credential and then read back as valid.
+    /// Who a linked Claude Code account directory is currently signed in as.
+    ///
+    /// Read from the same `oauthAccount` object `readLinkedAccountCredentials`
+    /// below already parses out of `.claude.json`; this takes the identity
+    /// beside the token rather than the token. Nil when there is no
+    /// directory, no `.claude.json`, no `oauthAccount`, or no `accountUuid`
+    /// in it — all of which mean "not established", never "different".
+    ///
+    /// No request is made and nothing is written. A profile is bound to a
+    /// *directory name*, and two directories can hold one account's login, so
+    /// this is the only thing that can tell two such profiles apart before
+    /// their percentages go on screen: `/api/oauth/profile` answers with an
+    /// organization, and a personal Max/Pro subscription has none.
+    func linkedAccountIdentity(
+        directoryName: String
+    ) -> ClaudeAccountIdentityGuard.ClaudeCodeAccount? {
+        let dir = (try? validatedAccountDir(for: directoryName))
+            ?? accountDirectoryPath(for: directoryName)
+        let claudeJson = dir.appendingPathComponent(".claude.json")
+        guard let data = try? Data(contentsOf: claudeJson),
+              let parsed = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+              let oauthAccount = parsed["oauthAccount"] as? [String: Any],
+              let accountUUID = oauthAccount["accountUuid"] as? String,
+              !accountUUID.isEmpty else {
+            return nil
+        }
+        return ClaudeAccountIdentityGuard.ClaudeCodeAccount(
+            uuid: accountUUID,
+            emailAddress: oauthAccount["emailAddress"] as? String
+        )
+    }
+
     func readLinkedAccountCredentials(directoryName: String) -> String? {
         let dir = (try? validatedAccountDir(for: directoryName)) ?? accountDirectoryPath(for: directoryName)
 

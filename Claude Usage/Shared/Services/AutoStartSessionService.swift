@@ -217,15 +217,49 @@ final class AutoStartSessionService {
         // Fetch usage data using the profile's specific credentials
         let usage = try await fetchUsageData(for: profile)
 
-        // Save usage to profile
-        await MainActor.run {
+        // This service is a second publisher — it builds its own request and
+        // writes straight to the per-profile store, so a guard inside
+        // `ClaudeAPIService.fetchUsageData(using:)` never sees it — and it
+        // deliberately carries no account guard of its own.
+        //
+        // It cannot produce the collision that guard exists for.
+        // `fetchUsageData(for:)` below authenticates with
+        // `profile.claudeSessionKey` and addresses
+        // `/organizations/\(orgId)/usage` built from `profile.organizationId`
+        // (the guard clause and the URL a few lines down in this file). Both
+        // are per-profile stored credentials. It never reads
+        // `cliAccountName`, `cliCredentialsJSON` or the Claude Code account
+        // directory, which is where a directory *name* stands in for an
+        // identity and two profiles come to share one login.
+        //
+        // Nor may it refuse two profiles that share an organization: that is
+        // a supported setup (two seats on one team), stated twice in
+        // `ClaudeAPIService.swift` — "organization id which more than one
+        // profile can share". An organization-scoped figure being equal for
+        // two seats is the endpoint answering correctly, not a collision.
+        //
+        // What it must not do is erase the explanation the guarded path put
+        // on screen. This response carries no verdict about the Claude Code
+        // sign-in, so a saved record without one would silently clear
+        // `differentAccount` and leave an unexplained profile behind.
+        let publishable: ClaudeUsage = await MainActor.run {
+            var carried = usage
+            if carried.personalExtraUsageIssue == nil,
+               let known = profileManager.profiles
+                   .first(where: { $0.id == profile.id })?
+                   .claudeUsage?
+                   .personalExtraUsageIssue,
+               known == .differentAccount {
+                carried.personalExtraUsageIssue = known
+            }
             _ = profileManager.saveClaudeUsage(
-                usage,
+                carried,
                 for: profile.id
             )
+            return carried
         }
 
-        return usage
+        return publishable
     }
 
     private func fetchUsageData(for profile: Profile) async throws -> ClaudeUsage {

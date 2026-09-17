@@ -1882,6 +1882,21 @@ class ProfileManager: ObservableObject {
         updateProfile(profile)
     }
 
+    /// Caches the Anthropic account the profile's CLI credential belongs to.
+    ///
+    /// Two Claude Code configuration directories can hold a login for one
+    /// account, and two personal accounts both report no organization at
+    /// all, so the account uuid is the only thing that can tell those two
+    /// profiles apart before their percentages go on screen.
+    func updateCliAccountUUID(_ accountUUID: String?, for profileId: UUID) {
+        guard var profile = profiles.first(where: { $0.id == profileId }) else {
+            return
+        }
+        guard profile.cliAccountUUID != accountUUID else { return }
+        profile.cliAccountUUID = accountUUID
+        updateProfile(profile)
+    }
+
     /// Updates API organization ID for a profile
     func updateAPIOrganizationId(_ orgId: String?, for profileId: UUID) {
         guard var profile = profiles.first(where: { $0.id == profileId }) else {

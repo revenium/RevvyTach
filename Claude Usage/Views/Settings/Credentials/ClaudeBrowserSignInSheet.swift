@@ -354,6 +354,30 @@ struct EnterKeyStep: View {
                         )
                         return
                     }
+                    // A pasted key is an account, not a string. Two checks
+                    // before it is accepted: it must belong to the account
+                    // this profile stands for, and no other profile may
+                    // already be showing that account — two profiles on one
+                    // account publish one account's percentages twice, and
+                    // nothing on screen says why.
+                    let signInVerdict = ClaudeAccountIdentityGuard
+                        .browserSignInVerdict(
+                            organizationUUIDs: organizations.map(\.uuid),
+                            for: ClaudeAPIService.identityBinding(target),
+                            otherProfiles: ProfileManager.shared.profiles
+                                .filter { $0.id != target.id }
+                                .map(ClaudeAPIService.identityBinding)
+                        )
+                    if case .mismatch(let mismatch) = signInVerdict {
+                        wizardState.validationState = .error(
+                            ClaudeAccountIdentityGuard
+                                .browserSignInRefusal(
+                                    mismatch,
+                                    accountName: organizations.first?.name
+                                )
+                        )
+                        return
+                    }
                     wizardState.testedOrganizations = organizations
                     // Never start on a console/API organization: that is the
                     // choice that leaves the popover permanently unavailable.
