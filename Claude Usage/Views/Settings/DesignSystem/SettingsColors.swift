@@ -198,13 +198,12 @@ nonisolated enum SettingsSurfaces {
         .accessibilityHighContrastVibrantDark,
     ]
 
-    /// Wraps a resolver in a dynamic `NSColor`. Increase Contrast is read
-    /// from the appearance AppKit is actually resolving against, not from
-    /// `NSWorkspace` at call time: toggling the setting swaps every
-    /// window's effective appearance to its `accessibilityHighContrast*`
-    /// counterpart, which is itself the cache key AppKit re-resolves
-    /// dynamic colors against, so a stale cached value can never outlive
-    /// the appearance change that would otherwise invalidate it.
+    /// Wraps a resolver in a dynamic `NSColor`, keyed by appearance rather
+    /// than by a view identity that has to be torn down and rebuilt:
+    /// toggling Increase Contrast swaps every window's effective
+    /// appearance to its `accessibilityHighContrast*` counterpart, and
+    /// that appearance change is what AppKit re-resolves dynamic colors
+    /// against, so a stale cached value can never outlive it.
     static func dynamic(
         _ resolve: @escaping (NSAppearance, Bool) -> NSColor
     ) -> NSColor {
@@ -213,11 +212,21 @@ nonisolated enum SettingsSurfaces {
         }
     }
 
+    /// True when the appearance AppKit is resolving against is itself one
+    /// of the `accessibilityHighContrast*` names, or — belt and braces —
+    /// when the live system setting says so even if the name mapping
+    /// differs on some macOS release. Either signal alone is enough: the
+    /// appearance identity is what forces AppKit to re-resolve at all: the
+    /// workspace flag is what guarantees the resolved value is correct
+    /// even where the name isn't recognized as high-contrast.
     static func increaseContrast(of appearance: NSAppearance) -> Bool {
-        guard let best = appearance.bestMatch(from: [.aqua, .darkAqua] + highContrastNames) else {
-            return false
+        let nameMatchesHighContrast: Bool
+        if let best = appearance.bestMatch(from: [.aqua, .darkAqua] + highContrastNames) {
+            nameMatchesHighContrast = highContrastNames.contains(best)
+        } else {
+            nameMatchesHighContrast = false
         }
-        return highContrastNames.contains(best)
+        return nameMatchesHighContrast || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
     }
 
     static func isDark(_ appearance: NSAppearance) -> Bool {

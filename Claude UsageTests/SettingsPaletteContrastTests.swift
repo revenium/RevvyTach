@@ -211,6 +211,21 @@ final class SettingsPaletteContrastTests: XCTestCase {
         XCTAssertEqual(view.subviews.count, 2, "a tint layer crept back in")
     }
 
+    /// Only the false cases are assertable here: a high-contrast appearance
+    /// cannot be constructed while the live system setting is off (AppKit
+    /// only ever hands out an `accessibilityHighContrast*`-named
+    /// appearance as its own substitution when the setting is genuinely
+    /// on), so there is no way to build the true case without flipping the
+    /// machine's real accessibility setting. The true case is covered by
+    /// `testIncreaseContrastStrengthensEveryBoundary` and every
+    /// `increaseContrast: true` row in `modes`, which call the palette
+    /// functions with an explicit `Bool` rather than through this
+    /// appearance-derived entry point.
+    func testIncreaseContrastOfIsFalseForPlainAppearances() {
+        XCTAssertFalse(SettingsSurfaces.increaseContrast(of: NSAppearance(named: .aqua)!))
+        XCTAssertFalse(SettingsSurfaces.increaseContrast(of: NSAppearance(named: .darkAqua)!))
+    }
+
     // MARK: - Helpers
 
     private func assertText(_ text: NSColor, over fill: NSColor, _ what: String, _ mode: Mode,
