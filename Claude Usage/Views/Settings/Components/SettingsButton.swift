@@ -35,7 +35,7 @@ struct SettingsButton: View {
         var foregroundColor: Color {
             switch self {
             case .primary: return SettingsColors.textOnAccent
-            case .secondary: return SettingsColors.buttonText
+            case .secondary: return .primary
             case .destructive: return SettingsColors.textOnDestructive
             case .subtle: return .primary
             }
