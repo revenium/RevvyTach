@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-09-22
+
+### Fixed
+
+- **The Settings window is readable in dark mode again.** It used to be
+  see-through, so whatever was behind it showed through the text, and much of
+  the page was grey on grey: status pills, secondary lines, and the outlines of
+  plain buttons all but disappeared. The content area is now opaque, the
+  sidebar uses the standard macOS sidebar material, and every colour is derived
+  from the system palette and stepped until it clears the WCAG AA contrast bar
+  against the surface it actually sits on. Turning on **Increase Contrast** now
+  strengthens borders and text immediately, and turning on **Reduce
+  Transparency** makes the sidebar fully opaque. Status is no longer carried by
+  colour alone. (#117)
+- **A Claude Code sign-in whose renewal was cut off by a network drop recovers
+  by itself.** An interrupted renewal used to leave the account looking broken
+  until the app was restarted; it is now reported as a temporary outage and
+  replayed once when the connection returns. (#115)
+
 ## [4.3.1] - 2026-09-13
 
 ### Fixed
