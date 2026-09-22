@@ -105,7 +105,7 @@ struct ClaudeBrowserSignInSheet: View {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
                         Text("personal.configuration_title".localized)
                             .font(DesignTokens.Typography.sectionTitle)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         HStack(spacing: DesignTokens.Spacing.small) {
                             ForEach(1...3, id: \.self) { step in
@@ -116,17 +116,17 @@ struct ClaudeBrowserSignInSheet: View {
                                 HStack(spacing: DesignTokens.Spacing.extraSmall) {
                                     ZStack {
                                         Circle()
-                                            .fill(isCompleted ? Color.green : (isCurrent ? Color.accentColor : Color.secondary.opacity(0.2)))
+                                            .fill(isCompleted ? SettingsColors.success : (isCurrent ? SettingsColors.primary : Color.secondary.opacity(0.2)))
                                             .frame(width: 20, height: 20)
 
                                         if isCompleted {
                                             Image(systemName: "checkmark")
                                                 .font(.system(size: 10, weight: .semibold))
-                                                .foregroundColor(.white)
+                                                .foregroundColor(SettingsTone.success.textOn)
                                         } else {
                                             Text("\(step)")
                                                 .font(.system(size: 11, weight: .medium))
-                                                .foregroundColor(isCurrent ? .white : .secondary)
+                                                .foregroundColor(isCurrent ? SettingsColors.textOnAccent : SettingsColors.secondary)
                                         }
                                     }
 
@@ -151,7 +151,7 @@ struct ClaudeBrowserSignInSheet: View {
 
                                 if step < 3 {
                                     Rectangle()
-                                        .fill(isCompleted ? Color.green.opacity(0.3) : Color.secondary.opacity(0.2))
+                                        .fill(isCompleted ? SettingsColors.success.opacity(0.3) : Color.secondary.opacity(0.2))
                                         .frame(height: 1)
                                 }
                             }
@@ -180,11 +180,11 @@ struct ClaudeBrowserSignInSheet: View {
                     .padding(DesignTokens.Spacing.cardPadding)
                     .animation(.easeInOut(duration: 0.25), value: wizardState.currentStep)
                 }
-                .background(DesignTokens.Colors.cardBackground)
+                .background(SettingsColors.cardBackground)
                 .cornerRadius(DesignTokens.Radius.card)
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                        .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                        .strokeBorder(SettingsColors.border, lineWidth: 1)
                 )
 
                 Spacer()
@@ -251,7 +251,7 @@ struct EnterKeyStep: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("chrome_assisted.embedded_fallback".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Button(action: beginEmbeddedAuth) {
                     HStack(spacing: 6) {
@@ -285,32 +285,13 @@ struct EnterKeyStep: View {
 
             // Validation status
             if case .success(let message) = wizardState.validationState {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 14))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                SettingsStatusBanner(tone: .success, icon: "checkmark.circle.fill") {
+                    Text(message).font(.system(size: 12))
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.green.opacity(0.08))
-                .cornerRadius(6)
             } else if case .error(let message) = wizardState.validationState {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 14))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundColor(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                SettingsStatusBanner(tone: .error, icon: "exclamationmark.triangle.fill") {
+                    Text(message).font(.system(size: 12))
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.08))
-                .cornerRadius(6)
             }
         }
     }
@@ -516,7 +497,7 @@ struct SelectOrgStep: View {
                     .font(.system(size: 13, weight: .medium))
                 Text("wizard.choose_organization".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             // Stated before the list, not after it: the note explains a gap in
@@ -543,7 +524,7 @@ struct SelectOrgStep: View {
                                 Circle()
                                     .strokeBorder(
                                         isSelected
-                                            ? Color.accentColor
+                                            ? SettingsColors.accentText
                                             : Color.secondary.opacity(0.3),
                                         lineWidth: 1.5
                                     )
@@ -562,13 +543,13 @@ struct SelectOrgStep: View {
                                     .foregroundColor(.primary)
                                 Text(ClaudeOrganizationClassifier.descriptor(org))
                                     .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 // Several organizations can share both a name
                                 // and a kind; the id prefix is the last thing
                                 // that separates them.
                                 Text(String(org.uuid.prefix(8)))
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                     .lineLimit(1)
                             }
 
@@ -577,7 +558,7 @@ struct SelectOrgStep: View {
                             if isSelected {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                             }
                         }
                         .padding(10)
@@ -670,7 +651,7 @@ struct ConfirmStep: View {
                     .font(.system(size: 13, weight: .medium))
                 Text("wizard.confirm_settings".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             // Balanced summary card
@@ -678,13 +659,13 @@ struct ConfirmStep: View {
                 HStack(spacing: 10) {
                     Image(systemName: "key")
                         .font(.system(size: 14))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("wizard.session_key".localized)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                         Text("personal.session_key_validated".localized)
                             .font(.system(size: 12))
                             .foregroundColor(.primary)
@@ -697,19 +678,19 @@ struct ConfirmStep: View {
                     HStack(spacing: 10) {
                         Image(systemName: "building.2")
                             .font(.system(size: 14))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SettingsColors.accentText)
                             .frame(width: 20)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("wizard.organization".localized)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                             Text(selectedOrg.name)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.primary)
                             Text(selectedOrg.uuid)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -720,10 +701,10 @@ struct ConfirmStep: View {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 12))
-                            .foregroundColor(.orange)
+                            .foregroundColor(SettingsColors.warning)
                         Text("wizard.key_will_update".localized)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                 }
 
@@ -748,11 +729,11 @@ struct ConfirmStep: View {
                 }
             }
             .padding(12)
-            .background(DesignTokens.Colors.cardBackground)
+            .background(SettingsColors.cardBackground)
             .cornerRadius(6)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                    .strokeBorder(SettingsColors.border, lineWidth: 1)
             )
 
             // Saving is the only thing that can fail on this step, and the

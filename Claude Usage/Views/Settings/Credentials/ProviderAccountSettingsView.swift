@@ -67,7 +67,7 @@ struct ProviderAccountSettingsView: View {
                 }
 
                 if let operationMessage {
-                    capabilityMessage(operationMessage, color: .red)
+                    capabilityMessage(operationMessage, color: SettingsColors.error)
                 }
             }
             .padding()
@@ -131,7 +131,7 @@ struct ProviderAccountSettingsView: View {
             HStack(spacing: DesignTokens.Spacing.medium) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 22))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.name)
                         .font(DesignTokens.Typography.sectionTitle)
@@ -142,7 +142,7 @@ struct ProviderAccountSettingsView: View {
                         )
                     )
                     .font(DesignTokens.Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 }
                 Spacer()
             }
@@ -171,7 +171,7 @@ struct ProviderAccountSettingsView: View {
                         Image(systemName: "link.circle.fill")
                             .foregroundColor(
                                 presentation.isConnected
-                                    ? .green : .orange
+                                    ? SettingsColors.success : SettingsColors.warning
                             )
                         Text(linkedHome.path)
                             .font(DesignTokens.Typography.monospaced)
@@ -184,7 +184,7 @@ struct ProviderAccountSettingsView: View {
                                 "codex.home.relink_required",
                                 "This link is unavailable or changed and must be verified again before Codex can be used."
                             ),
-                            color: .orange
+                            color: SettingsColors.warning
                         )
                     }
                 }
@@ -266,17 +266,17 @@ struct ProviderAccountSettingsView: View {
 
     private func cliSwitchingCard(_ profile: Profile) -> some View {
         let requirement = cliSwitchRequirement
-        // Orange mirrors this file's existing "you should act on this"
-        // color (see the relink-required warning in homeCard below); the
+        // Warning mirrors this file's existing "you should act on this"
+        // tone (see the relink-required warning in homeCard below); the
         // optional state uses a neutral gray since there's nothing to do.
         let titleBadge = requirement == .optional
             ? SettingsSectionCardBadge(
                 text("codex.cli_switch.optional_badge", "Optional"),
-                color: .gray
+                tone: .neutral
             )
             : SettingsSectionCardBadge(
                 text("codex.cli_switch.required_badge", "Required"),
-                color: .orange
+                tone: .warning
             )
         let subtitle = requirement == .optional
             ? String(
@@ -432,7 +432,7 @@ struct ProviderAccountSettingsView: View {
                     "Account status has not been checked."
                 )
             )
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
             .accessibilityIdentifier(
                 ProviderUIAccessibility.accountStatus
             )
@@ -505,13 +505,13 @@ struct ProviderAccountSettingsView: View {
                     )
                 )
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
             }
             .accessibilityIdentifier(
                 ProviderUIAccessibility.accountUnsupported
             )
         case .unavailable(let message):
-            capabilityMessage(message, color: .red)
+            capabilityMessage(message, color: SettingsColors.error)
                 .accessibilityIdentifier(
                     ProviderUIAccessibility.accountUnavailable
                 )
@@ -589,12 +589,12 @@ struct ProviderAccountSettingsView: View {
                 text("codex.login.succeeded", "Signed in with Codex"),
                 systemImage: "checkmark.circle.fill"
             )
-            .foregroundColor(.green)
+            .foregroundColor(SettingsColors.success)
             .accessibilityIdentifier(
                 ProviderUIAccessibility.loginSucceeded
             )
         case .failed(let message):
-            capabilityMessage(message, color: .red)
+            capabilityMessage(message, color: SettingsColors.error)
         }
     }
 
@@ -618,7 +618,7 @@ struct ProviderAccountSettingsView: View {
     ) -> some View {
         HStack {
             Text(title)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
             Spacer()
             Text(value)
                 .foregroundColor(color)
@@ -732,11 +732,11 @@ struct ProviderAccountSettingsView: View {
     private func healthColor(_ health: ProviderHealthStatus) -> Color {
         switch health {
         case .healthy:
-            return .green
+            return SettingsColors.success
         case .degraded:
-            return .orange
+            return SettingsColors.warning
         case .unavailable, .unauthenticated, .unsupported:
-            return .red
+            return SettingsColors.error
         }
     }
 

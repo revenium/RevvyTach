@@ -49,7 +49,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "app.badge")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.current_version".localized)
                                     .font(DesignTokens.Typography.body)
@@ -57,12 +57,12 @@ struct UpdatesSettingsView: View {
                             Spacer()
                             Text("v\(appVersion) (\(buildNumber))")
                                 .font(DesignTokens.Typography.monospaced)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                         .padding(DesignTokens.Spacing.medium)
                         .background(
                             RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                                .fill(DesignTokens.Colors.cardBackground)
+                                .fill(SettingsColors.cardBackground)
                         )
 
                         // Last Check
@@ -70,7 +70,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "clock")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.last_check".localized)
                                     .font(DesignTokens.Typography.body)
@@ -78,12 +78,12 @@ struct UpdatesSettingsView: View {
                             Spacer()
                             Text(lastCheckDescription)
                                 .font(DesignTokens.Typography.body)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                         .padding(DesignTokens.Spacing.medium)
                         .background(
                             RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                                .fill(DesignTokens.Colors.cardBackground)
+                                .fill(SettingsColors.cardBackground)
                         )
                     }
                 }
@@ -100,7 +100,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.automatic".localized)
                                     .font(DesignTokens.Typography.body)
@@ -115,13 +115,13 @@ struct UpdatesSettingsView: View {
 
                         Text("settings.updates.automatic.description".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .padding(.leading, 32)
                     }
                     .padding(DesignTokens.Spacing.medium)
                     .background(
                         RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                            .fill(DesignTokens.Colors.cardBackground)
+                            .fill(SettingsColors.cardBackground)
                     )
                 }
 
@@ -139,24 +139,24 @@ struct UpdatesSettingsView: View {
                 HStack(spacing: DesignTokens.Spacing.medium) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: DesignTokens.Icons.standard))
-                        .foregroundColor(.blue)
+                        .foregroundColor(SettingsColors.info)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("settings.updates.info.title".localized)
                             .font(DesignTokens.Typography.body)
                         Text("settings.updates.info.description".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(DesignTokens.Spacing.medium)
                 .background(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .fill(Color.blue.opacity(0.05))
+                        .fill(SettingsColors.info.opacity(0.05))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(SettingsColors.info.opacity(0.2), lineWidth: 1)
                 )
 
                 Spacer()

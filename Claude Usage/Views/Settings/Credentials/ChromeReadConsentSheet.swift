@@ -55,7 +55,7 @@ struct ChromeReadConsentSheet: View {
                 )
             )
             .font(.system(size: 11))
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {

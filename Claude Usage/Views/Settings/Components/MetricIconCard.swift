@@ -19,7 +19,7 @@ struct MetricIconCard: View {
             HStack {
                 Image(systemName: metricType.icon)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SettingsColors.primary)
+                    .foregroundColor(SettingsColors.accentText)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -28,7 +28,7 @@ struct MetricIconCard: View {
 
                     Text(metricType.description)
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 Spacer()
@@ -53,7 +53,7 @@ struct MetricIconCard: View {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("ui.icon_style".localized)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         IconStylePicker(selectedStyle: Binding(
                             get: { config.iconStyle },
@@ -87,12 +87,12 @@ struct MetricIconCard: View {
         .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: Spacing.radiusMedium)
-                .fill(DesignTokens.Colors.cardBackground)
+                .fill(SettingsColors.cardBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Spacing.radiusMedium)
                 .strokeBorder(
-                    config.isEnabled ? SettingsColors.success.opacity(0.3) : DesignTokens.Colors.cardBorder,
+                    config.isEnabled ? SettingsColors.success.opacity(0.3) : SettingsColors.border,
                     lineWidth: 1
                 )
         )
@@ -119,7 +119,7 @@ private struct SessionDisplayOptions: View {
                         .font(.system(size: 11, weight: .medium))
                     Text("metric.countdown_description".localized)
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
             .toggleStyle(.switch)
@@ -137,7 +137,7 @@ private struct WeekDisplayOptions: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("ui.display_mode".localized)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
             Picker("", selection: Binding(
                 get: { config.weekDisplayMode },
@@ -151,7 +151,7 @@ private struct WeekDisplayOptions: View {
                         Text(mode.displayName)
                         Text(mode.description)
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                     .tag(mode)
                 }
@@ -171,7 +171,7 @@ private struct APIDisplayOptions: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("ui.display_mode".localized)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
             Picker("", selection: Binding(
                 get: { config.apiDisplayMode },
@@ -185,7 +185,7 @@ private struct APIDisplayOptions: View {
                         Text(mode.displayName)
                         Text(mode.description)
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                     .tag(mode)
                 }

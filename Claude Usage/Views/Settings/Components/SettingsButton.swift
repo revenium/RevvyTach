@@ -26,26 +26,26 @@ struct SettingsButton: View {
         var backgroundColor: Color {
             switch self {
             case .primary: return SettingsColors.primary
-            case .secondary: return SettingsColors.cardBackground
-            case .destructive: return SettingsColors.error
+            case .secondary: return SettingsColors.buttonFill
+            case .destructive: return SettingsColors.destructiveFill
             case .subtle: return Color.clear
             }
         }
 
         var foregroundColor: Color {
             switch self {
-            case .primary: return .white
+            case .primary: return SettingsColors.textOnAccent
             case .secondary: return .primary
-            case .destructive: return .white
+            case .destructive: return SettingsColors.textOnDestructive
             case .subtle: return .primary
             }
         }
 
         var borderColor: Color {
             switch self {
-            case .primary: return .clear
-            case .secondary: return SettingsColors.border
-            case .destructive: return .clear
+            case .primary: return SettingsColors.accentButtonBorder
+            case .secondary: return SettingsColors.buttonBorder
+            case .destructive: return SettingsColors.destructiveButtonBorder
             case .subtle: return .clear
             }
         }
@@ -54,14 +54,10 @@ struct SettingsButton: View {
             guard isHovered else { return backgroundColor }
 
             switch self {
-            case .primary:
-                return SettingsColors.primary.opacity(0.85)
-            case .secondary:
-                return Color.primary.opacity(0.08)
-            case .destructive:
-                return SettingsColors.error.opacity(0.85)
-            case .subtle:
-                return Color.gray.opacity(0.1)
+            case .primary, .destructive:
+                return backgroundColor.opacity(0.85)
+            case .secondary, .subtle:
+                return SettingsColors.hoverFill
             }
         }
     }
@@ -98,7 +94,7 @@ struct SettingsButton: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Spacing.radiusMedium)
-                    .strokeBorder(style.borderColor, lineWidth: 0.5)
+                    .strokeBorder(style.borderColor, lineWidth: 1)
             )
             .foregroundColor(style.foregroundColor)
         }

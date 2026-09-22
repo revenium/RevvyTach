@@ -70,24 +70,24 @@ struct ShortcutsSettingsView: View {
                 HStack(spacing: DesignTokens.Spacing.medium) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: DesignTokens.Icons.standard))
-                        .foregroundColor(.blue)
+                        .foregroundColor(SettingsColors.info)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("shortcuts.info_title".localized)
                             .font(DesignTokens.Typography.body)
                         Text("shortcuts.info_desc".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(DesignTokens.Spacing.medium)
                 .background(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .fill(Color.blue.opacity(0.05))
+                        .fill(SettingsColors.info.opacity(0.05))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(SettingsColors.info.opacity(0.2), lineWidth: 1)
                 )
 
                 Spacer()
@@ -108,7 +108,7 @@ struct ShortcutsSettingsView: View {
             HStack(spacing: DesignTokens.Spacing.iconText) {
                 Image(systemName: icon)
                     .font(.system(size: DesignTokens.Icons.standard))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                     .frame(width: DesignTokens.Spacing.iconFrame)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -116,7 +116,7 @@ struct ShortcutsSettingsView: View {
                         .font(DesignTokens.Typography.body)
                     Text(description)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
 
@@ -133,7 +133,7 @@ struct ShortcutsSettingsView: View {
         .padding(DesignTokens.Spacing.medium)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                .fill(DesignTokens.Colors.cardBackground)
+                .fill(SettingsColors.cardBackground)
         )
     }
 }

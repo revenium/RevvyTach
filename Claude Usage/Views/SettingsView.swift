@@ -3,103 +3,75 @@ import Combine
 import UsageCore
 import UserNotifications
 
-// MARK: - Visual Effect Backgrounds
+// MARK: - Sidebar Background
 
-/// Full-window vibrancy background — same approach as the popover's VisualEffectBackground.
-/// Using NSViewRepresentable inside SwiftUI means the entire view tree is SwiftUI-managed,
-/// so there is no opaque flash on deminiaturize or appearance change.
-struct SettingsBackground: NSViewRepresentable {
+/// The standard macOS sidebar material, as Finder and System Settings draw
+/// it, with no custom tint on top.
+///
+/// `NSVisualEffectView` already paints opaque under Reduce Transparency; the
+/// explicit fallback exists so that behaviour is testable and so nothing
+/// behind the window can ever show through the sidebar.
+struct SidebarBackground: NSViewRepresentable {
+    let reduceTransparency: Bool
+
     func makeNSView(context: Context) -> NSView {
+        Self.makeView(reduceTransparency: reduceTransparency)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        Self.apply(reduceTransparency: reduceTransparency, to: nsView)
+    }
+
+    static func makeView(reduceTransparency: Bool) -> NSView {
         let container = NSView()
 
         let effectView = NSVisualEffectView()
-        effectView.material = .hudWindow
+        effectView.material = .sidebar
         effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.isEmphasized = true
+        effectView.state = .followsWindowActiveState
         effectView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(effectView)
 
-        let tintView = NSView()
-        tintView.wantsLayer = true
-        if NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
-        } else {
-            tintView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
-        }
-        tintView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(tintView)
+        let opaqueFallback = OpaqueWindowBackgroundView()
+        opaqueFallback.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(opaqueFallback)
 
         NSLayoutConstraint.activate([
             effectView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             effectView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             effectView.topAnchor.constraint(equalTo: container.topAnchor),
             effectView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            tintView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            tintView.topAnchor.constraint(equalTo: container.topAnchor),
-            tintView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            opaqueFallback.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            opaqueFallback.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            opaqueFallback.topAnchor.constraint(equalTo: container.topAnchor),
+            opaqueFallback.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
+        apply(reduceTransparency: reduceTransparency, to: container)
         return container
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let tintView = nsView.subviews.last {
-            tintView.wantsLayer = true
-            if NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
-            } else {
-                tintView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
-            }
-        }
-    }
-}
-
-struct SidebarVisualEffect: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
-
-        let effectView = NSVisualEffectView()
-        effectView.material = .hudWindow
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.isEmphasized = true
-        effectView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(effectView)
-
-        let tintView = NSView()
-        tintView.wantsLayer = true
-        if NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        } else {
-            tintView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
-        }
-        tintView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(tintView)
-
-        NSLayoutConstraint.activate([
-            effectView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            effectView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            effectView.topAnchor.constraint(equalTo: container.topAnchor),
-            effectView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            tintView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            tintView.topAnchor.constraint(equalTo: container.topAnchor),
-            tintView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-
-        return container
+    static func apply(reduceTransparency: Bool, to view: NSView) {
+        opaqueFallback(in: view)?.isHidden = !reduceTransparency
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let tintView = nsView.subviews.last {
-            tintView.wantsLayer = true
-            if NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-            } else {
-                tintView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
-            }
+    static func opaqueFallback(in view: NSView) -> NSView? {
+        view.subviews.first { $0 is OpaqueWindowBackgroundView }
+    }
+
+    /// Draws with the system color each time, so an appearance change
+    /// repaints it without anyone having to reset a layer color.
+    final class OpaqueWindowBackgroundView: NSView {
+        override var isOpaque: Bool { true }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.windowBackgroundColor.setFill()
+            dirtyRect.fill()
+        }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            needsDisplay = true
         }
     }
 }
@@ -504,7 +476,8 @@ struct SettingsView: View {
     private let dependencies: ProviderUIDependencies
     @StateObject private var navigation: SettingsNavigationModel
     @ObservedObject private var profileManager: ProfileManager
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var displayOptions =
+        AccessibilityDisplayOptions.shared
 
     init(
         dependencies: ProviderUIDependencies? = nil,
@@ -559,7 +532,11 @@ struct SettingsView: View {
                     .padding(.bottom, 8)
                     .padding(.top, 4)
             }
-            .background(SidebarVisualEffect())
+            .background(
+                SidebarBackground(
+                    reduceTransparency: displayOptions.reduceTransparency
+                )
+            )
             .frame(width: 190)
 
             // Content
@@ -626,14 +603,9 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                colorScheme == .dark
-                    ? Color.black.opacity(0.15)
-                    : Color.white.opacity(0.3)
-            )
+            .background(SettingsColors.windowBackground)
         }
         .frame(minWidth: 720, maxWidth: 720, maxHeight: .infinity)
-        .background(SettingsBackground())
         .onChange(of: profileManager.activeProfile?.providerID) {
             _, providerID in
             navigation.activeProviderDidChange(
@@ -729,7 +701,7 @@ struct ProfileSectionContainer: View {
                             ) {
                                 Text("!")
                                     .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(SettingsColors.error)
                                     .accessibilityLabel(
                                         badge.localizationKey.localized
                                     )
@@ -897,7 +869,7 @@ struct BottomBarSection: View {
                         label: "common.quit".localized,
                         isSelected: false,
                         isHovered: hoveredItem == "quit",
-                        hoverColor: Color.red.opacity(0.1)
+                        hoverColor: SettingsColors.error.opacity(0.15)
                     )
                 }
                 .buttonStyle(.plain)
@@ -916,19 +888,19 @@ struct BottomBarSection: View {
         VStack(spacing: 2) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isSelected ? .white : .secondary)
+                .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.secondary)
                 .frame(height: 14)
 
             Text(label)
                 .font(.system(size: 8, weight: .medium))
-                .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary.opacity(0.7))
+                .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.secondary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 36)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? SettingsColors.primary : (isHovered ? (hoverColor ?? Color.primary.opacity(0.06)) : Color.clear))
+                .fill(isSelected ? SettingsColors.primary : (isHovered ? (hoverColor ?? SettingsColors.hoverFill) : Color.clear))
         )
         .contentShape(Rectangle())
     }
@@ -1079,12 +1051,12 @@ struct SidebarItem: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isSelected ? .white : .secondary)
+                    .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.secondary)
                     .frame(width: 12)
 
                 Text(title)
                     .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.primary)
 
                 Spacer()
             }
@@ -1092,7 +1064,7 @@ struct SidebarItem: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(isSelected ? SettingsColors.primary : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
+                    .fill(isSelected ? SettingsColors.primary : (isHovered ? SettingsColors.hoverFill : Color.clear))
             )
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
@@ -1242,7 +1214,7 @@ struct CredentialMiniCard: View {
             // Icon
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(isSelected ? .white : (isConnected ? .green : .gray))
+                .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.secondary)
                 .frame(width: 12)
 
             if let badgeText {
@@ -1250,27 +1222,27 @@ struct CredentialMiniCard: View {
                 // never compete for the sidebar's fixed horizontal width.
                 VStack(alignment: .leading, spacing: 2) {
                     credentialTitle
-                    Text(badgeText)
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.red.opacity(0.12), in: Capsule())
+                    SettingsBadge(
+                        text: badgeText,
+                        tone: .error,
+                        font: .system(size: 8, weight: .semibold)
+                    )
                 }
                 Spacer()
             } else {
                 credentialTitle
                 Spacer()
-                Circle()
-                    .fill(isSelected ? Color.white.opacity(0.9) : (isConnected ? Color.green : Color.gray.opacity(0.3)))
-                    .frame(width: 5, height: 5)
+                SettingsStatusGlyph(
+                    kind: isConnected ? .ok : .inactive,
+                    size: 9
+                )
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? SettingsColors.primary : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
+                .fill(isSelected ? SettingsColors.primary : (isHovered ? SettingsColors.hoverFill : Color.clear))
         )
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
@@ -1287,7 +1259,7 @@ struct CredentialMiniCard: View {
                     weight: isSelected ? .medium : .regular
                 )
             )
-            .foregroundColor(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.primary)
     }
 }
 
@@ -1302,13 +1274,13 @@ struct SettingMiniButton: View {
             // Icon
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(isSelected ? .white : .secondary)
+                .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.secondary)
                 .frame(width: 12)
 
             // Title
             Text(title)
                 .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                .foregroundColor(isSelected ? .white : .primary)
+                .foregroundStyle(isSelected ? SettingsColors.textOnAccent : Color.primary)
 
             Spacer()
         }
@@ -1316,7 +1288,7 @@ struct SettingMiniButton: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? SettingsColors.primary : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
+                .fill(isSelected ? SettingsColors.primary : (isHovered ? SettingsColors.hoverFill : Color.clear))
         )
         .padding(.horizontal, 4)
         .padding(.vertical, 1)

@@ -30,7 +30,7 @@ struct SupportView: View {
 
                     Text("support.subtitle".localized)
                         .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
                 .padding(.top, 20)
 
@@ -39,14 +39,14 @@ struct SupportView: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundColor(.green)
+                            .foregroundColor(SettingsColors.success)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("support.all_features_free".localized)
                                 .font(.system(size: 14, weight: .semibold))
                             Text("support.all_features_desc".localized)
                                 .font(.system(size: 13))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -54,14 +54,14 @@ struct SupportView: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "lock.open.fill")
                             .font(.system(size: 18))
-                            .foregroundColor(.blue)
+                            .foregroundColor(SettingsColors.info)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("support.open_source".localized)
                                 .font(.system(size: 14, weight: .semibold))
                             Text("support.open_source_desc".localized)
                                 .font(.system(size: 13))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -69,27 +69,27 @@ struct SupportView: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "hand.raised.fill")
                             .font(.system(size: 18))
-                            .foregroundColor(.orange)
+                            .foregroundColor(SettingsColors.warning)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("support.no_tracking".localized)
                                 .font(.system(size: 14, weight: .semibold))
                             Text("support.no_tracking_desc".localized)
                                 .font(.system(size: 13))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
                 .padding(20)
-                .background(DesignTokens.Colors.cardBackground)
+                .background(SettingsColors.cardBackground)
                 .cornerRadius(12)
 
                 // Support section
                 VStack(spacing: 16) {
                     Text("support.message".localized)
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .multilineTextAlignment(.center)
 
                     Button(action: openIssues) {
@@ -101,7 +101,7 @@ struct SupportView: View {
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(DesignTokens.Colors.cardBackground)
+                        .background(SettingsColors.cardBackground)
                         .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
@@ -111,7 +111,7 @@ struct SupportView: View {
                 VStack(spacing: 12) {
                     Text("support.also_support".localized)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     Button(action: {
                         if let url = URL(string: Constants.GitHub.repoURL) {
@@ -127,11 +127,11 @@ struct SupportView: View {
                         .foregroundColor(.primary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(DesignTokens.Colors.cardBackground)
+                        .background(SettingsColors.cardBackground)
                         .cornerRadius(6)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                                .stroke(SettingsColors.border, lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)

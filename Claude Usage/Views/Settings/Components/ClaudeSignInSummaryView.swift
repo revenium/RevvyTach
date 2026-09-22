@@ -120,25 +120,11 @@ struct ClaudeSignInSummaryView: View {
     }
 
     private var verdictBanner: some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-            Image(systemName: verdict.icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(verdict.color)
-                .accessibilityHidden(true)
-
-            Text(localized(verdict.localizationKey))
-                .font(Typography.body)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(verdict.color.opacity(verdict.backgroundOpacity))
-        .clipShape(RoundedRectangle(cornerRadius: Spacing.radiusLarge))
-        .overlay {
-            RoundedRectangle(cornerRadius: Spacing.radiusLarge)
-                .strokeBorder(verdict.color.opacity(0.24), lineWidth: 0.5)
-        }
+        SettingsStatusBanner(
+            tone: verdict.tone,
+            icon: verdict.icon,
+            text: localized(verdict.localizationKey)
+        )
     }
 
     private func signInRow(
@@ -159,7 +145,7 @@ struct ClaudeSignInSummaryView: View {
 
                 Text(detail)
                     .font(Typography.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SettingsColors.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -173,17 +159,12 @@ struct ClaudeSignInSummaryView: View {
     }
 
     private func statusPill(_ status: Status) -> some View {
-        Text(localized(status.localizationKey))
-            .font(Typography.badge)
-            .foregroundStyle(status.color)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(status.color.opacity(0.12), in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(status.color.opacity(0.28), lineWidth: 0.5)
-            }
-            .accessibilityLabel(localized(status.localizationKey))
+        SettingsBadge(
+            text: localized(status.localizationKey),
+            tone: status.tone,
+            font: Typography.badge
+        )
+        .accessibilityLabel(localized(status.localizationKey))
     }
 
     private func actionButton(_ summaryAction: ClaudeSignInSummaryAction) -> some View {
@@ -197,7 +178,7 @@ struct ClaudeSignInSummaryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Spacing.radiusMedium))
                 .overlay {
                     RoundedRectangle(cornerRadius: Spacing.radiusMedium)
-                        .strokeBorder(summaryAction.style.borderColor, lineWidth: 0.5)
+                        .strokeBorder(summaryAction.style.borderColor, lineWidth: 1)
                 }
         }
         .buttonStyle(.plain)
@@ -320,8 +301,7 @@ struct ClaudeSignInSummaryView: View {
                 localizationKey:
                     "claude_account.summary.verdict.terminal_needs_attention",
                 icon: "exclamationmark.triangle.fill",
-                color: SettingsColors.error,
-                backgroundOpacity: 0.09
+                tone: .error
             )
         }
         if browserNeedsAttention(state: state, browserHealth: browserHealth) {
@@ -329,8 +309,7 @@ struct ClaudeSignInSummaryView: View {
                 localizationKey:
                     "claude_account.summary.verdict.browser_needs_attention",
                 icon: "exclamationmark.triangle.fill",
-                color: SettingsColors.error,
-                backgroundOpacity: 0.09
+                tone: .error
             )
         }
         switch state {
@@ -338,15 +317,13 @@ struct ClaudeSignInSummaryView: View {
             return Verdict(
                 localizationKey: "claude_account.summary.verdict.complete",
                 icon: "checkmark.circle.fill",
-                color: SettingsColors.success,
-                backgroundOpacity: 0.10
+                tone: .success
             )
         case .browserOnly:
             return Verdict(
                 localizationKey: "claude_account.summary.verdict.browser_only",
                 icon: "info.circle.fill",
-                color: SettingsColors.secondary,
-                backgroundOpacity: 0.07
+                tone: .secondary
             )
         case .terminalOnly:
             // Green. This state used to draw a red warning triangle, from
@@ -357,15 +334,13 @@ struct ClaudeSignInSummaryView: View {
             return Verdict(
                 localizationKey: "claude_account.summary.verdict.terminal_only",
                 icon: "checkmark.circle.fill",
-                color: SettingsColors.success,
-                backgroundOpacity: 0.10
+                tone: .success
             )
         case .none:
             return Verdict(
                 localizationKey: "claude_account.summary.verdict.none",
                 icon: "exclamationmark.circle.fill",
-                color: SettingsColors.error,
-                backgroundOpacity: 0.09
+                tone: .error
             )
         }
     }
@@ -377,8 +352,7 @@ struct ClaudeSignInSummaryView: View {
     struct Verdict {
         let localizationKey: String
         let icon: String
-        let color: Color
-        let backgroundOpacity: Double
+        let tone: SettingsTone
     }
 
     enum Status: Equatable, Hashable {
@@ -418,16 +392,24 @@ struct ClaudeSignInSummaryView: View {
             }
         }
 
-        var color: Color {
+        var tone: SettingsTone {
             switch self {
             case .working:
-                return SettingsColors.success
+                return .success
             case .needsAttention:
-                return SettingsColors.error
+                return .error
             case .optional, .recommended:
-                return SettingsColors.secondary
+                return .secondary
             case .notLinked, .missing:
-                return SettingsColors.error
+                return .error
+            }
+        }
+
+        var color: Color {
+            switch tone {
+            case .success: return SettingsColors.success
+            case .error: return SettingsColors.error
+            default: return SettingsColors.secondary
             }
         }
     }
@@ -437,11 +419,11 @@ private extension ClaudeSignInSummaryAction.Style {
     var foregroundColor: Color {
         switch self {
         case .primary:
-            return .white
+            return SettingsColors.textOnAccent
         case .standard:
             return .primary
         case .destructive:
-            return .white
+            return SettingsColors.textOnDestructive
         }
     }
 
@@ -450,20 +432,20 @@ private extension ClaudeSignInSummaryAction.Style {
         case .primary:
             return SettingsColors.primary
         case .standard:
-            return SettingsColors.cardBackground
+            return SettingsColors.buttonFill
         case .destructive:
-            return SettingsColors.error
+            return SettingsColors.destructiveFill
         }
     }
 
     var borderColor: Color {
         switch self {
         case .primary:
-            return .clear
+            return SettingsColors.accentButtonBorder
         case .standard:
-            return SettingsColors.border
+            return SettingsColors.buttonBorder
         case .destructive:
-            return .clear
+            return SettingsColors.destructiveButtonBorder
         }
     }
 }

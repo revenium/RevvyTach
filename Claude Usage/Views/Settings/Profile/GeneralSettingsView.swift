@@ -56,7 +56,7 @@ struct GeneralSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "clock")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(DesignTokens.Colors.accent)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
 
                                 Text(String(format: "general.refresh_seconds".localized, Int(profile.refreshInterval)))
@@ -81,11 +81,11 @@ struct GeneralSettingsView: View {
                             HStack {
                                 Text("general.refresh_min".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 Spacer()
                                 Text("general.refresh_max".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
                         }
                     }
@@ -117,11 +117,11 @@ struct GeneralSettingsView: View {
                                     Text("Requirements:")
                                         .font(DesignTokens.Typography.caption)
                                         .fontWeight(.medium)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(SettingsColors.secondary)
 
                                     Text("general.autostart_requirement".localized)
                                         .font(DesignTokens.Typography.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(SettingsColors.secondary)
                                 }
                             }
                         }
@@ -137,7 +137,7 @@ struct GeneralSettingsView: View {
                             )
                         }
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .accessibilityIdentifier(
                             ProviderUIAccessibility.capabilityDisabled
                         )
@@ -195,7 +195,7 @@ struct GeneralSettingsView: View {
                                         Text("notifications.alert_thresholds".localized)
                                             .font(DesignTokens.Typography.body)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
 
                                         VStack(spacing: DesignTokens.Spacing.small) {
                                             ThresholdToggleRow(
@@ -248,7 +248,7 @@ struct GeneralSettingsView: View {
                                         Text("notifications.custom_thresholds".localized)
                                             .font(DesignTokens.Typography.body)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
 
                                         CustomThresholdsEditor(
                                             thresholds: Binding(
@@ -290,7 +290,7 @@ struct GeneralSettingsView: View {
                             )
                         }
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .accessibilityIdentifier(
                             ProviderUIAccessibility.capabilityDisabled
                         )
@@ -347,7 +347,7 @@ struct ThresholdToggleRow: View {
 
             Text(label)
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
             Spacer()
 
@@ -380,7 +380,7 @@ struct CustomThresholdsEditor: View {
 
                         Text("notifications.custom_threshold".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         Spacer()
 
@@ -389,7 +389,7 @@ struct CustomThresholdsEditor: View {
                         }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -405,7 +405,7 @@ struct CustomThresholdsEditor: View {
 
                 Text("%")
                     .font(DesignTokens.Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Button("notifications.custom_add".localized) {
                     addThreshold()
@@ -462,7 +462,7 @@ struct NotificationSoundPicker: View {
         HStack(spacing: DesignTokens.Spacing.iconText) {
             Image(systemName: "speaker.wave.2")
                 .font(.system(size: DesignTokens.Icons.standard))
-                .foregroundColor(DesignTokens.Colors.accent)
+                .foregroundColor(SettingsColors.accentText)
                 .frame(width: DesignTokens.Spacing.iconFrame)
 
             Text("notifications.sound".localized)
@@ -486,7 +486,7 @@ struct NotificationSoundPicker: View {
             Button(action: { previewSound() }) {
                 Image(systemName: "play.circle")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
             .buttonStyle(.plain)
             .help("notifications.sound.preview".localized)

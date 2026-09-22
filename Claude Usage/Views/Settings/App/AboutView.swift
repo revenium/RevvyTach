@@ -41,7 +41,7 @@ struct AboutView: View {
 
                         Text("about.version".localized(with: appVersion))
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         // Check for Updates button
                         Button(action: {
@@ -53,7 +53,7 @@ struct AboutView: View {
                                 Text("about.check_updates".localized)
                                     .font(.system(size: 11))
                             }
-                            .foregroundColor(.blue)
+                            .foregroundColor(SettingsColors.info)
                         }
                         .buttonStyle(.plain)
                         .disabled(!updateManager.canCheckForUpdates)
@@ -119,7 +119,7 @@ struct AboutView: View {
                         HStack {
                             Text("about.contributors_failed".localized)
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
 
                             Spacer()
 
@@ -130,7 +130,7 @@ struct AboutView: View {
                                     Text("common.retry".localized)
                                         .font(.system(size: 11))
                                 }
-                                .foregroundColor(.blue)
+                                .foregroundColor(SettingsColors.info)
                             }
                             .buttonStyle(.plain)
                         }
@@ -188,7 +188,7 @@ struct AboutView: View {
                 VStack(spacing: DesignTokens.Spacing.extraSmall) {
                     Text("about.mit_license".localized)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     // Deliberately static: a copyright notice states the
                     // year(s) of authorship, not "today", so this must not
@@ -202,7 +202,7 @@ struct AboutView: View {
                     // together if the copyright holder or year ever changes.
                     Text("about.copyright".localized)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DesignTokens.Spacing.medium)
@@ -290,7 +290,7 @@ struct AttributionRow: View {
             HStack(spacing: DesignTokens.Spacing.medium) {
                 Image(systemName: icon)
                     .font(.system(size: 20))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name)
@@ -299,14 +299,14 @@ struct AttributionRow: View {
 
                     Text(subtitle)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 Spacer()
 
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
         }
         .buttonStyle(.plain)
@@ -325,7 +325,7 @@ struct LinkButton: View {
             HStack(spacing: DesignTokens.Spacing.iconText) {
                 Image(systemName: icon)
                     .font(.system(size: DesignTokens.Icons.small))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .frame(width: DesignTokens.Spacing.cardPadding)
 
                 Text(title)
@@ -336,7 +336,7 @@ struct LinkButton: View {
 
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 9))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
         }
         .buttonStyle(.plain)

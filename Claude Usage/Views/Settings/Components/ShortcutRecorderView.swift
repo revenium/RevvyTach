@@ -26,7 +26,7 @@ struct ShortcutRecorderView: View {
                     if isRecording {
                         Text("shortcuts.recording".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SettingsColors.accentText)
                     } else if let combo = keyCombo {
                         Text(combo.displayString)
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -34,7 +34,7 @@ struct ShortcutRecorderView: View {
                     } else {
                         Text("shortcuts.record".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                 }
                 .frame(minWidth: 120)
@@ -42,12 +42,12 @@ struct ShortcutRecorderView: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .fill(isRecording ? Color.accentColor.opacity(0.1) : DesignTokens.Colors.cardBackground)
+                        .fill(isRecording ? Color.accentColor.opacity(0.1) : SettingsColors.cardBackground)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
                         .strokeBorder(
-                            isRecording ? Color.accentColor : DesignTokens.Colors.cardBorder,
+                            isRecording ? SettingsColors.accentText : SettingsColors.border,
                             lineWidth: isRecording ? 2 : 1
                         )
                 )
@@ -61,7 +61,7 @@ struct ShortcutRecorderView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
                 .buttonStyle(.plain)
                 .help("shortcuts.clear".localized)

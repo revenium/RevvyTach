@@ -60,7 +60,7 @@ struct APISettingsView: View {
                                 .fill(Color(nsColor: .textBackgroundColor))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Spacing.radiusMedium)
-                                        .strokeBorder(Color.gray.opacity(0.2), lineWidth: 1)
+                                        .strokeBorder(SettingsColors.neutral.opacity(0.2), lineWidth: 1)
                                 )
                         )
 
@@ -197,8 +197,8 @@ struct APIStatusBox: View {
 
         var color: Color {
             switch self {
-            case .success: return .green
-            case .error: return .red
+            case .success: return SettingsColors.success
+            case .error: return SettingsColors.error
             }
         }
 

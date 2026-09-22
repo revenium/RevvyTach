@@ -46,23 +46,35 @@ private struct IconStyleCard: View {
                     .frame(width: cardWidth, height: 50)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(isSelected ? SettingsColors.success.opacity(0.1) : Color.clear)
+                            .fill(isSelected ? SettingsColors.primary.opacity(0.12) : Color.clear)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .strokeBorder(
-                                isSelected ? SettingsColors.success : Color.gray.opacity(0.2),
+                                isSelected ? SettingsColors.accentText : SettingsColors.border,
                                 lineWidth: isSelected ? 2 : 1
                             )
                     )
+                    .overlay(alignment: .topTrailing) {
+                        // The ring alone tells selection by hue; the mark
+                        // tells it by shape.
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(SettingsColors.accentText)
+                                .padding(3)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             // Name - outside border
             Text(style.displayName)
                 .font(.system(size: 9, weight: .medium))
-                .foregroundColor(isSelected ? .primary : .secondary)
+                .foregroundColor(isSelected ? .primary : SettingsColors.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -88,14 +100,14 @@ private struct IconPreviewLarge: View {
                         .overlay(
                             GeometryReader { geo in
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.green)
+                                    .fill(SettingsColors.success)
                                     .frame(width: geo.size.width * 0.6)
                                     .padding(1.5)
                             }
                         )
                     Text("Claude")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
             case .progressBar:
@@ -105,7 +117,7 @@ private struct IconPreviewLarge: View {
                     .overlay(
                         GeometryReader { geo in
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.green)
+                                .fill(SettingsColors.success)
                                 .frame(width: geo.size.width * 0.6)
                         }
                     )
@@ -113,7 +125,7 @@ private struct IconPreviewLarge: View {
             case .percentageOnly:
                 Text("60%")
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.green)
+                    .foregroundColor(SettingsColors.success)
 
             case .icon:
                 ZStack {
@@ -123,14 +135,14 @@ private struct IconPreviewLarge: View {
 
                     Circle()
                         .trim(from: 0, to: 0.6)
-                        .stroke(Color.green, lineWidth: 3)
+                        .stroke(SettingsColors.success, lineWidth: 3)
                         .frame(width: 30, height: 30)
                         .rotationEffect(.degrees(-90))
                 }
 
             case .compact:
                 Circle()
-                    .fill(Color.green)
+                    .fill(SettingsColors.success)
                     .frame(width: 10, height: 10)
             }
         }

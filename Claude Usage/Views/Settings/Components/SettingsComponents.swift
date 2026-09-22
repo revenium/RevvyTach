@@ -16,11 +16,11 @@ import SwiftUI
 /// to spell out its unrelated `Content` generic parameter to name this type.
 struct SettingsSectionCardBadge {
     let text: String
-    let color: Color
+    let tone: SettingsTone
 
-    init(_ text: String, color: Color) {
+    init(_ text: String, tone: SettingsTone) {
         self.text = text
-        self.color = color
+        self.tone = tone
     }
 }
 
@@ -53,24 +53,17 @@ struct SettingsSectionCard<Content: View>: View {
                 HStack(spacing: DesignTokens.Spacing.small) {
                     Text(title)
                         .font(DesignTokens.Typography.sectionTitle)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     if let titleBadge {
-                        Text(titleBadge.text)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(titleBadge.color)
-                            )
+                        SettingsBadge(text: titleBadge.text, tone: titleBadge.tone)
                     }
                 }
 
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(DesignTokens.Typography.sectionSubtitle)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
             .padding(DesignTokens.Spacing.cardPadding)
@@ -82,11 +75,11 @@ struct SettingsSectionCard<Content: View>: View {
             content
                 .padding(DesignTokens.Spacing.cardPadding)
         }
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(DesignTokens.Radius.card)
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .strokeBorder(SettingsColors.border, lineWidth: 1)
         )
     }
 }
@@ -102,11 +95,11 @@ struct SettingsContentCard<Content: View>: View {
     var body: some View {
         content
             .padding(DesignTokens.Spacing.cardPadding)
-            .background(DesignTokens.Colors.cardBackground)
+            .background(SettingsColors.cardBackground)
             .cornerRadius(DesignTokens.Radius.card)
             .overlay(
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                    .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                    .strokeBorder(SettingsColors.border, lineWidth: 1)
             )
     }
 }
@@ -122,7 +115,7 @@ struct SettingsPageHeader: View {
                 .font(DesignTokens.Typography.pageTitle)
             Text(subtitle)
                 .font(DesignTokens.Typography.pageSubtitle)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
         }
     }
 }

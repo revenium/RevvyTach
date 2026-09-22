@@ -62,7 +62,7 @@ extension Text {
 
     func settingsCaption() -> some View {
         self.font(Typography.caption)
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
     }
 
     func settingsLabel() -> some View {

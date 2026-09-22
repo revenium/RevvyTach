@@ -26,7 +26,7 @@ struct LicensesView: View {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
                 .buttonStyle(.plain)
             }

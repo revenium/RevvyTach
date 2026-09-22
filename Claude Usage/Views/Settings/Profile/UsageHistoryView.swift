@@ -78,7 +78,7 @@ struct UsageHistoryView: View {
                             .font(.system(size: 20, weight: .semibold))
                         Text("history.subtitle".localized)
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
 
                     Spacer()
@@ -239,7 +239,7 @@ struct UsageHistoryView: View {
                         systemImage: "chart.xyaxis.line"
                     )
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     Spacer()
                     Picker(
                         ProviderUILocalization.text(
@@ -293,10 +293,10 @@ struct UsageHistoryView: View {
             HStack(spacing: 6) {
                 Image(systemName: "creditcard")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 Text("history.chart.api_billing".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 Spacer()
             }
 
@@ -317,11 +317,11 @@ struct UsageHistoryView: View {
             Spacer()
             Text("history.chart.no_data".localized)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
             Spacer()
         }
         .frame(height: 100)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
     }
 
@@ -334,7 +334,7 @@ struct UsageHistoryView: View {
 
             Text("history.no_profile".localized)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -361,7 +361,7 @@ struct UsageHistoryView: View {
                     Text("history.export.title".localized)
                         .font(.system(size: 12))
                 }
-                .foregroundColor(.accentColor)
+                .foregroundColor(SettingsColors.accentText)
             }
             .menuStyle(.borderlessButton)
             .accessibilityIdentifier(
@@ -446,7 +446,7 @@ struct SimpleUsageChart: View {
             HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -488,7 +488,7 @@ struct SimpleUsageChart: View {
                         if let intValue = value.as(Int.self) {
                             Text("\(intValue)%")
                                 .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -518,7 +518,7 @@ struct SimpleUsageChart: View {
                 // Time range label
                 Text(timeRangeLabel)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Spacer()
 
@@ -541,7 +541,7 @@ struct SimpleUsageChart: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
         }
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .onChange(of: timeScale) {
             // Reset to now when scale changes
@@ -671,10 +671,10 @@ struct CombinedUsageChart: View {
                 HStack(spacing: 6) {
                     Image(systemName: "chart.xyaxis.line")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                     Text("history.chart.usage_overview".localized)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 Spacer()
@@ -726,7 +726,7 @@ struct CombinedUsageChart: View {
                             if let intValue = value.as(Int.self) {
                                 Text("\(intValue)%")
                                     .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
                         }
                     }
@@ -746,7 +746,7 @@ struct CombinedUsageChart: View {
                     Spacer()
                     Text("history.chart.no_data".localized)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                     Spacer()
                 }
                 .frame(height: 160)
@@ -766,7 +766,7 @@ struct CombinedUsageChart: View {
 
                 Text(timeRangeLabel)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Spacer()
 
@@ -789,7 +789,7 @@ struct CombinedUsageChart: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
         }
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .onChange(of: timeScale) {
             timeOffset = 0
@@ -827,7 +827,7 @@ struct CombinedUsageChart: View {
 
             Text(series.label)
                 .font(.system(size: 9))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
         }
     }
 
