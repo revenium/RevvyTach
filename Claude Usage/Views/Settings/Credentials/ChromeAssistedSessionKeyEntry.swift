@@ -301,12 +301,12 @@ struct ChromeAssistedSessionKeyEntry: View {
 
                 Text("chrome_assisted.description".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 if profiles.isEmpty {
                     Text("chrome_assisted.no_profiles".localized)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 } else {
                     Picker(
                         "chrome_assisted.profile_picker".localized,
@@ -351,7 +351,7 @@ struct ChromeAssistedSessionKeyEntry: View {
                 if let launchError {
                     Text(launchError)
                         .font(.system(size: 12))
-                        .foregroundColor(.red)
+                        .foregroundColor(SettingsColors.error)
                 }
 
                 if let launchedProfile {
@@ -362,7 +362,7 @@ struct ChromeAssistedSessionKeyEntry: View {
                         )
                     )
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 }
 
                 // Default-off: this cannot be pressed until the user has
@@ -400,12 +400,12 @@ struct ChromeAssistedSessionKeyEntry: View {
                 if let readError {
                     Text(readError)
                         .font(.system(size: 12))
-                        .foregroundColor(.red)
+                        .foregroundColor(SettingsColors.error)
                 }
 
                 Text("chrome_assisted.no_extraction".localized)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
             .padding(12)
             .background(Color.accentColor.opacity(0.07))
@@ -436,7 +436,7 @@ struct ChromeAssistedSessionKeyEntry: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("personal.label_session_key".localized)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(
@@ -455,7 +455,7 @@ struct ChromeAssistedSessionKeyEntry: View {
                     }
                 }
                 .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .accessibilityIdentifier("session_key.instructions")
 
                 SecureField(
@@ -472,12 +472,12 @@ struct ChromeAssistedSessionKeyEntry: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 12, design: .monospaced))
                 .padding(10)
-                .background(DesignTokens.Colors.inputBackground)
+                .background(SettingsColors.inputBackground)
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(
-                            DesignTokens.Colors.cardBorder,
+                            SettingsColors.border,
                             lineWidth: 1
                         )
                 )

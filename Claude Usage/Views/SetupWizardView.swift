@@ -229,7 +229,7 @@ struct SetupWizardView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "arrow.down.doc")
                         .font(.system(size: 16))
-                        .foregroundColor(.blue)
+                        .foregroundColor(SettingsColors.info)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("wizard.migrate_old_data".localized)
@@ -238,7 +238,7 @@ struct SetupWizardView: View {
                         if let message = migrationMessage {
                             Text(message)
                                 .font(.system(size: 11))
-                                .foregroundColor(.green)
+                                .foregroundColor(SettingsColors.success)
                                 .lineLimit(1)
                         } else {
                             Text("wizard.migrate_description_short".localized)
@@ -276,7 +276,7 @@ struct SetupWizardView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .background(Color.blue.opacity(0.08))
+                .background(SettingsColors.info.opacity(0.08))
 
                 Divider()
             }
@@ -763,7 +763,7 @@ struct CodexSetupWizardView: View {
                     .joined(separator: " • "),
                     systemImage: "checkmark.circle.fill"
                 )
-                .foregroundColor(.green)
+                .foregroundColor(SettingsColors.success)
                 .accessibilityIdentifier(
                     ProviderUIAccessibility.accountStatus
                 )
@@ -793,9 +793,9 @@ struct CodexSetupWizardView: View {
                             "This account does not expose ChatGPT subscription usage."
                     )
                 )
-                .foregroundColor(.red)
+                .foregroundColor(SettingsColors.error)
             case .unavailable(let message):
-                Text(message).foregroundColor(.red)
+                Text(message).foregroundColor(SettingsColors.error)
             case .idle:
                 EmptyView()
             }
@@ -910,9 +910,9 @@ struct CodexSetupWizardView: View {
                     ),
                     systemImage: "checkmark.circle.fill"
                 )
-                .foregroundColor(.green)
+                .foregroundColor(SettingsColors.success)
             case .failed(let message):
-                Text(message).foregroundColor(.red)
+                Text(message).foregroundColor(SettingsColors.error)
             case .idle:
                 EmptyView()
             }
@@ -1379,7 +1379,7 @@ struct SelectOrgStepSetup: View {
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
+                                    .stroke(isSelected ? Color.accentColor : SettingsColors.neutral.opacity(0.3), lineWidth: 1)
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -1527,7 +1527,7 @@ struct LinkClaudeCodeStepSetup: View {
                 systemImage: "checkmark.circle.fill"
             )
             .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.green)
+            .foregroundColor(SettingsColors.success)
 
             VStack(alignment: .leading, spacing: 5) {
                 if let accountName = wizardState.detectedTerminalAccountName {
@@ -1577,10 +1577,10 @@ struct LinkClaudeCodeStepSetup: View {
             .toggleStyle(.checkbox)
         }
         .padding(16)
-        .background(Color.green.opacity(0.07))
+        .background(SettingsColors.success.opacity(0.07))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.green.opacity(0.28))
+                .stroke(SettingsColors.success.opacity(0.28))
         )
         .cornerRadius(10)
     }
@@ -1808,15 +1808,10 @@ struct ConfirmStepSetup: View {
                             Text("setup.auto_start_session".localized)
                                 .font(.system(size: 13, weight: .semibold))
 
-                            Text("session.beta_badge".localized)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.orange)
-                                )
+                            SettingsBadge(
+                                text: "session.beta_badge".localized,
+                                tone: .warning
+                            )
                         }
 
                         Text("setup.auto_start_session.description".localized)
@@ -2105,9 +2100,9 @@ struct SetupStepHeader: View {
         HStack(spacing: 10) {
             Text("\(stepNumber)")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(SettingsColors.textOnAccent)
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.accentColor))
+                .background(Circle().fill(SettingsColors.primary))
 
             Text(title)
                 .font(.system(size: 16, weight: .semibold))
@@ -2129,7 +2124,7 @@ struct SetupStepCircle: View {
             if isCompleted {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(SettingsTone.success.textOn)
             } else {
                 Text("\(number)")
                     .font(.system(size: 11, weight: .semibold))
@@ -2139,13 +2134,13 @@ struct SetupStepCircle: View {
     }
 
     private var backgroundColor: Color {
-        if isCompleted { return .green }
-        if isCurrent { return .accentColor }
-        return Color.gray.opacity(0.3)
+        if isCompleted { return SettingsColors.success }
+        if isCurrent { return SettingsColors.primary }
+        return SettingsColors.neutral.opacity(0.3)
     }
 
     private var textColor: Color {
-        isCurrent ? .white : .secondary
+        isCurrent ? SettingsColors.textOnAccent : .secondary
     }
 }
 
@@ -2154,7 +2149,7 @@ struct SetupStepLine: View {
 
     var body: some View {
         Rectangle()
-            .fill(isCompleted ? Color.green : Color.gray.opacity(0.3))
+            .fill(isCompleted ? SettingsColors.success : SettingsColors.neutral.opacity(0.3))
             .frame(width: 40, height: 2)
     }
 }
@@ -2210,8 +2205,8 @@ struct WizardStatusBox: View {
 
         var color: Color {
             switch self {
-            case .success: return .green
-            case .error: return .red
+            case .success: return SettingsColors.success
+            case .error: return SettingsColors.error
             }
         }
 

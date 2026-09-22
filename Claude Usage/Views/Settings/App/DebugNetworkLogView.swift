@@ -127,27 +127,26 @@ struct DebugNetworkLogView: View {
 
                         // Status Indicator
                         HStack(spacing: DesignTokens.Spacing.iconText) {
-                            Circle()
-                                .fill(loggerService.session.isActive ? Color.green : Color.gray)
-                                .frame(width: DesignTokens.StatusDot.standard,
-                                       height: DesignTokens.StatusDot.standard)
+                            SettingsStatusGlyph(
+                                kind: loggerService.session.isActive ? .ok : .inactive
+                            )
 
                             if loggerService.session.isActive {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("debug.logging_active".localized)
                                         .font(DesignTokens.Typography.bodyMedium)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(SettingsColors.success)
 
                                     if let remaining = loggerService.remainingTime {
                                         Text(String(format: "debug.stops_in".localized, formatTimeRemaining(remaining)))
                                             .font(DesignTokens.Typography.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
                                     }
                                 }
                             } else {
                                 Text("debug.logging_inactive".localized)
                                     .font(DesignTokens.Typography.bodyMedium)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
 
                             Spacer()
@@ -219,13 +218,13 @@ struct DebugNetworkLogView: View {
                             )
                         )
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, DesignTokens.Spacing.cardPadding)
                     } else if loggerService.session.logs.isEmpty {
                         Text("debug.no_requests".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, DesignTokens.Spacing.cardPadding)
                     } else {
@@ -275,61 +274,44 @@ struct DebugNetworkLogView: View {
     }
 
     private var unsafeLegacyCaptureWarning: some View {
-        VStack(
-            alignment: .leading,
-            spacing: DesignTokens.Spacing.small
-        ) {
-            HStack(
-                alignment: .top,
-                spacing: DesignTokens.Spacing.iconText
+        SettingsStatusBanner(tone: .error, icon: "exclamationmark.triangle.fill") {
+            VStack(
+                alignment: .leading,
+                spacing: DesignTokens.Spacing.small
             ) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
+                Text(
+                    ProviderUILocalization.text(
+                        "diagnostics.network_logs.cleanup_title",
+                        fallback: "Secure Cleanup Required"
+                    )
+                )
+                .font(DesignTokens.Typography.bodyMedium)
 
-                VStack(
-                    alignment: .leading,
-                    spacing: DesignTokens.Spacing.extraSmall
+                Text(
+                    ProviderUILocalization.text(
+                        "diagnostics.network_logs.cleanup_message",
+                        fallback:
+                            "A legacy network capture may contain "
+                            + "credentials and could not be safely "
+                            + "removed. Network logging is blocked "
+                            + "until cleanup succeeds."
+                    )
+                )
+                .font(DesignTokens.Typography.body)
+                .foregroundColor(SettingsColors.secondary)
+
+                SettingsButton(
+                    title: ProviderUILocalization.text(
+                        "diagnostics.network_logs.retry_cleanup",
+                        fallback: "Retry Secure Cleanup"
+                    ),
+                    icon: "arrow.clockwise",
+                    style: .destructive
                 ) {
-                    Text(
-                        ProviderUILocalization.text(
-                            "diagnostics.network_logs.cleanup_title",
-                            fallback: "Secure Cleanup Required"
-                        )
-                    )
-                    .font(DesignTokens.Typography.bodyMedium)
-                    .foregroundColor(.red)
-
-                    Text(
-                        ProviderUILocalization.text(
-                            "diagnostics.network_logs.cleanup_message",
-                            fallback:
-                                "A legacy network capture may contain "
-                                + "credentials and could not be safely "
-                                + "removed. Network logging is blocked "
-                                + "until cleanup succeeds."
-                        )
-                    )
-                    .font(DesignTokens.Typography.body)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    loggerService.retryUnsafeLegacyCaptureCleanup()
                 }
             }
-
-            SettingsButton(
-                title: ProviderUILocalization.text(
-                    "diagnostics.network_logs.retry_cleanup",
-                    fallback: "Retry Secure Cleanup"
-                ),
-                icon: "arrow.clockwise",
-                style: .destructive
-            ) {
-                loggerService.retryUnsafeLegacyCaptureCleanup()
-            }
         }
-        .padding(DesignTokens.Spacing.iconText)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
-        .cornerRadius(DesignTokens.Radius.small)
     }
 
     private func copyDiagnostics() {
@@ -380,7 +362,7 @@ private struct ProviderDiagnosticsCard: View {
                                 "Checking provider status…"
                             )
                         )
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                     }
                 }
 
@@ -498,7 +480,7 @@ private struct ProviderDiagnosticsCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .frame(width: 110, alignment: .leading)
 
             Text(SensitiveDataRedactor.redact(value))
@@ -523,34 +505,30 @@ struct NetworkLogRow: View {
         Button(action: onTap) {
             HStack(spacing: DesignTokens.Spacing.medium) {
                 // Status indicator
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
+                SettingsStatusGlyph(kind: statusKind, size: 10)
 
                 // Main content
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         // Method badge
-                        Text(log.method)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(methodColor)
-                            .cornerRadius(4)
+                        SettingsBadge(
+                            text: log.method,
+                            tone: methodTone,
+                            font: .system(size: 10, weight: .medium, design: .monospaced)
+                        )
 
                         // Status code
                         if let status = log.statusCode {
                             Text("\(status)")
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
 
                         // Duration
                         if let duration = log.duration {
                             Text(String(format: "%.2fs", duration))
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
 
                         Spacer()
@@ -558,7 +536,7 @@ struct NetworkLogRow: View {
                         // Timestamp
                         Text(formatTime(log.timestamp))
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
 
                     // URL
@@ -571,7 +549,7 @@ struct NetworkLogRow: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
             .padding(.vertical, 8)
             .contentShape(Rectangle())
@@ -579,25 +557,25 @@ struct NetworkLogRow: View {
         .buttonStyle(.plain)
     }
 
-    private var statusColor: Color {
+    private var statusKind: SettingsStatusGlyph.Kind {
         if let status = log.statusCode {
             switch status {
-            case 200..<300: return .green
-            case 400..<500: return .orange
-            case 500...: return .red
-            default: return .gray
+            case 200..<300: return .ok
+            case 400..<500: return .warning
+            case 500...: return .error
+            default: return .inactive
             }
         }
-        return log.errorMessage != nil ? .red : .gray
+        return log.errorMessage != nil ? .error : .inactive
     }
 
-    private var methodColor: Color {
+    private var methodTone: SettingsTone {
         switch log.method {
-        case "GET": return .blue
-        case "POST": return .green
-        case "PUT": return .orange
-        case "DELETE": return .red
-        default: return .gray
+        case "GET": return .info
+        case "POST": return .success
+        case "PUT": return .warning
+        case "DELETE": return .error
+        default: return .neutral
         }
     }
 
@@ -626,7 +604,7 @@ struct NetworkLogDetailView: View {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -670,7 +648,7 @@ struct NetworkLogDetailView: View {
                                 if let size = log.fullResponseSize {
                                     Text(String(format: "debug.full_size".localized, ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))
                                         .font(DesignTokens.Typography.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(SettingsColors.secondary)
                                 }
 
                                 Text(response)
@@ -687,14 +665,11 @@ struct NetworkLogDetailView: View {
                     // Error
                     if let error = log.errorMessage {
                         DetailSection(title: "debug.error".localized) {
-                            Text(error)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.red)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                                .background(Color.red.opacity(0.1))
-                                .cornerRadius(6)
+                            SettingsStatusBanner(tone: .error, icon: "xmark.circle.fill") {
+                                Text(error)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
                 }
@@ -739,7 +714,7 @@ struct DetailRow: View {
         HStack(alignment: .top) {
             Text(label + ":")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .frame(width: 120, alignment: .leading)
 
             Text(value)

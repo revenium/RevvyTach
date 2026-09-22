@@ -45,7 +45,7 @@ struct NormalizedUsageChart: View {
             HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 Spacer()
                 Button {
                     timeOffset -= timeScale.rawValue / 2
@@ -112,7 +112,7 @@ struct NormalizedUsageChart: View {
             .frame(height: 140)
         }
         .padding(12)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .onChange(of: timeScale) {
             timeOffset = 0
@@ -186,7 +186,7 @@ struct SessionUsageChart: View {
             HStack {
                 Text("history.chart.session_title".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 // Show selected snapshot info (only when hovering over a data point)
                 if let info = selectedSlotInfo {
@@ -194,7 +194,7 @@ struct SessionUsageChart: View {
                     HStack(spacing: 4) {
                         Text(info.time)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                         Text(info.percentage)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.primary)
@@ -213,7 +213,7 @@ struct SessionUsageChart: View {
                         y: .value("Usage", clampedPercentage(snapshot.sessionPercentage)),
                         width: .fixed(8)
                     )
-                    .foregroundStyle(snapshot.sessionPercentage.map { barColor(for: $0) } ?? Color.gray.opacity(0.2))
+                    .foregroundStyle(snapshot.sessionPercentage.map { barColor(for: $0) } ?? SettingsColors.neutral.opacity(0.2))
                     .cornerRadius(2)
                 } else {
                     // Only show points, no connecting lines (to avoid misleading gaps)
@@ -221,7 +221,7 @@ struct SessionUsageChart: View {
                         x: .value("Time", snapshot.timestamp, unit: .minute),
                         y: .value("Usage", clampedPercentage(snapshot.sessionPercentage))
                     )
-                    .foregroundStyle(snapshot.sessionPercentage.map { barColor(for: $0) } ?? Color.gray.opacity(0.2))
+                    .foregroundStyle(snapshot.sessionPercentage.map { barColor(for: $0) } ?? SettingsColors.neutral.opacity(0.2))
                     .symbolSize(60)
                 }
             }
@@ -237,7 +237,7 @@ struct SessionUsageChart: View {
                         if let intValue = value.as(Int.self) {
                             Text("\(intValue)%")
                                 .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -253,22 +253,22 @@ struct SessionUsageChart: View {
             .padding(.leading, 4)
         }
         .padding(16)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .stroke(SettingsColors.border, lineWidth: 1)
         )
     }
 
     private func barColor(for percentage: Double) -> Color {
         switch percentage {
         case 0..<50:
-            return .green
+            return SettingsColors.success
         case 50..<80:
-            return .orange
+            return SettingsColors.warning
         default:
-            return .red
+            return SettingsColors.error
         }
     }
 }
@@ -309,7 +309,7 @@ struct WeeklyUsageChart: View {
             HStack {
                 Text("history.chart.weekly_title".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 // Show selected snapshot info (only when hovering over a data point)
                 if let info = selectedSlotInfo {
@@ -317,7 +317,7 @@ struct WeeklyUsageChart: View {
                     HStack(spacing: 4) {
                         Text(info.time)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                         Text(info.percentage)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.primary)
@@ -337,7 +337,7 @@ struct WeeklyUsageChart: View {
                         y: .value("Usage", clampedPercentage(snapshot.weeklyPercentage)),
                         width: .fixed(20)
                     )
-                    .foregroundStyle(snapshot.weeklyPercentage.map { barColor(for: $0) } ?? Color.gray.opacity(0.2))
+                    .foregroundStyle(snapshot.weeklyPercentage.map { barColor(for: $0) } ?? SettingsColors.neutral.opacity(0.2))
                     .cornerRadius(3)
                 } else {
                     // Only show points, no connecting lines (to avoid misleading gaps)
@@ -345,7 +345,7 @@ struct WeeklyUsageChart: View {
                         x: .value("Time", snapshot.timestamp, unit: .hour),
                         y: .value("Usage", clampedPercentage(snapshot.weeklyPercentage))
                     )
-                    .foregroundStyle(snapshot.weeklyPercentage.map { barColor(for: $0) } ?? Color.gray.opacity(0.2))
+                    .foregroundStyle(snapshot.weeklyPercentage.map { barColor(for: $0) } ?? SettingsColors.neutral.opacity(0.2))
                     .symbolSize(80)
                 }
             }
@@ -361,7 +361,7 @@ struct WeeklyUsageChart: View {
                         if let intValue = value.as(Int.self) {
                             Text("\(intValue)%")
                                 .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -377,22 +377,22 @@ struct WeeklyUsageChart: View {
             .padding(.leading, 4)
         }
         .padding(16)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .stroke(SettingsColors.border, lineWidth: 1)
         )
     }
 
     private func barColor(for percentage: Double) -> Color {
         switch percentage {
         case 0..<50:
-            return .green
+            return SettingsColors.success
         case 50..<80:
-            return .orange
+            return SettingsColors.warning
         default:
-            return .red
+            return SettingsColors.error
         }
     }
 }
@@ -426,7 +426,7 @@ struct BillingCycleChart: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("history.chart.billing_title".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Chart(chartData) { snapshot in
                     let spendAmount = Double(snapshot.apiSpendCents ?? 0) / 100.0
@@ -475,7 +475,7 @@ struct BillingCycleChart: View {
                             if let doubleValue = value.as(Double.self) {
                                 Text("$\(Int(doubleValue))")
                                     .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
                         }
                     }
@@ -493,11 +493,11 @@ struct BillingCycleChart: View {
                 .frame(height: 160)
             }
             .padding(16)
-            .background(DesignTokens.Colors.cardBackground)
+            .background(SettingsColors.cardBackground)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                    .stroke(SettingsColors.border, lineWidth: 1)
             )
         }
     }
@@ -559,18 +559,18 @@ struct EmptyHistoryView: View {
 
                 Text(type.descriptionKey.localized)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
         .frame(height: 160)
         .padding(16)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .stroke(SettingsColors.border, lineWidth: 1)
         )
     }
 }
@@ -589,7 +589,7 @@ struct SnapshotRow: View {
 
                 Text(snapshot.resetType.localizedName)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             Spacer()
@@ -617,7 +617,7 @@ struct SnapshotRow: View {
 
                 Text("history.label.session".localized)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
         }
     }
@@ -633,7 +633,7 @@ struct SnapshotRow: View {
 
                     Text("history.label.total".localized)
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
 
@@ -641,11 +641,11 @@ struct SnapshotRow: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Int(opusPercentage))%")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     Text("Opus")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
 
@@ -653,11 +653,11 @@ struct SnapshotRow: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Int(sonnetPercentage))%")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     Text("Sonnet")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
 
@@ -665,11 +665,11 @@ struct SnapshotRow: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Int(fablePercentage))%")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     Text("Fable")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
         }
@@ -685,7 +685,7 @@ struct SnapshotRow: View {
 
                 Text("history.label.spent".localized)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
         }
     }
@@ -693,11 +693,11 @@ struct SnapshotRow: View {
     private func usageColor(for percentage: Double) -> Color {
         switch percentage {
         case 0..<50:
-            return .green
+            return SettingsColors.success
         case 50..<80:
-            return .orange
+            return SettingsColors.warning
         default:
-            return .red
+            return SettingsColors.error
         }
     }
 }

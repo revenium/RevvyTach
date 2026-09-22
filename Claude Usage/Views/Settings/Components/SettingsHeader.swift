@@ -34,7 +34,7 @@ struct SettingsHeader: View {
 
                         Text(subtitle)
                             .font(Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                 }
             } else {
@@ -44,7 +44,7 @@ struct SettingsHeader: View {
 
                     Text(subtitle)
                         .font(Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
         }

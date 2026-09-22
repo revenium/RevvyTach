@@ -50,9 +50,9 @@ struct APIBillingView: View {
 
                 // Professional Status Card
                 HStack(spacing: DesignTokens.Spacing.medium) {
-                    Circle()
-                        .fill(currentCredentials?.apiSessionKey != nil ? Color.green : Color.secondary.opacity(0.4))
-                        .frame(width: DesignTokens.StatusDot.standard, height: DesignTokens.StatusDot.standard)
+                    SettingsStatusGlyph(
+                        kind: currentCredentials?.apiSessionKey != nil ? .ok : .inactive
+                    )
 
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                         Text(currentCredentials?.apiSessionKey != nil ? "general.connected".localized : "general.not_connected".localized)
@@ -61,32 +61,32 @@ struct APIBillingView: View {
                         if let creds = currentCredentials, let apiKey = creds.apiSessionKey {
                             Text(maskKey(apiKey))
                                 .font(DesignTokens.Typography.captionMono)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
 
                             // Session key expiry status
                             if let expiry = creds.apiSessionKeyExpiry {
                                 HStack(spacing: 4) {
                                     if expiry < Date() {
                                         Image(systemName: "exclamationmark.circle.fill")
-                                            .foregroundColor(.red)
+                                            .foregroundColor(SettingsColors.error)
                                             .font(.system(size: 11))
                                         Text("Session expired")
                                             .font(.system(size: 11))
-                                            .foregroundColor(.red)
+                                            .foregroundColor(SettingsColors.error)
                                     } else if expiry < Date().addingTimeInterval(24 * 60 * 60) {
                                         Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(.orange)
+                                            .foregroundColor(SettingsColors.warning)
                                             .font(.system(size: 11))
                                         Text("Expires soon")
                                             .font(.system(size: 11))
-                                            .foregroundColor(.orange)
+                                            .foregroundColor(SettingsColors.warning)
                                     } else {
                                         Image(systemName: "clock")
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
                                             .font(.system(size: 11))
                                         Text("Expires \(expiry, style: .relative)")
                                             .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
                                     }
                                 }
                             }
@@ -107,15 +107,15 @@ struct APIBillingView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
-                        .foregroundColor(.red)
+                        .foregroundColor(SettingsColors.error)
                     }
                 }
                 .padding(DesignTokens.Spacing.medium)
-                .background(DesignTokens.Colors.cardBackground)
+                .background(SettingsColors.cardBackground)
                 .cornerRadius(DesignTokens.Radius.card)
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                        .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                        .strokeBorder(SettingsColors.border, lineWidth: 1)
                 )
 
                 // Configuration Card Container with 3 Steps
@@ -124,7 +124,7 @@ struct APIBillingView: View {
                         VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
                             Text("personal.configuration_title".localized)
                                 .font(DesignTokens.Typography.sectionTitle)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
 
                             HStack(spacing: DesignTokens.Spacing.small) {
                                 ForEach(1...3, id: \.self) { step in
@@ -135,17 +135,17 @@ struct APIBillingView: View {
                                     HStack(spacing: DesignTokens.Spacing.extraSmall) {
                                         ZStack {
                                             Circle()
-                                                .fill(isCompleted ? Color.green : (isCurrent ? Color.accentColor : Color.secondary.opacity(0.2)))
+                                                .fill(isCompleted ? SettingsColors.success : (isCurrent ? SettingsColors.primary : Color.secondary.opacity(0.2)))
                                                 .frame(width: 20, height: 20)
 
                                             if isCompleted {
                                                 Image(systemName: "checkmark")
                                                     .font(.system(size: 10, weight: .semibold))
-                                                    .foregroundColor(.white)
+                                                    .foregroundColor(SettingsTone.success.textOn)
                                             } else {
                                                 Text("\(step)")
                                                     .font(.system(size: 11, weight: .medium))
-                                                    .foregroundColor(isCurrent ? .white : .secondary)
+                                                    .foregroundColor(isCurrent ? SettingsColors.textOnAccent : SettingsColors.secondary)
                                             }
                                         }
 
@@ -159,7 +159,7 @@ struct APIBillingView: View {
 
                                     if step < 3 {
                                         Rectangle()
-                                            .fill(isCompleted ? Color.green.opacity(0.3) : Color.secondary.opacity(0.2))
+                                            .fill(isCompleted ? SettingsColors.success.opacity(0.3) : Color.secondary.opacity(0.2))
                                             .frame(height: 1)
                                     }
                                 }
@@ -188,11 +188,11 @@ struct APIBillingView: View {
                         .padding(DesignTokens.Spacing.cardPadding)
                         .animation(.easeInOut(duration: 0.25), value: wizardState.currentStep)
                 }
-                .background(DesignTokens.Colors.cardBackground)
+                .background(SettingsColors.cardBackground)
                 .cornerRadius(DesignTokens.Radius.card)
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                        .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                        .strokeBorder(SettingsColors.border, lineWidth: 1)
                 )
 
                 Spacer()
@@ -285,7 +285,7 @@ struct APIEnterKeyStep: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Sign in to extract your session key automatically.")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Button(action: { wizardState.showingAuthSheet = true }) {
                     HStack(spacing: 6) {
@@ -321,22 +321,22 @@ struct APIEnterKeyStep: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("api.label_api_session_key".localized)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     TextField("api.placeholder_api_session_key".localized, text: $wizardState.apiSessionKey)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12, design: .monospaced))
                         .padding(10)
-                        .background(DesignTokens.Colors.inputBackground)
+                        .background(SettingsColors.inputBackground)
                         .cornerRadius(6)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                                .strokeBorder(SettingsColors.border, lineWidth: 1)
                         )
 
                     Text("api.help_api_session_key".localized)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
 
                     HStack(spacing: 10) {
                         Spacer()
@@ -363,36 +363,17 @@ struct APIEnterKeyStep: View {
                 .padding(.top, 8)
             }
             .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
 
             // Validation status
             if case .success(let message) = wizardState.validationState {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 14))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                SettingsStatusBanner(tone: .success, icon: "checkmark.circle.fill") {
+                    Text(message).font(.system(size: 12))
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.green.opacity(0.08))
-                .cornerRadius(6)
             } else if case .error(let message) = wizardState.validationState {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 14))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundColor(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                SettingsStatusBanner(tone: .error, icon: "exclamationmark.triangle.fill") {
+                    Text(message).font(.system(size: 12))
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.08))
-                .cornerRadius(6)
             }
         }
     }
@@ -434,7 +415,7 @@ struct APISelectOrgStep: View {
                     .font(.system(size: 13, weight: .medium))
                 Text("wizard.choose_organization".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             // Balanced organization list
@@ -470,7 +451,7 @@ struct APISelectOrgStep: View {
                                     .foregroundColor(.primary)
                                 Text(org.id)
                                     .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                     .lineLimit(1)
                             }
 
@@ -563,7 +544,7 @@ struct APIConfirmStep: View {
                     .font(.system(size: 13, weight: .medium))
                 Text("wizard.confirm_settings".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             // Balanced summary card
@@ -577,7 +558,7 @@ struct APIConfirmStep: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("wizard.api_session_key".localized)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                         Text(maskSessionKey(wizardState.apiSessionKey))
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundColor(.primary)
@@ -596,13 +577,13 @@ struct APIConfirmStep: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("wizard.organization".localized)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                             Text(selectedOrg.name)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.primary)
                             Text(selectedOrg.id)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -613,19 +594,19 @@ struct APIConfirmStep: View {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 12))
-                            .foregroundColor(.orange)
+                            .foregroundColor(SettingsColors.warning)
                         Text("wizard.api_key_will_update".localized)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                 }
             }
             .padding(12)
-            .background(DesignTokens.Colors.cardBackground)
+            .background(SettingsColors.cardBackground)
             .cornerRadius(6)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                    .strokeBorder(SettingsColors.border, lineWidth: 1)
             )
 
             // Navigation buttons

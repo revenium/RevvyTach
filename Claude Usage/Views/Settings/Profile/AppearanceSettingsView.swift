@@ -197,7 +197,7 @@ struct AppearanceSettingsView: View {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "info.circle.fill")
                                     .font(.system(size: 12))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(SettingsColors.info)
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("appearance.all_metrics_off_title".localized)
@@ -206,14 +206,14 @@ struct AppearanceSettingsView: View {
 
                                     Text("appearance.all_metrics_off_description".localized)
                                         .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(SettingsColors.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                             .padding(DesignTokens.Spacing.small)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.blue.opacity(0.1))
+                                    .fill(SettingsColors.info.opacity(0.1))
                             )
                         }
 
@@ -386,7 +386,7 @@ struct AppearanceSettingsView: View {
                 )
             )
             .font(.system(size: 10))
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
         } else if providerCatalog.isEmpty {
             Text(
                 NSLocalizedString(
@@ -396,7 +396,7 @@ struct AppearanceSettingsView: View {
                 )
             )
             .font(.system(size: 10))
-            .foregroundColor(.secondary)
+            .foregroundColor(SettingsColors.secondary)
         } else {
             ForEach(providerCatalog) { descriptor in
                 ProviderMetricSettingsRow(
@@ -475,7 +475,7 @@ private struct ProviderMetricSettingsRow: View {
                     if let reason = descriptor.unavailableReason {
                         Text(reason)
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                 }
                 Spacer()
@@ -507,7 +507,7 @@ private struct ProviderMetricSettingsRow: View {
         .padding(DesignTokens.Spacing.small)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(DesignTokens.Colors.cardBackground)
+                .fill(SettingsColors.cardBackground)
         )
         .opacity(descriptor.isUsable ? 1 : 0.6)
     }
@@ -523,7 +523,7 @@ struct MultiProfileModeWarningCard: View {
             HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.orange)
+                    .foregroundColor(SettingsColors.warning)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("appearance.multiprofile_locked_title".localized)
@@ -532,7 +532,7 @@ struct MultiProfileModeWarningCard: View {
 
                     Text("appearance.multiprofile_locked_description".localized)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -546,12 +546,12 @@ struct MultiProfileModeWarningCard: View {
                     Text("appearance.disable_multiprofile".localized)
                         .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundColor(.orange)
+                .foregroundColor(SettingsColors.warning)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.orange, lineWidth: 1)
+                        .stroke(SettingsColors.warning, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -559,11 +559,11 @@ struct MultiProfileModeWarningCard: View {
         .padding(DesignTokens.Spacing.cardPadding)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                .fill(Color.orange.opacity(0.1))
+                .fill(SettingsColors.warning.opacity(0.1))
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                .stroke(SettingsColors.warning.opacity(0.3), lineWidth: 1)
         )
     }
 }

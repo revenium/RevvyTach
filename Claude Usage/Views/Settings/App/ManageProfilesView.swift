@@ -130,7 +130,7 @@ struct ManageProfilesView: View {
                             VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
                                 Text("multiprofile.select_profiles".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
 
                                 ForEach(profileManager.profiles) { profile in
                                     ProfileSelectionRow(
@@ -155,10 +155,10 @@ struct ManageProfilesView: View {
                                     HStack(alignment: .top, spacing: 6) {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .font(.system(size: 10))
-                                            .foregroundColor(.orange)
+                                            .foregroundColor(SettingsColors.warning)
                                         Text("multiprofile.at_least_one".localized)
                                             .font(.system(size: 10))
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(SettingsColors.secondary)
                                     }
                                     .padding(.top, 4)
                                 }
@@ -174,7 +174,7 @@ struct ManageProfilesView: View {
                             ) {
                                 Text("multiprofile.layout.title".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
 
                                 Picker("", selection: Binding(
                                     get: { multiLayout },
@@ -199,7 +199,7 @@ struct ManageProfilesView: View {
                                         .localized
                                 )
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
 
                                 // A menu bar manager sorts items by
                                 // identity, and the strip is one it has
@@ -213,7 +213,7 @@ struct ManageProfilesView: View {
                                             .localized
                                     )
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                     .fixedSize(
                                         horizontal: false,
                                         vertical: true
@@ -235,7 +235,7 @@ struct ManageProfilesView: View {
                                             .localized
                                     )
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
 
                                     Picker("", selection: Binding(
                                         get: { healthStripNumbersSelection },
@@ -271,7 +271,7 @@ struct ManageProfilesView: View {
                                         .localized
                                 )
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .disabled(multiLayout != .healthStrip)
@@ -283,7 +283,7 @@ struct ManageProfilesView: View {
                             VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
                                 Text("multiprofile.icon_style".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
 
                                 Picker("", selection: Binding(
                                     get: { profileManager.multiProfileConfig.iconStyle },
@@ -311,7 +311,7 @@ struct ManageProfilesView: View {
                                             .localized
                                     )
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -395,7 +395,7 @@ struct ManageProfilesView: View {
                                             .localized
                                     )
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 }
                             }
 
@@ -454,7 +454,7 @@ struct ManageProfilesView: View {
                             ) {
                                 Text("multiprofile.overflow.title".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
 
                                 VStack(
                                     alignment: .leading,
@@ -547,10 +547,10 @@ struct ManageProfilesView: View {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "info.circle.fill")
                                     .font(.system(size: 11))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(SettingsColors.info)
                                 Text("multiprofile.info".localized)
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
                             .padding(.top, DesignTokens.Spacing.small)
                         }
@@ -582,7 +582,7 @@ struct ManageProfilesView: View {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
                         HStack(spacing: DesignTokens.Spacing.small) {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(SettingsColors.info)
                                 .font(.system(size: DesignTokens.Icons.standard))
                             Text("profiles.about_title".localized)
                                 .font(DesignTokens.Typography.sectionTitle)
@@ -590,7 +590,7 @@ struct ManageProfilesView: View {
 
                         Text("profiles.about_description".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                             BulletPoint("profiles.about_credentials".localized)
@@ -602,14 +602,14 @@ struct ManageProfilesView: View {
                             BulletPoint("profiles.about_cli_switching".localized)
                         }
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .padding(.leading, DesignTokens.Spacing.small)
                     }
                 }
 
                 if let error = errorMessage {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundColor(SettingsColors.error)
                         .font(.system(size: 11))
                 }
             }
@@ -731,7 +731,7 @@ struct ManageProfilesView: View {
                         ? "largecircle.fill.circle"
                         : "circle"
                 )
-                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .foregroundColor(isSelected ? .accentColor : SettingsColors.secondary)
                 Text(title)
                     .font(DesignTokens.Typography.body)
                     .foregroundColor(.primary)
@@ -758,7 +758,7 @@ private struct AccessibilityGrantHint: View {
                 ) {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 11))
-                        .foregroundColor(.orange)
+                        .foregroundColor(SettingsColors.warning)
                     VStack(
                         alignment: .leading,
                         spacing: DesignTokens.Spacing.extraSmall
@@ -768,7 +768,7 @@ private struct AccessibilityGrantHint: View {
                                 .localized
                         )
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         Button(
                             "multiprofile.overflow.accessibility_grant_button"
                                 .localized
@@ -823,7 +823,7 @@ private struct DetectedMenuBarManagerHint: View {
                 ) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 11))
-                        .foregroundColor(.blue)
+                        .foregroundColor(SettingsColors.info)
                     Text(
                         String(
                             format:
@@ -833,7 +833,7 @@ private struct DetectedMenuBarManagerHint: View {
                         )
                     )
                     .font(DesignTokens.Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 }
             }
         }
@@ -907,20 +907,17 @@ struct ProfileRow: View {
                             .font(.system(size: 14, weight: .medium))
 
                         if profileManager.isActive(profile) {
-                            Text("profiles.active_badge".localized)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.accentColor)
-                                .cornerRadius(4)
+                            SettingsBadge(
+                                text: "profiles.active_badge".localized,
+                                tone: .accent
+                            )
                         }
                     }
                 }
 
                 Text(profileInfo)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             Spacer()
@@ -968,7 +965,7 @@ struct ProfileRow: View {
                         }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 12))
-                                .foregroundColor(.red)
+                                .foregroundColor(SettingsColors.error)
                         }
                         .buttonStyle(.plain)
                         .help("profiles.delete".localized)
@@ -983,7 +980,7 @@ struct ProfileRow: View {
                     }) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 12))
-                            .foregroundColor(.green)
+                            .foregroundColor(SettingsColors.success)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile.rename.save")
@@ -994,7 +991,7 @@ struct ProfileRow: View {
                     }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 12))
-                            .foregroundColor(.red)
+                            .foregroundColor(SettingsColors.error)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("profile.rename.cancel")
@@ -1258,14 +1255,14 @@ struct CreateProfileSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("profiles.name_label".localized)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 TextField("profiles.name_placeholder".localized, text: $profileName)
                     .textFieldStyle(.roundedBorder)
 
                 Text("profiles.name_hint".localized)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 Text(
                     ProviderUILocalization.text(
@@ -1274,7 +1271,7 @@ struct CreateProfileSheet: View {
                     )
                 )
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
                 Picker("", selection: $provider) {
                     Text("setup.provider.claude_title".localized)
@@ -1324,7 +1321,7 @@ struct CreateProfileSheet: View {
                         )
                     )
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                 }
 
                 if !codexAvailable {
@@ -1336,7 +1333,7 @@ struct CreateProfileSheet: View {
                         )
                     )
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .accessibilityIdentifier(
                         ProviderUIAccessibility.capabilityDisabled
                     )

@@ -23,7 +23,7 @@ struct ProfileSelectionRow: View {
                 // Checkbox
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundColor(isSelected ? .accentColor : SettingsColors.secondary)
 
                 // Profile name (truncated)
                 Text(profile.name)
@@ -47,13 +47,10 @@ struct ProfileSelectionRow: View {
 
                 // Active badge
                 if isActive {
-                    Text("multiprofile.active_badge".localized)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.accentColor)
-                        .cornerRadius(4)
+                    SettingsBadge(
+                        text: "multiprofile.active_badge".localized,
+                        tone: .accent
+                    )
                 }
 
                 Spacer()
@@ -71,7 +68,7 @@ struct ProfileSelectionRow: View {
                             ),
                             color: profile.providerID == .claude
                                 ? legacyBadgeColor(for: metric)
-                                : .green
+                                : SettingsColors.success
                         )
                     }
                     if enabledMetrics.count > 2 {
@@ -123,10 +120,10 @@ struct ProfileSelectionRow: View {
         for metric: MetricIconConfig
     ) -> Color {
         switch metric.metricID.legacyMetricType {
-        case .session: return .blue
-        case .week: return .purple
-        case .api: return .orange
-        case nil: return .green
+        case .session: return SettingsColors.info
+        case .week: return SettingsColors.proBadge
+        case .api: return SettingsColors.warning
+        case nil: return SettingsColors.success
         }
     }
 }

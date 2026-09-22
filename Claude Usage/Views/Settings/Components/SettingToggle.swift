@@ -28,11 +28,11 @@ struct SettingToggle: View {
             }
         }
 
-        var color: Color {
+        var tone: SettingsTone {
             switch self {
-            case .beta: return SettingsColors.betaBadge
-            case .pro: return SettingsColors.proBadge
-            case .new: return SettingsColors.info
+            case .beta: return .warning
+            case .pro: return .pro
+            case .new: return .info
             }
         }
     }
@@ -65,7 +65,7 @@ struct SettingToggle: View {
                 if let description = description {
                     Text(description)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -97,15 +97,7 @@ private struct BadgeView: View {
     let badge: SettingToggle.BadgeType
 
     var body: some View {
-        Text(badge.text)
-            .font(.system(size: 9, weight: .bold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(badge.color)
-            )
+        SettingsBadge(text: badge.text, tone: badge.tone)
             .accessibilityHidden(true)
     }
 }

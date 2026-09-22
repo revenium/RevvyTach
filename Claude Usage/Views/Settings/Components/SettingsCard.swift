@@ -41,7 +41,7 @@ struct SettingsCard<Content: View>: View {
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -59,7 +59,7 @@ struct SettingsCard<Content: View>: View {
             if let footer = footer {
                 Text(footer)
                     .font(Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Spacing.cardPadding)
                     .padding(.bottom, Spacing.cardPadding)
@@ -108,7 +108,7 @@ extension SettingsCard {
 
             Text("More content")
                 .font(Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
         }
     }
     .padding()
@@ -141,7 +141,7 @@ extension SettingsCard {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Session Key")
                 .font(Typography.label)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
             Text("sk-ant-api03-...")
                 .font(Typography.monospacedInput)
@@ -165,7 +165,7 @@ extension SettingsCard {
 
                 Text("5 minutes")
                     .font(Typography.body)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
 
             Slider(value: .constant(5), in: 1...60)

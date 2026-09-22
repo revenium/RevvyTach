@@ -25,7 +25,7 @@ struct ThresholdIndicator: View {
 
             Text(label)
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
             Spacer()
         }

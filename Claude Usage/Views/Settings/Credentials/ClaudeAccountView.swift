@@ -225,7 +225,7 @@ struct ClaudeAccountView: View {
                                 removeBrowserSignIn(profile.id)
                             }
                             .buttonStyle(.bordered)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(SettingsColors.error)
                         }
                         if terminalActions.canUnlink {
                             Button("cli.unlink".localized) {
@@ -233,7 +233,7 @@ struct ClaudeAccountView: View {
                                 showUnlinkConfirmation = true
                             }
                             .buttonStyle(.bordered)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(SettingsColors.error)
                         }
                         Spacer()
                     }
@@ -423,12 +423,12 @@ struct ClaudeAccountView: View {
             Text(title).font(DesignTokens.Typography.sectionTitle)
             Text(text)
                 .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SettingsColors.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.card))
     }
 
@@ -546,7 +546,7 @@ struct ClaudeAccountView: View {
         SettingsContentCard {
             HStack(spacing: DesignTokens.Spacing.medium) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(SettingsColors.warning)
                 VStack(
                     alignment: .leading,
                     spacing: DesignTokens.Spacing.extraSmall
@@ -555,7 +555,7 @@ struct ClaudeAccountView: View {
                         .font(DesignTokens.Typography.bodyMedium)
                     Text("popover.banner.credentials_not_saved.detail".localized)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SettingsColors.secondary)
                 }
                 Spacer()
                 Button("personal.retry_save".localized) {
@@ -599,14 +599,14 @@ struct ClaudeAccountView: View {
         SettingsContentCard {
             HStack(spacing: DesignTokens.Spacing.small) {
                 Image(systemName: "info.circle.fill")
-                    .foregroundColor(.blue)
+                    .foregroundColor(SettingsColors.info)
                     .font(.system(size: DesignTokens.Icons.standard))
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                     Text("cli.multi_profile_required_title".localized)
                         .font(DesignTokens.Typography.sectionTitle)
                     Text("cli.multi_profile_required".localized)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
         }
@@ -660,11 +660,11 @@ struct ClaudeAccountView: View {
             Spacer()
         }
         .padding(DesignTokens.Spacing.medium)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(DesignTokens.Radius.card)
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .strokeBorder(SettingsColors.border, lineWidth: 1)
         )
     }
 
@@ -675,9 +675,7 @@ struct ClaudeAccountView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
             HStack(spacing: DesignTokens.Spacing.medium) {
-                Circle()
-                    .fill(hasCredentials ? Color.green : Color.orange)
-                    .frame(width: DesignTokens.StatusDot.standard, height: DesignTokens.StatusDot.standard)
+                SettingsStatusGlyph(kind: hasCredentials ? .ok : .warning)
 
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                     Text(hasCredentials ? "cli.status_linked".localized : "cli.status_linked_pending".localized)
@@ -685,7 +683,7 @@ struct ClaudeAccountView: View {
 
                     Text("~/.claude-accounts/\(accountName)")
                         .font(DesignTokens.Typography.monospaced)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 Spacer()
@@ -715,20 +713,20 @@ struct ClaudeAccountView: View {
 
                 HStack(spacing: DesignTokens.Spacing.small) {
                     Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(SettingsColors.success)
                         .font(.system(size: DesignTokens.Icons.standard))
                     Text("cli.switching_enabled".localized)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
             }
         }
         .padding(DesignTokens.Spacing.medium)
-        .background(DesignTokens.Colors.cardBackground)
+        .background(SettingsColors.cardBackground)
         .cornerRadius(DesignTokens.Radius.card)
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                .strokeBorder(SettingsColors.border, lineWidth: 1)
         )
     }
 
@@ -763,7 +761,7 @@ struct ClaudeAccountView: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
             HStack(spacing: DesignTokens.Spacing.small) {
                 Image(systemName: "moon.zzz.fill")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .font(.system(size: DesignTokens.Icons.standard))
                 Text("cli.login_asleep_title".localized)
                     .font(DesignTokens.Typography.bodyMedium)
@@ -771,7 +769,7 @@ struct ClaudeAccountView: View {
 
             Text(asleepExplanation(since: since))
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityIdentifier("cli.login_asleep")
@@ -804,7 +802,7 @@ struct ClaudeAccountView: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
             HStack(spacing: DesignTokens.Spacing.small) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundColor(SettingsColors.warning)
                     .font(.system(size: DesignTokens.Icons.standard))
                 Text("cli.login_expired_title".localized)
                     .font(DesignTokens.Typography.bodyMedium)
@@ -812,7 +810,7 @@ struct ClaudeAccountView: View {
 
             Text("cli.login_expired_explain".localized)
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: DesignTokens.Spacing.small) {
@@ -841,7 +839,7 @@ struct ClaudeAccountView: View {
 
             Text("cli.login_expired_then_resync".localized)
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityIdentifier("cli.login_expired")
@@ -861,7 +859,7 @@ struct ClaudeAccountView: View {
                     BulletPoint("cli.link_benefit_3".localized)
                 }
                 .font(DesignTokens.Typography.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
 
                 Button(action: {
                     linkConfirmationTargetID = profileID
@@ -907,7 +905,7 @@ struct ClaudeAccountView: View {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                         Text("cli.setup_step1".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         // Command display
                         HStack {
@@ -945,7 +943,7 @@ struct ClaudeAccountView: View {
                         .frame(width: 20, alignment: .trailing)
                     Text("cli.setup_step2".localized)
                         .font(DesignTokens.Typography.body)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 // Step 3
@@ -957,7 +955,7 @@ struct ClaudeAccountView: View {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
                         Text("cli.setup_step3".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
 
                         HStack(spacing: DesignTokens.Spacing.iconText) {
                             Button(action: {
@@ -976,11 +974,11 @@ struct ClaudeAccountView: View {
                             if terminalLinkVerification.isReady {
                                 HStack(spacing: DesignTokens.Spacing.extraSmall) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
+                                        .foregroundColor(SettingsColors.success)
                                         .font(.system(size: DesignTokens.Icons.small))
                                     Text("cli.credentials_found".localized)
                                         .font(DesignTokens.Typography.caption)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(SettingsColors.success)
                                 }
                             }
                         }
@@ -1027,7 +1025,7 @@ struct ClaudeAccountView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
-            .foregroundColor(.red)
+            .foregroundColor(SettingsColors.error)
 
             Spacer()
         }
@@ -1041,7 +1039,7 @@ struct ClaudeAccountView: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
                 HStack(spacing: DesignTokens.Spacing.small) {
                     Image(systemName: "lightbulb.fill")
-                        .foregroundColor(.yellow)
+                        .foregroundColor(SettingsColors.caution)
                         .font(.system(size: DesignTokens.Icons.standard))
                     Text("cli.shell_integration_title".localized)
                         .font(DesignTokens.Typography.sectionTitle)
@@ -1049,7 +1047,7 @@ struct ClaudeAccountView: View {
 
                 Text(String(format: "cli.shell_integration_explain".localized, shellConfigFile))
                     .font(DesignTokens.Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
 
                 // Shell snippet
                 Text(shellSnippet)
@@ -1112,7 +1110,7 @@ struct ClaudeAccountView: View {
                                 Text("cli.access_token".localized)
                                     .font(DesignTokens.Typography.caption)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 Text(maskCredential(sessionKey))
                                     .font(DesignTokens.Typography.monospaced)
                                     .foregroundColor(.primary)
@@ -1133,7 +1131,7 @@ struct ClaudeAccountView: View {
                                 Text("cli.subscription".localized)
                                     .font(DesignTokens.Typography.caption)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 Text(info.subscriptionType)
                                     .font(DesignTokens.Typography.body)
                                     .foregroundColor(.primary)
@@ -1151,7 +1149,7 @@ struct ClaudeAccountView: View {
                                     Text("cli.scopes".localized)
                                         .font(DesignTokens.Typography.caption)
                                         .fontWeight(.medium)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(SettingsColors.secondary)
                                     Text(info.scopes.joined(separator: ", "))
                                         .font(DesignTokens.Typography.body)
                                         .foregroundColor(.primary)
@@ -1165,10 +1163,10 @@ struct ClaudeAccountView: View {
                         HStack(spacing: DesignTokens.Spacing.extraSmall) {
                             Text("cli.last_synced".localized)
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                             Text(syncedAt, style: .relative)
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -1179,19 +1177,11 @@ struct ClaudeAccountView: View {
     // MARK: - Error Card
 
     private func errorCard(message: String) -> some View {
-        HStack(spacing: DesignTokens.Spacing.small) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.red)
-                .font(.system(size: DesignTokens.Icons.standard))
-            Text(message)
-                .font(DesignTokens.Typography.body)
-                .foregroundColor(.red)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(DesignTokens.Spacing.iconText)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
-        .cornerRadius(DesignTokens.Radius.small)
+        SettingsStatusBanner(
+            tone: .error,
+            icon: "exclamationmark.triangle.fill",
+            text: message
+        )
     }
 
     // MARK: - MCP Server Sync
@@ -1255,22 +1245,22 @@ struct ClaudeAccountView: View {
                             ForEach(mcpResult.changes) { change in
                                 HStack(spacing: DesignTokens.Spacing.small) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
+                                        .foregroundColor(SettingsColors.success)
                                         .font(.system(size: DesignTokens.Icons.small))
                                     Text("\(change.addedServers.joined(separator: ", ")) \u{2192} \(change.accountName)")
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                                 }
                             }
                         }
                     } else if skillsSyncResult?.hasChanges != true {
                         HStack(spacing: DesignTokens.Spacing.small) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundColor(SettingsColors.success)
                                 .font(.system(size: DesignTokens.Icons.small))
                             Text("cli.mcp_sync_no_changes".localized)
                                 .font(DesignTokens.Typography.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(SettingsColors.secondary)
                         }
                     }
                 }
@@ -1280,11 +1270,11 @@ struct ClaudeAccountView: View {
                         ForEach(skillsResult.changes) { change in
                             HStack(spacing: DesignTokens.Spacing.small) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(SettingsColors.success)
                                     .font(.system(size: DesignTokens.Icons.small))
                                 Text("\(change.addedSkills.joined(separator: ", ")) \u{2192} \(change.accountName)")
                                     .font(DesignTokens.Typography.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(SettingsColors.secondary)
                             }
                         }
                     }
@@ -1316,7 +1306,7 @@ struct ClaudeAccountView: View {
                     } else {
                         Text("cli.skills_source_not_configured".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
 
                     Spacer()
@@ -1328,7 +1318,7 @@ struct ClaudeAccountView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                     }
 
                     Button("cli.skills_source_choose".localized) {
@@ -1340,7 +1330,7 @@ struct ClaudeAccountView: View {
 
                 Text("cli.skills_source_description".localized)
                     .font(DesignTokens.Typography.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1372,14 +1362,14 @@ struct ClaudeAccountView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: DesignTokens.Icons.small))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SettingsColors.secondary)
             }
             .padding(DesignTokens.Spacing.medium)
-            .background(DesignTokens.Colors.cardBackground)
+            .background(SettingsColors.cardBackground)
             .cornerRadius(DesignTokens.Radius.card)
             .overlay(
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
-                    .strokeBorder(DesignTokens.Colors.cardBorder, lineWidth: 1)
+                    .strokeBorder(SettingsColors.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1398,13 +1388,13 @@ struct ClaudeAccountView: View {
                             .font(DesignTokens.Typography.pageTitle)
                         Text("cli.guide_subtitle".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                     Spacer()
                     Button(action: { showSetupGuide = false }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1447,12 +1437,10 @@ struct ClaudeAccountView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
 
-                        Text("cli.guide_shell_note".localized)
-                            .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.orange)
-                            .padding(DesignTokens.Spacing.small)
-                            .background(Color.orange.opacity(0.08))
-                            .cornerRadius(DesignTokens.Radius.tiny)
+                        SettingsStatusBanner(tone: .warning, icon: "exclamationmark.triangle.fill") {
+                            Text("cli.guide_shell_note".localized)
+                                .font(DesignTokens.Typography.caption)
+                        }
                     }
                 }
 
@@ -1461,7 +1449,7 @@ struct ClaudeAccountView: View {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.medium) {
                         HStack(spacing: DesignTokens.Spacing.small) {
                             Image(systemName: "lightbulb.fill")
-                                .foregroundColor(.yellow)
+                                .foregroundColor(SettingsColors.caution)
                                 .font(.system(size: DesignTokens.Icons.standard))
                             Text("cli.guide_notes_title".localized)
                                 .font(DesignTokens.Typography.sectionTitle)
@@ -1474,7 +1462,7 @@ struct ClaudeAccountView: View {
                             BulletPoint("cli.guide_note4".localized)
                         }
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                     }
                 }
             }
@@ -1487,13 +1475,13 @@ struct ClaudeAccountView: View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
             Text(number)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(SettingsColors.textOnAccent)
                 .frame(width: 24, height: 24)
-                .background(Color.accentColor)
+                .background(SettingsColors.primary)
                 .clipShape(Circle())
             Text(text)
                 .font(DesignTokens.Typography.body)
-                .foregroundColor(.secondary)
+                .foregroundColor(SettingsColors.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

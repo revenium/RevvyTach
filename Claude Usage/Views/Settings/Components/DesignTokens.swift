@@ -101,29 +101,4 @@ enum DesignTokens {
         /// Small status dot (6px)
         static let small: CGFloat = 6
     }
-
-    // MARK: - Colors
-
-    enum Colors {
-        /// Card background — translucent to work with vibrancy
-        static let cardBackground = Color.primary.opacity(0.04)
-
-        /// Card border — subtle to blend with vibrancy
-        static let cardBorder = Color.primary.opacity(0.08)
-
-        /// Text field background — translucent to work with vibrancy
-        static let inputBackground = Color.primary.opacity(0.06)
-
-        /// Success/connected state
-        static let success = Color.adaptiveGreen
-
-        /// Error state
-        static let error = Color.red
-
-        /// Warning state
-        static let warning = Color.orange
-
-        /// Info/accent
-        static let accent = Color.accentColor
-    }
 }

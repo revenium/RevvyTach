@@ -47,23 +47,23 @@ struct LanguageSettingsView: View {
                 HStack(spacing: DesignTokens.Spacing.medium) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: DesignTokens.Icons.standard))
-                        .foregroundColor(.blue)
+                        .foregroundColor(SettingsColors.info)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("general.language.restart_note".localized)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SettingsColors.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(DesignTokens.Spacing.medium)
                 .background(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .fill(Color.blue.opacity(0.05))
+                        .fill(SettingsColors.info.opacity(0.05))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                        .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(SettingsColors.info.opacity(0.2), lineWidth: 1)
                 )
 
                 Spacer()
@@ -129,7 +129,7 @@ struct LanguageRow: View {
 
                     Text(language.englishName)
                         .font(DesignTokens.Typography.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SettingsColors.secondary)
                 }
 
                 Spacer()
@@ -143,12 +143,12 @@ struct LanguageRow: View {
             .padding(DesignTokens.Spacing.medium)
             .background(
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
-                    .fill(isSelected ? Color.accentColor.opacity(0.08) : DesignTokens.Colors.cardBackground)
+                    .fill(isSelected ? Color.accentColor.opacity(0.08) : SettingsColors.cardBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
                     .strokeBorder(
-                        isSelected ? Color.accentColor.opacity(0.3) : DesignTokens.Colors.cardBorder,
+                        isSelected ? Color.accentColor.opacity(0.3) : SettingsColors.border,
                         lineWidth: 1
                     )
             )
