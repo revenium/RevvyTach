@@ -26,7 +26,7 @@ struct SettingsHeader: View {
                 HStack(spacing: Spacing.md) {
                     Image(systemName: icon)
                         .font(.system(size: 24))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
 
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text(title)

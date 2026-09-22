@@ -131,7 +131,7 @@ struct ProviderAccountSettingsView: View {
             HStack(spacing: DesignTokens.Spacing.medium) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 22))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.name)
                         .font(DesignTokens.Typography.sectionTitle)

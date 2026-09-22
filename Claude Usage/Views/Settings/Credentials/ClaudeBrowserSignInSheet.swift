@@ -524,7 +524,7 @@ struct SelectOrgStep: View {
                                 Circle()
                                     .strokeBorder(
                                         isSelected
-                                            ? Color.accentColor
+                                            ? SettingsColors.accentText
                                             : Color.secondary.opacity(0.3),
                                         lineWidth: 1.5
                                     )
@@ -558,7 +558,7 @@ struct SelectOrgStep: View {
                             if isSelected {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                             }
                         }
                         .padding(10)
@@ -659,7 +659,7 @@ struct ConfirmStep: View {
                 HStack(spacing: 10) {
                     Image(systemName: "key")
                         .font(.system(size: 14))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -678,7 +678,7 @@ struct ConfirmStep: View {
                     HStack(spacing: 10) {
                         Image(systemName: "building.2")
                             .font(.system(size: 14))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SettingsColors.accentText)
                             .frame(width: 20)
 
                         VStack(alignment: .leading, spacing: 3) {

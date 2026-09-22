@@ -432,7 +432,7 @@ struct APISelectOrgStep: View {
                                 Circle()
                                     .strokeBorder(
                                         wizardState.selectedOrgId == org.id
-                                            ? Color.accentColor
+                                            ? SettingsColors.accentText
                                             : Color.secondary.opacity(0.3),
                                         lineWidth: 1.5
                                     )
@@ -460,7 +460,7 @@ struct APISelectOrgStep: View {
                             if wizardState.selectedOrgId == org.id {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                             }
                         }
                         .padding(10)
@@ -552,7 +552,7 @@ struct APIConfirmStep: View {
                 HStack(spacing: 10) {
                     Image(systemName: "key")
                         .font(.system(size: 14))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -571,7 +571,7 @@ struct APIConfirmStep: View {
                     HStack(spacing: 10) {
                         Image(systemName: "building.2")
                             .font(.system(size: 14))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SettingsColors.accentText)
                             .frame(width: 20)
 
                         VStack(alignment: .leading, spacing: 3) {

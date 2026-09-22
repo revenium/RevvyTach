@@ -56,7 +56,7 @@ struct GeneralSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "clock")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(SettingsColors.primary)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
 
                                 Text(String(format: "general.refresh_seconds".localized, Int(profile.refreshInterval)))
@@ -462,7 +462,7 @@ struct NotificationSoundPicker: View {
         HStack(spacing: DesignTokens.Spacing.iconText) {
             Image(systemName: "speaker.wave.2")
                 .font(.system(size: DesignTokens.Icons.standard))
-                .foregroundColor(SettingsColors.primary)
+                .foregroundColor(SettingsColors.accentText)
                 .frame(width: DesignTokens.Spacing.iconFrame)
 
             Text("notifications.sound".localized)

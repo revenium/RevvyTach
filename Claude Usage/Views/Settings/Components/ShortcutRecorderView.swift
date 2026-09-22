@@ -26,7 +26,7 @@ struct ShortcutRecorderView: View {
                     if isRecording {
                         Text("shortcuts.recording".localized)
                             .font(DesignTokens.Typography.body)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SettingsColors.accentText)
                     } else if let combo = keyCombo {
                         Text(combo.displayString)
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -47,7 +47,7 @@ struct ShortcutRecorderView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.small)
                         .strokeBorder(
-                            isRecording ? Color.accentColor : SettingsColors.border,
+                            isRecording ? SettingsColors.accentText : SettingsColors.border,
                             lineWidth: isRecording ? 2 : 1
                         )
                 )

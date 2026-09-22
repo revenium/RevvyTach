@@ -1352,7 +1352,7 @@ struct SelectOrgStepSetup: View {
                             let isSelected = wizardState.selectedOrgId == org.uuid
                             HStack(spacing: 12) {
                                 Image(systemName: isSelected ? "circle.fill" : "circle")
-                                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                                    .foregroundColor(isSelected ? SettingsColors.accentText : .secondary)
                                     .font(.system(size: 14))
 
                                 VStack(alignment: .leading, spacing: 3) {

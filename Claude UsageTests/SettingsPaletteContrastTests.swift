@@ -73,6 +73,12 @@ final class SettingsPaletteContrastTests: XCTestCase {
                 let hue = tone.resolved(in: mode.appearance, increaseContrast: mode.increaseContrast)
                 assertText(hue, over: card, "\(tone) text on card", mode)
             }
+            assertText(
+                SettingsSurfaces.accentText(in: mode.appearance, increaseContrast: mode.increaseContrast),
+                over: card,
+                "accent text on card",
+                mode
+            )
         }
     }
 

@@ -49,7 +49,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "app.badge")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.current_version".localized)
                                     .font(DesignTokens.Typography.body)
@@ -70,7 +70,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "clock")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.last_check".localized)
                                     .font(DesignTokens.Typography.body)
@@ -100,7 +100,7 @@ struct UpdatesSettingsView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
                                 Text("settings.updates.automatic".localized)
                                     .font(DesignTokens.Typography.body)

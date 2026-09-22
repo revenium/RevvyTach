@@ -137,7 +137,7 @@ struct LanguageRow: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                 }
             }
             .padding(DesignTokens.Spacing.medium)

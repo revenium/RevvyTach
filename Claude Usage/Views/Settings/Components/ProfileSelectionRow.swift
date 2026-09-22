@@ -23,7 +23,7 @@ struct ProfileSelectionRow: View {
                 // Checkbox
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundColor(isSelected ? .accentColor : SettingsColors.secondary)
+                    .foregroundColor(isSelected ? SettingsColors.accentText : SettingsColors.secondary)
 
                 // Profile name (truncated)
                 Text(profile.name)

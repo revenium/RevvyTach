@@ -108,7 +108,7 @@ struct ShortcutsSettingsView: View {
             HStack(spacing: DesignTokens.Spacing.iconText) {
                 Image(systemName: icon)
                     .font(.system(size: DesignTokens.Icons.standard))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                     .frame(width: DesignTokens.Spacing.iconFrame)
 
                 VStack(alignment: .leading, spacing: 2) {

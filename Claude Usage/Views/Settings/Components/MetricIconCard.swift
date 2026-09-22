@@ -19,7 +19,7 @@ struct MetricIconCard: View {
             HStack {
                 Image(systemName: metricType.icon)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SettingsColors.primary)
+                    .foregroundColor(SettingsColors.accentText)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {

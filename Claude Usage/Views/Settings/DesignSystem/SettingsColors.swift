@@ -34,6 +34,11 @@ enum SettingsColors {
     /// better on the accent the app is built with.
     static let textOnAccent = SettingsTone.accent.textOn
 
+    /// The accent used AS text or a meaningful icon on a card: pushed toward
+    /// ink until it clears 4.5:1 (the brand orange alone is 2.3:1 on the
+    /// light card). Fills keep `primary`.
+    static let accentText = Color(nsColor: SettingsSurfaces.dynamic(SettingsSurfaces.accentText))
+
     /// Secondary text. Not the system secondary label, which is only
     /// 3.95:1 on a white window; see `SettingsSurfaces.secondaryLabel`.
     static let secondary = SettingsTone.secondary.color
@@ -273,6 +278,10 @@ nonisolated enum SettingsSurfaces {
             candidate = towardInk(resolved(hue, in: appearance), by: fraction, in: appearance)
         }
         return candidate
+    }
+
+    static func accentText(in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {
+        legible(.controlAccentColor, in: appearance, increaseContrast: increaseContrast)
     }
 
     static func textOn(fill: NSColor, in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {

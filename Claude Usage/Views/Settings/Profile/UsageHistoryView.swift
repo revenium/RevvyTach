@@ -361,7 +361,7 @@ struct UsageHistoryView: View {
                     Text("history.export.title".localized)
                         .font(.system(size: 12))
                 }
-                .foregroundColor(.accentColor)
+                .foregroundColor(SettingsColors.accentText)
             }
             .menuStyle(.borderlessButton)
             .accessibilityIdentifier(

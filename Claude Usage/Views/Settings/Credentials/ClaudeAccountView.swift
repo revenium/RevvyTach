@@ -900,7 +900,7 @@ struct ClaudeAccountView: View {
                 HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
                     Text("1.")
                         .font(DesignTokens.Typography.bodyMedium)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20, alignment: .trailing)
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
                         Text("cli.setup_step1".localized)
@@ -939,7 +939,7 @@ struct ClaudeAccountView: View {
                 HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
                     Text("2.")
                         .font(DesignTokens.Typography.bodyMedium)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20, alignment: .trailing)
                     Text("cli.setup_step2".localized)
                         .font(DesignTokens.Typography.body)
@@ -950,7 +950,7 @@ struct ClaudeAccountView: View {
                 HStack(alignment: .top, spacing: DesignTokens.Spacing.small) {
                     Text("3.")
                         .font(DesignTokens.Typography.bodyMedium)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: 20, alignment: .trailing)
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
                         Text("cli.setup_step3".localized)
@@ -1103,7 +1103,7 @@ struct ClaudeAccountView: View {
                         HStack(spacing: DesignTokens.Spacing.iconText) {
                             Image(systemName: "key")
                                 .font(.system(size: DesignTokens.Icons.standard))
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(SettingsColors.accentText)
                                 .frame(width: DesignTokens.Spacing.iconFrame)
 
                             VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
@@ -1124,7 +1124,7 @@ struct ClaudeAccountView: View {
                         HStack(spacing: DesignTokens.Spacing.iconText) {
                             Image(systemName: "person.badge.key")
                                 .font(.system(size: DesignTokens.Icons.standard))
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(SettingsColors.accentText)
                                 .frame(width: DesignTokens.Spacing.iconFrame)
 
                             VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
@@ -1142,7 +1142,7 @@ struct ClaudeAccountView: View {
                             HStack(spacing: DesignTokens.Spacing.iconText) {
                                 Image(systemName: "checkmark.shield")
                                     .font(.system(size: DesignTokens.Icons.standard))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(SettingsColors.accentText)
                                     .frame(width: DesignTokens.Spacing.iconFrame)
 
                                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.extraSmall) {
@@ -1294,7 +1294,7 @@ struct ClaudeAccountView: View {
                 HStack(spacing: DesignTokens.Spacing.small) {
                     Image(systemName: "folder")
                         .font(.system(size: DesignTokens.Icons.standard))
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(SettingsColors.accentText)
                         .frame(width: DesignTokens.Spacing.iconFrame)
 
                     if let path = skillsSourcePath {
@@ -1355,10 +1355,10 @@ struct ClaudeAccountView: View {
             HStack(spacing: DesignTokens.Spacing.small) {
                 Image(systemName: "book.pages")
                     .font(.system(size: DesignTokens.Icons.standard))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                 Text("cli.guide_button".localized)
                     .font(DesignTokens.Typography.body)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SettingsColors.accentText)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: DesignTokens.Icons.small))

@@ -51,7 +51,7 @@ private struct IconStyleCard: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .strokeBorder(
-                                isSelected ? SettingsColors.primary : SettingsColors.border,
+                                isSelected ? SettingsColors.accentText : SettingsColors.border,
                                 lineWidth: isSelected ? 2 : 1
                             )
                     )
@@ -61,7 +61,7 @@ private struct IconStyleCard: View {
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(SettingsColors.primary)
+                                .foregroundStyle(SettingsColors.accentText)
                                 .padding(3)
                                 .accessibilityHidden(true)
                         }

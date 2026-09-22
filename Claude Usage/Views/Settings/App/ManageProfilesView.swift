@@ -731,7 +731,7 @@ struct ManageProfilesView: View {
                         ? "largecircle.fill.circle"
                         : "circle"
                 )
-                .foregroundColor(isSelected ? .accentColor : SettingsColors.secondary)
+                .foregroundColor(isSelected ? SettingsColors.accentText : SettingsColors.secondary)
                 Text(title)
                     .font(DesignTokens.Typography.body)
                     .foregroundColor(.primary)
@@ -887,7 +887,7 @@ struct ProfileRow: View {
             // Profile Icon
             Image(systemName: profileIcon)
                 .font(.system(size: 24))
-                .foregroundColor(profileManager.isActive(profile) ? .accentColor : .secondary)
+                .foregroundColor(profileManager.isActive(profile) ? SettingsColors.accentText : SettingsColors.secondary)
                 .accessibilityLabel(profileAccessibilityLabel)
 
             VStack(alignment: .leading, spacing: 4) {
