@@ -276,7 +276,11 @@ nonisolated enum SettingsSurfaces {
     /// already effectively white there, so it is the fill, not the text,
     /// that has to make room for 4.5:1: starting from the intended lift
     /// (10%/14% toward ink, i.e. toward white in dark mode), step it DOWN
-    /// in 2% increments until `.labelColor` clears 4.5:1 against it. A
+    /// in 2% increments until `.labelColor` clears 4.5:1 against it.
+    /// `.labelColor` is ~85% alpha, not opaque, so the check composites it
+    /// over the candidate first — `WCAGContrast.ratio` ignores alpha, and
+    /// comparing the raw (effectively opaque-white) component values
+    /// overstates the contrast a viewer actually sees. A
     /// `windowBackgroundColor` that resolves lighter (as it does on some
     /// macOS releases) leaves less room in the lift, not less contrast.
     /// Light mode keeps Apple's white button on a gray card.
@@ -284,9 +288,12 @@ nonisolated enum SettingsSurfaces {
         guard isDark(appearance) else { return windowBackground(in: appearance) }
         let card = card(in: appearance, increaseContrast: increaseContrast)
         let label = resolved(.labelColor, in: appearance)
+        func clears(_ candidate: NSColor) -> Bool {
+            WCAGContrast.ratio(WCAGContrast.composite(label, over: candidate), candidate) >= WCAGContrast.textMinimum
+        }
         var lift: CGFloat = increaseContrast ? 0.14 : 0.10
         var candidate = towardInk(card, by: lift, in: appearance)
-        while WCAGContrast.ratio(label, candidate) < WCAGContrast.textMinimum, lift > 0 {
+        while !clears(candidate), lift > 0 {
             lift -= 0.02
             candidate = towardInk(card, by: lift, in: appearance)
         }
