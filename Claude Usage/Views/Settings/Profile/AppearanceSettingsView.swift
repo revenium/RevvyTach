@@ -543,10 +543,14 @@ struct MultiProfileModeWarningCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 10))
+                        .foregroundColor(SettingsColors.warning)
+                    // Primary label color, not the warning hue: this button
+                    // sits on the card's own warning-tinted fill, and
+                    // warning-on-warning-tint is not proven to clear 4.5:1.
                     Text("appearance.disable_multiprofile".localized)
                         .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.primary)
                 }
-                .foregroundColor(SettingsColors.warning)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(

@@ -59,6 +59,10 @@ enum SettingsColors {
     static let buttonFill = Color(nsColor: SettingsSurfaces.dynamic(SettingsSurfaces.buttonFill))
     static let buttonBorder = Color(nsColor: SettingsSurfaces.dynamic(SettingsSurfaces.buttonBorder))
 
+    /// Label/icon color for a plain button: `.labelColor` proven against
+    /// `buttonFill` rather than assumed safe there.
+    static let buttonText = Color(nsColor: SettingsSurfaces.dynamic(SettingsSurfaces.buttonText))
+
     /// Outline for an accent-filled button; visible only where the accent
     /// itself does not clear 3:1 against the card.
     static let accentButtonBorder = Color(nsColor: SettingsSurfaces.dynamic(SettingsSurfaces.accentButtonBorder))
@@ -183,17 +187,37 @@ enum SettingsTone: CaseIterable {
 /// contrast tests can evaluate the Increase Contrast branch without
 /// flipping the machine's accessibility settings.
 nonisolated enum SettingsSurfaces {
-    /// Wraps a resolver in a dynamic `NSColor` that re-reads Increase
-    /// Contrast every time AppKit resolves it.
+    /// The appearance names AppKit substitutes when Increase Contrast is
+    /// on — never assigned directly to a view, only returned by
+    /// `NSAppearance.bestMatch` once the system has already swapped in
+    /// the high-contrast variant of whatever appearance was active.
+    private static let highContrastNames: [NSAppearance.Name] = [
+        .accessibilityHighContrastAqua,
+        .accessibilityHighContrastDarkAqua,
+        .accessibilityHighContrastVibrantLight,
+        .accessibilityHighContrastVibrantDark,
+    ]
+
+    /// Wraps a resolver in a dynamic `NSColor`. Increase Contrast is read
+    /// from the appearance AppKit is actually resolving against, not from
+    /// `NSWorkspace` at call time: toggling the setting swaps every
+    /// window's effective appearance to its `accessibilityHighContrast*`
+    /// counterpart, which is itself the cache key AppKit re-resolves
+    /// dynamic colors against, so a stale cached value can never outlive
+    /// the appearance change that would otherwise invalidate it.
     static func dynamic(
         _ resolve: @escaping (NSAppearance, Bool) -> NSColor
     ) -> NSColor {
         NSColor(name: nil) { appearance in
-            resolve(
-                appearance,
-                NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-            )
+            resolve(appearance, increaseContrast(of: appearance))
         }
+    }
+
+    static func increaseContrast(of appearance: NSAppearance) -> Bool {
+        guard let best = appearance.bestMatch(from: [.aqua, .darkAqua] + highContrastNames) else {
+            return false
+        }
+        return highContrastNames.contains(best)
     }
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
@@ -221,10 +245,26 @@ nonisolated enum SettingsSurfaces {
     }
 
     /// The system secondary label is black at 50% in light mode, which is
-    /// only 3.95:1 on white; this one is proven to clear 4.5:1 on the window
-    /// and on cards in both appearances.
+    /// only 3.95:1 on white. Starting alpha is 0.58/0.70, stepped up in 2%
+    /// increments — the same search `legible` runs — until it clears 4.5:1
+    /// against both the window and the card: `windowBackgroundColor` itself
+    /// resolves to a different value across macOS releases, so a value
+    /// proven on one OS is not proven on all of them.
     static func secondaryLabel(in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {
-        ink(in: appearance).withAlphaComponent(increaseContrast ? 0.70 : 0.58)
+        let window = windowBackground(in: appearance)
+        let card = card(in: appearance, increaseContrast: increaseContrast)
+        func clears(_ candidate: NSColor) -> Bool {
+            [window, card].allSatisfy {
+                WCAGContrast.ratio(WCAGContrast.composite(candidate, over: $0), $0) >= WCAGContrast.textMinimum
+            }
+        }
+        var alpha: CGFloat = increaseContrast ? 0.70 : 0.58
+        var candidate = ink(in: appearance).withAlphaComponent(alpha)
+        while !clears(candidate), alpha < 1 {
+            alpha += 0.02
+            candidate = ink(in: appearance).withAlphaComponent(alpha)
+        }
+        return candidate
     }
 
     /// Dark mode lifts the button above the card; light mode keeps Apple's
@@ -234,6 +274,19 @@ nonisolated enum SettingsSurfaces {
             return towardInk(card(in: appearance, increaseContrast: increaseContrast), by: increaseContrast ? 0.14 : 0.10, in: appearance)
         }
         return windowBackground(in: appearance)
+    }
+
+    /// `.labelColor` pushed toward ink, same search as `legible`, until it
+    /// clears 4.5:1 against `buttonFill` — the system label color alone
+    /// falls just short against the raised dark-mode fill under Increase
+    /// Contrast on some macOS releases.
+    static func buttonText(in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {
+        legible(
+            .labelColor,
+            in: appearance,
+            increaseContrast: increaseContrast,
+            against: buttonFill(in: appearance, increaseContrast: increaseContrast)
+        )
     }
 
     static func buttonBorder(in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {
@@ -268,12 +321,18 @@ nonisolated enum SettingsSurfaces {
     }
 
     /// `hue` pushed toward ink, in 2% steps, until it clears 4.5:1 against
-    /// the card — so it can be used as text or an icon anywhere on a card.
-    static func legible(_ hue: NSColor, in appearance: NSAppearance, increaseContrast: Bool) -> NSColor {
-        let card = card(in: appearance, increaseContrast: increaseContrast)
+    /// `surface` (the card, unless a different surface is given) — so it
+    /// can be used as text or an icon anywhere on that surface.
+    static func legible(
+        _ hue: NSColor,
+        in appearance: NSAppearance,
+        increaseContrast: Bool,
+        against surface: NSColor? = nil
+    ) -> NSColor {
+        let surface = surface ?? card(in: appearance, increaseContrast: increaseContrast)
         var candidate = resolved(hue, in: appearance)
         var fraction: CGFloat = 0
-        while WCAGContrast.ratio(candidate, card) < WCAGContrast.textMinimum, fraction < 1 {
+        while WCAGContrast.ratio(candidate, surface) < WCAGContrast.textMinimum, fraction < 1 {
             fraction += 0.02
             candidate = towardInk(resolved(hue, in: appearance), by: fraction, in: appearance)
         }

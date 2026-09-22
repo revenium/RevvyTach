@@ -421,7 +421,7 @@ private extension ClaudeSignInSummaryAction.Style {
         case .primary:
             return SettingsColors.textOnAccent
         case .standard:
-            return .primary
+            return SettingsColors.buttonText
         case .destructive:
             return SettingsColors.textOnDestructive
         }

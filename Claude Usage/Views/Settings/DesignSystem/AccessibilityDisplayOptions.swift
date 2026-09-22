@@ -14,7 +14,6 @@ final class AccessibilityDisplayOptions: ObservableObject {
     static let shared = AccessibilityDisplayOptions()
 
     @Published private(set) var reduceTransparency: Bool
-    @Published private(set) var increaseContrast: Bool
     @Published private(set) var differentiateWithoutColor: Bool
 
     private let workspace: NSWorkspace
@@ -23,7 +22,6 @@ final class AccessibilityDisplayOptions: ObservableObject {
     init(workspace: NSWorkspace = .shared) {
         self.workspace = workspace
         reduceTransparency = workspace.accessibilityDisplayShouldReduceTransparency
-        increaseContrast = workspace.accessibilityDisplayShouldIncreaseContrast
         differentiateWithoutColor = workspace.accessibilityDisplayShouldDifferentiateWithoutColor
         observer = workspace.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
@@ -44,7 +42,6 @@ final class AccessibilityDisplayOptions: ObservableObject {
 
     func refresh() {
         reduceTransparency = workspace.accessibilityDisplayShouldReduceTransparency
-        increaseContrast = workspace.accessibilityDisplayShouldIncreaseContrast
         differentiateWithoutColor = workspace.accessibilityDisplayShouldDifferentiateWithoutColor
     }
 }

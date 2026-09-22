@@ -129,7 +129,7 @@ final class SettingsPaletteContrastTests: XCTestCase {
 
             let standardFill = SettingsSurfaces.buttonFill(in: appearance, increaseContrast: contrast)
             assertText(
-                SettingsSurfaces.resolved(.labelColor, in: appearance),
+                SettingsSurfaces.buttonText(in: appearance, increaseContrast: contrast),
                 over: standardFill,
                 "standard button text",
                 mode

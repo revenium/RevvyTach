@@ -606,9 +606,6 @@ struct SettingsView: View {
             .background(SettingsColors.windowBackground)
         }
         .frame(minWidth: 720, maxWidth: 720, maxHeight: .infinity)
-        // The palette re-reads Increase Contrast each time a color is
-        // resolved; recreating the tree is what forces that re-resolution.
-        .id(displayOptions.increaseContrast)
         .onChange(of: profileManager.activeProfile?.providerID) {
             _, providerID in
             navigation.activeProviderDidChange(

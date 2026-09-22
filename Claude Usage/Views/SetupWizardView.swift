@@ -1375,11 +1375,11 @@ struct SelectOrgStepSetup: View {
                             .padding(12)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                                    .fill(isSelected ? SettingsColors.accentText.opacity(0.1) : Color.clear)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected ? Color.accentColor : SettingsColors.neutral.opacity(0.3), lineWidth: 1)
+                                    .stroke(isSelected ? SettingsColors.accentText : SettingsColors.neutral.opacity(0.3), lineWidth: 1)
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
