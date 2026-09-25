@@ -45,3 +45,28 @@ nonisolated struct ProfileChromeSessionKeySource:
         ChromeProfilePathPolicy.isValidDirectoryName(directoryName)
     }
 }
+
+struct ChromeSessionKeyOriginState {
+    private(set) var source: ProfileChromeSessionKeySource?
+    private var sessionKey: String?
+
+    mutating func adopt(
+        _ source: ProfileChromeSessionKeySource,
+        for sessionKey: String
+    ) {
+        self.source = source
+        self.sessionKey = sessionKey
+    }
+
+    mutating func retire(
+        currentKey: String,
+        clearKey: Bool,
+        clearChromeContext: Bool
+    ) {
+        guard clearKey || clearChromeContext || sessionKey != currentKey else {
+            return
+        }
+        source = nil
+        sessionKey = nil
+    }
+}
