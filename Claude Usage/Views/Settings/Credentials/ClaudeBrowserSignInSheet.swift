@@ -41,7 +41,56 @@ struct WizardState {
     /// The Chrome profile the key in this attempt was actually read from.
     /// Set only by a Read from Chrome, and dropped by every other way the key
     /// can change, so a hand-typed key never inherits a browser origin.
-    var chromeSessionKeySource: ProfileChromeSessionKeySource? = nil
+    var chromeSessionKeyOrigin = ChromeSessionKeyOriginState()
+    var chromeSessionKeySource: ProfileChromeSessionKeySource? {
+        chromeSessionKeyOrigin.source
+    }
+
+    mutating func adoptSessionKeyReadFromChrome(
+        _ key: String,
+        from chromeProfile: LaunchedChromeProfile
+    ) {
+        sessionKey = key
+        retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            rearmChromeConfirmation: true
+        )
+        chromeSessionKeyOrigin.adopt(
+            ProfileChromeSessionKeySource(
+                directoryName: chromeProfile.directoryName,
+                label: chromeProfile.label
+            ),
+            for: key
+        )
+    }
+
+    mutating func prepareForConnectionTest() {
+        retireAttempt(clearKey: false, clearChromeContext: false)
+    }
+
+    mutating func retireAttempt(
+        clearKey: Bool,
+        clearChromeContext: Bool = true,
+        rearmChromeConfirmation: Bool = false
+    ) {
+        attempt.invalidate()
+        validationState = .idle
+        testedOrganizations = []
+        selectedOrgId = nil
+        chromeSessionKeyOrigin.retire(
+            currentKey: sessionKey,
+            clearKey: clearKey,
+            clearChromeContext: clearChromeContext
+        )
+        if clearChromeContext {
+            launchedChromeProfileLabel = nil
+            hasConfirmedChromeContext = false
+        } else if rearmChromeConfirmation {
+            hasConfirmedChromeContext = false
+        }
+        if clearKey { sessionKey = "" }
+    }
 }
 
 enum PersonalUsageAttemptGate {
@@ -305,10 +354,7 @@ struct EnterKeyStep: View {
             return
         }
 
-        retireAttempt(
-            clearKey: false,
-            clearChromeContext: false
-        )
+        wizardState.prepareForConnectionTest()
         guard let target = capturedTargetIfStillCurrent() else { return }
         let generation = wizardState.attempt.generation
         let key = wizardState.sessionKey
@@ -402,18 +448,7 @@ struct EnterKeyStep: View {
         _ key: String,
         from chromeProfile: LaunchedChromeProfile
     ) {
-        wizardState.sessionKey = key
-        retireAttempt(
-            clearKey: false,
-            clearChromeContext: false,
-            rearmChromeConfirmation: true
-        )
-        // After the retire, which clears the origin for every other way a key
-        // can arrive. This is the one path that has an origin to record.
-        wizardState.chromeSessionKeySource = ProfileChromeSessionKeySource(
-            directoryName: chromeProfile.directoryName,
-            label: chromeProfile.label
-        )
+        wizardState.adoptSessionKeyReadFromChrome(key, from: chromeProfile)
         testConnection()
     }
 
@@ -429,21 +464,11 @@ struct EnterKeyStep: View {
         clearChromeContext: Bool = true,
         rearmChromeConfirmation: Bool = false
     ) {
-        wizardState.attempt.invalidate()
-        wizardState.validationState = .idle
-        wizardState.testedOrganizations = []
-        wizardState.selectedOrgId = nil
-        // Cleared unconditionally. Only the Chrome read re-records it, right
-        // after calling this, so a key that arrived any other way cannot keep
-        // the previous key's browser origin and be re-read from it later.
-        wizardState.chromeSessionKeySource = nil
-        if clearChromeContext {
-            wizardState.launchedChromeProfileLabel = nil
-            wizardState.hasConfirmedChromeContext = false
-        } else if rearmChromeConfirmation {
-            wizardState.hasConfirmedChromeContext = false
-        }
-        if clearKey { wizardState.sessionKey = "" }
+        wizardState.retireAttempt(
+            clearKey: clearKey,
+            clearChromeContext: clearChromeContext,
+            rearmChromeConfirmation: rearmChromeConfirmation
+        )
     }
 
     private func capturedTargetIfStillCurrent() -> Profile? {

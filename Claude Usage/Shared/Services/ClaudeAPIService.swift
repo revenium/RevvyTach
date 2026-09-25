@@ -699,6 +699,34 @@ class ClaudeAPIService: APIServiceProtocol {
         return organizations
     }
 
+    func organizationIDsForAutomaticChromePairing(
+        _ sessionKey: String
+    ) async throws -> Set<String> {
+        guard let data = await sessionKeyResponse(
+            at: "/organizations", sessionKey: sessionKey
+        ) else { throw URLError(.badServerResponse) }
+        return Set(try JSONDecoder().decode(
+            [AccountInfo].self, from: data
+        ).map(\.uuid))
+    }
+
+    private func sessionKeyResponse(
+        at path: String,
+        sessionKey: String
+    ) async -> Data? {
+        guard let url = try? URLBuilder(baseURL: baseURL)
+            .appendingPath(path).build() else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+            (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return data
+    }
+
     /// Fetches the organization ID for the authenticated user
     /// Uses stored org ID if available, otherwise fetches all orgs and auto-selects
     func fetchOrganizationId(sessionKey: String? = nil) async throws -> String {

@@ -565,7 +565,8 @@ final class ProviderUIDependencies {
         // secret behind without the metadata that describes it.
         try profileManager.updateProfileThrowing(
             profile,
-            acceptingSessionOnly: acceptSessionOnlyStorage
+            acceptingSessionOnly: acceptSessionOnlyStorage,
+            chromeSessionKeySource: chromeSessionKeySource
         )
         try await activateForCompletedSetup(profile.id)
         markSetupCompleted()

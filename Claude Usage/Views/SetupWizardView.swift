@@ -53,7 +53,10 @@ struct SetupWizardState {
     /// The Chrome profile the key in this attempt was actually read from.
     /// Set only by a Read from Chrome, and dropped by every other way the key
     /// can change, so a hand-typed key never inherits a browser origin.
-    var chromeSessionKeySource: ProfileChromeSessionKeySource? = nil
+    var chromeSessionKeyOrigin = ChromeSessionKeyOriginState()
+    var chromeSessionKeySource: ProfileChromeSessionKeySource? {
+        chromeSessionKeyOrigin.source
+    }
     var terminalDetectionStatus: ClaudeCodeDetectionStatus = .idle
     var detectedTerminalCredentials: String? = nil
     var detectedTerminalAccountName: String? = nil
@@ -63,6 +66,34 @@ struct SetupWizardState {
 }
 
 extension SetupWizardState {
+    mutating func adoptSessionKeyReadFromChrome(
+        _ key: String,
+        from chromeProfile: LaunchedChromeProfile
+    ) {
+        sessionKey = key
+        retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            clearTarget: false,
+            rearmChromeConfirmation: true
+        )
+        chromeSessionKeyOrigin.adopt(
+            ProfileChromeSessionKeySource(
+                directoryName: chromeProfile.directoryName,
+                label: chromeProfile.label
+            ),
+            for: key
+        )
+    }
+
+    mutating func prepareForConnectionTest() {
+        retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            clearTarget: false
+        )
+    }
+
     /// The one place a setup attempt is retired, so the transition is
     /// reachable from tests rather than trapped in a private method on a
     /// SwiftUI view.
@@ -70,9 +101,7 @@ extension SetupWizardState {
     /// `rearmChromeConfirmation` exists for the Chrome read: it keeps the
     /// launched profile label (so the step-4 account confirmation keeps
     /// rendering and keeps gating Save) while clearing the confirmation
-    /// itself, because the key just changed. Every pre-existing caller keeps
-    /// its behaviour: the parameter defaults to `false`, and the
-    /// `clearChromeContext` branch already clears the confirmation.
+    /// itself, because the key just changed.
     mutating func retireAttempt(
         clearKey: Bool,
         clearChromeContext: Bool = true,
@@ -83,10 +112,11 @@ extension SetupWizardState {
         validationState = .idle
         testedOrganizations = []
         selectedOrgId = nil
-        // Cleared unconditionally. Only the Chrome read re-records it, right
-        // after calling this, so a key that arrived any other way cannot keep
-        // the previous key's browser origin and be re-read from it later.
-        chromeSessionKeySource = nil
+        chromeSessionKeyOrigin.retire(
+            currentKey: sessionKey,
+            clearKey: clearKey,
+            clearChromeContext: clearChromeContext
+        )
         if clearTarget {
             claudeSetupTarget = nil
             targetProfileName = nil
@@ -1125,11 +1155,7 @@ struct EnterKeyStepSetup: View {
             return
         }
 
-        retireAttempt(
-            clearKey: false,
-            clearChromeContext: false,
-            clearTarget: false
-        )
+        wizardState.prepareForConnectionTest()
         if wizardState.claudeSetupTarget == nil {
             captureNewTarget()
         }
@@ -1217,19 +1243,7 @@ struct EnterKeyStepSetup: View {
         _ key: String,
         from chromeProfile: LaunchedChromeProfile
     ) {
-        wizardState.sessionKey = key
-        retireAttempt(
-            clearKey: false,
-            clearChromeContext: false,
-            clearTarget: false,
-            rearmChromeConfirmation: true
-        )
-        // After the retire, which clears the origin for every other way a key
-        // can arrive. This is the one path that has an origin to record.
-        wizardState.chromeSessionKeySource = ProfileChromeSessionKeySource(
-            directoryName: chromeProfile.directoryName,
-            label: chromeProfile.label
-        )
+        wizardState.adoptSessionKeyReadFromChrome(key, from: chromeProfile)
         testConnection()
     }
 

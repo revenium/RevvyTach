@@ -863,13 +863,24 @@ class ProfileManager: ObservableObject {
     /// unless secure storage and profile metadata have both been verified.
     func updateProfileThrowing(
         _ profile: Profile,
-        acceptingSessionOnly: Bool = false
+        acceptingSessionOnly: Bool = false,
+        chromeSessionKeySource: ChromeSessionKeySourceWrite = .unchanged
     ) throws {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else {
             throw ProfileStoreError.profileNotFound(profile.id)
         }
 
         let previous = profiles[index]
+        var profile = profile
+        switch chromeSessionKeySource {
+        case .unchanged:
+            profile.chromeSessionKeySource =
+                profile.claudeSessionKey == previous.claudeSessionKey
+                    ? previous.chromeSessionKeySource
+                    : nil
+        case .set(let source):
+            profile.chromeSessionKeySource = source
+        }
         let claudeSecretChanged = previous.claudeSessionKey != profile.claudeSessionKey
         let apiSecretChanged = previous.apiSessionKey != profile.apiSessionKey
         let cliSecretChanged = previous.cliCredentialsJSON != profile.cliCredentialsJSON
@@ -1866,7 +1877,10 @@ class ProfileManager: ObservableObject {
         }
         guard profile.chromeSessionKeySource != source else { return }
         profile.chromeSessionKeySource = source
-        try updateProfileThrowing(profile)
+        try updateProfileThrowing(
+            profile,
+            chromeSessionKeySource: .set(source)
+        )
     }
 
     /// Caches the organization the profile's CLI credential belongs to.

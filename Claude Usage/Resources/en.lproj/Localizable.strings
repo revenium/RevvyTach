@@ -1384,6 +1384,8 @@
 "claude_account.browser_sheet.title" = "Browser sign-in (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "Connect this profile to its claude.ai organization.";
 "claude_account.browser.sign_in_again" = "Sign in again…";
+"claude_account.browser.read_from_chrome_again" = "Read from Chrome again (%@)";
+"claude_account.browser.chrome_repair_failed" = "Couldn't restore the browser sign-in from Chrome. Check that this Chrome profile is signed in to the same claude.ai account, then try again.";
 "claude_account.browser.sign_in" = "Sign in to Claude.ai…";
 "claude_account.browser.missing_detail" = "Not linked — optional. Adds your organization's extra usage.";
 "claude_account.browser.detail" = "claude.ai · %@ · session key stored %@";

@@ -1366,6 +1366,8 @@
 "claude_account.browser_sheet.title" = "浏览器登录 (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "将此配置文件连接到 claude.ai 组织。";
 "claude_account.browser.sign_in_again" = "重新登录…";
+"claude_account.browser.read_from_chrome_again" = "再次从 Chrome 读取（%@）";
+"claude_account.browser.chrome_repair_failed" = "无法从 Chrome 恢复浏览器登录。请确认此 Chrome 个人资料已登录同一个 claude.ai 账号，然后重试。";
 "claude_account.browser.sign_in" = "登录 Claude.ai…";
 "claude_account.browser.missing_detail" = "未关联 — 可选项。可补充你所在组织的额外用量。";
 "claude_account.browser.detail" = "claude.ai · %@ · 会话密钥已于 %@ 存储";

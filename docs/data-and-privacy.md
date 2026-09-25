@@ -54,7 +54,7 @@ because the item's access control trusts that binary rather than this app.
 | `~/.claude-accounts/<name>/` | A Claude Code config directory, created only for profiles you explicitly link | Yes — the CLI's own |
 | `~/.claude-tokens/.last-account` | Name of the active Claude account directory | No |
 | `~/.claude-tokens/.last-codex-home` | Absolute path of the active Codex home | No |
-| `$TMPDIR/revvytach-chrome-<uuid>/` | A transient copy of one Chrome profile's cookie database, made only while **Read from Chrome** runs and deleted immediately afterwards | Yes — Chrome's own encrypted cookies; only the claude.ai session key is ever decrypted |
+| `$TMPDIR/revvytach-chrome-<uuid>/` | A transient copy of a Chrome profile's cookie database, made during manual **Read from Chrome** or automatic recovery after a saved browser sign-in is refused, then deleted immediately | Yes — Chrome's own encrypted cookies; only the claude.ai session key is ever decrypted |
 
 On first launch after the RevvyTach rename, the app imports settings from the pre-rename
 preferences domain (`HamedElfayome.Claude-Usage`) and copies the old `Claude Usage`
@@ -66,10 +66,11 @@ alongside, because an interrupted write on a large history file is not hypotheti
 fragments from interrupted writes are swept automatically, restricted to files this app owns.
 
 Nothing outside these paths is written. The one transient exception is the temporary
-cookie-database copy in the table above, which exists only while you run **Read from Chrome**
-and is deleted as soon as the read finishes; a leftover from a crash is swept at the next
-launch. The app does not edit your shell configuration, your `settings.json`, or any Codex
-file.
+cookie-database copy in the table above. Manual reads copy the Chrome profile you selected;
+automatic recovery can copy a previously remembered profile or each eligible unclaimed Chrome
+profile while checking for a match. Each copy is deleted as soon as its read finishes; a
+leftover from a crash is swept at the next launch. The app does not edit your shell
+configuration, your `settings.json`, or any Codex file.
 
 ### Chrome-assisted setup
 
@@ -78,11 +79,9 @@ file for profile labels and directory names only, so it can offer a profile pick
 profile opens that profile at Claude in Chrome so you can visually confirm the account. Opening
 a profile reads nothing else — no cookies, no login database, no history, no account identifiers.
 
-**Read from Chrome (optional, off until you press it).** On the session-key step, after you have
-opened a specific Chrome profile, a **Read from Chrome** button becomes available. It is never
-automatic: it does nothing until you press it and approve a macOS prompt, and it is scoped to
-the one profile you just opened. When you press it and continue past the consent notice,
-RevvyTach:
+**Manual Read from Chrome.** On the session-key step, after you have opened a specific Chrome
+profile, a **Read from Chrome** button becomes available. This setup action runs when you press
+it and continue past the consent notice; it is scoped to the profile you opened. RevvyTach:
 
 - makes a temporary private copy of that profile's cookie database in a per-run folder under
   your temporary directory, and looks for the `claude.ai` `sessionKey` cookie in it. Chrome keeps
@@ -91,31 +90,43 @@ RevvyTach:
   own encrypted form. Only the one session-key value is ever decrypted.
 - if — and only if — that cookie is present and encrypted, asks macOS for the "Chrome Safe
   Storage" key from your login keychain using the system Keychain API. macOS shows its own
-  password prompt, naming RevvyTach. **Approving it gives RevvyTach the key itself: the same
-  key that unlocks every cookie and every saved password in Chrome. macOS does not narrow it
-  to one cookie — only RevvyTach's own code does.** Click **Allow**, which is a one-time grant
-  that macOS will ask for again the next time you read. Do **not** click **Always Allow**: that
-  grant never expires and survives deleting RevvyTach. You can revoke it at any time in
+  password prompt if access requires one, naming RevvyTach. **Approving it gives RevvyTach the
+  key itself: the same key that unlocks every cookie and every saved password in Chrome.
+  macOS does not narrow it to one cookie — only RevvyTach's own code does.** Click **Allow**,
+  which is a one-time grant that macOS may ask for again on a later read. Do **not** click
+  **Always Allow**: that grant never expires and survives deleting RevvyTach. You can revoke it at any time in
   Keychain Access → login → "Chrome Safe Storage" → Access Control → remove RevvyTach.
 - deletes the temporary copy immediately — on success and on every error path. If the app is
   killed mid-read, the next launch sweeps any leftover copy.
 - fills the decrypted key into the same field you would otherwise paste into, then validates it
   the usual way. Nothing else from Chrome is read, and no other cookie or password is decrypted.
 
-If there is no usable claude.ai session key in that profile, **no password prompt is shown at
-all** — RevvyTach looks in the cookie copy first and only asks for the key once it knows there
-is something to decrypt. The same is true for an older, unencrypted cookie.
+If there is no usable claude.ai session key in a profile, **no password prompt is shown for that
+profile** — RevvyTach looks in the cookie copy first and only asks for the key once it knows
+there is something to decrypt. The same is true for an older, unencrypted cookie.
 
-If anything fails — you deny the prompt, the database is busy, the key isn't there or has
-expired, or the encryption format is one this version doesn't recognize — RevvyTach tells you
-plainly and asks you to paste the key manually. It never guesses.
+During manual setup, if anything fails — you deny the prompt, the database is busy, the key
+isn't there or has expired, or the encryption format is one this version doesn't recognize —
+RevvyTach tells you plainly and asks you to paste the key manually. It never guesses.
 
-**What is kept.** The session key is stored exactly as a manually pasted key is: in the
+**What is kept.** A manually read session key is stored exactly as a pasted key is: in the
 login Keychain once you finish setup, never in cleartext on disk. The "Chrome Safe Storage" key,
 the temporary database copy, and every other cookie are never stored, never logged, and never
 leave your machine. The decrypted session key is a normal in-memory string for as long as any
 pasted key would be; RevvyTach does not claim to scrub it from memory, only that it is never
 persisted in the clear and never written to logs or diagnostics.
+
+**Automatic recovery after a refused sign-in.** When claude.ai refuses a saved browser session
+key, RevvyTach can reread the Chrome profile previously remembered for that RevvyTach profile
+and retry usage with a renewed key. For a legacy profile with no remembered Chrome source, it
+can inspect each unclaimed Chrome profile's claude.ai session cookie and send that key to
+claude.ai's organizations endpoint to find the saved organization. This discovery saves a
+Chrome source and key only when exactly one profile matches a saved **personal** organization.
+Shared, team, and unknown-classification organizations are excluded from automatic pairing.
+These background reads do not require a separate press or consent notice for each candidate and
+may prompt for Chrome Safe Storage access. They use the same temporary-copy and single-cookie
+decryption limits described above. A recovered key is stored in the login Keychain. If recovery
+cannot establish a unique eligible match, the saved profile keeps its expired sign-in.
 
 ---
 
@@ -195,11 +206,12 @@ See [Codex subscription support](codex-subscriptions.md) for what is and isn't r
 - **No third-party services.** The only hosts contacted are the ones listed above.
 - **No credential exfiltration.** Credentials go to the provider that issued them, over HTTPS,
   and nowhere else.
-- **No silent browser access.** Chrome-assisted setup reads Chrome cookies only through the
-  optional **Read from Chrome** button, only for the `claude.ai` session key, only after your
-  explicit press and a macOS password prompt you approve, and only for the profile you opened.
-  It never reads login databases or saved passwords, and never uses remote debugging,
-  extensions, or browser automation. See "Chrome-assisted setup" above.
+- **Limited Chrome cookie access.** Manual **Read from Chrome** reads the profile you selected.
+  After a saved browser sign-in is refused, automatic recovery may read its remembered Chrome
+  profile or inspect unclaimed profiles to pair a legacy profile with a saved personal
+  organization. It decrypts only the `claude.ai` session key; it never reads login databases or
+  saved passwords, and never uses remote debugging, extensions, or browser automation. See
+  "Chrome-assisted setup" above.
 - **No account access beyond reading usage.** The app cannot send messages, spend credits, or
   redeem anything. Codex reset credits are display-only.
 

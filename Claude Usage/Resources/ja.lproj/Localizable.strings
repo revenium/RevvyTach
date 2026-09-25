@@ -1369,6 +1369,8 @@
 "claude_account.browser_sheet.title" = "ブラウザーサインイン (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "このプロファイルを claude.ai 組織に接続します。";
 "claude_account.browser.sign_in_again" = "再サインイン…";
+"claude_account.browser.read_from_chrome_again" = "Chrome から再度読み取る（%@）";
+"claude_account.browser.chrome_repair_failed" = "Chrome からブラウザのサインインを復元できませんでした。この Chrome プロファイルが同じ claude.ai アカウントにサインインしていることを確認して、もう一度お試しください。";
 "claude_account.browser.sign_in" = "Claude.ai にサインイン…";
 "claude_account.browser.missing_detail" = "未リンク — 任意です。組織の追加使用量を加えます。";
 "claude_account.browser.detail" = "claude.ai · %@ · セッションキーを %@ に保存";

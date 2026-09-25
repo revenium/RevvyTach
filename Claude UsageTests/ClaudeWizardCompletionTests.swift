@@ -3,6 +3,152 @@ import XCTest
 
 @MainActor
 final class ClaudeWizardCompletionTests: HostedAppTestCase {
+    func testSettingsChromeReadSurvivesConnectionTestAndSave() async throws {
+        let context = try await makeContext()
+        var state = WizardState(targetProfileID: context.profile.id)
+        state.adoptSessionKeyReadFromChrome(
+            "sk-ant-sid01-settings-chrome-session-key",
+            from: chromeProfile
+        )
+        state.prepareForConnectionTest()
+        state.prepareForConnectionTest()
+
+        var credentials = try context.manager.loadCredentials(
+            for: context.profile.id
+        )
+        credentials.claudeSessionKey = state.sessionKey
+        try context.manager.saveCredentials(
+            for: context.profile.id,
+            credentials: credentials,
+            browserCredentialSave: true,
+            chromeSessionKeySource: .set(state.chromeSessionKeySource)
+        )
+
+        context.manager.loadProfiles()
+        XCTAssertEqual(
+            context.manager.profiles.first?.chromeSessionKeySource?.directoryName,
+            chromeProfile.directoryName
+        )
+        XCTAssertEqual(
+            context.manager.profiles.first?.chromeSessionKeySource?.label,
+            chromeProfile.label
+        )
+    }
+
+    func testSettingsTypedKeyAfterChromeReadClearsOriginOnSave() async throws {
+        let context = try await makeContext()
+        var state = WizardState(targetProfileID: context.profile.id)
+        state.adoptSessionKeyReadFromChrome(
+            "sk-ant-sid01-settings-chrome-session-key",
+            from: chromeProfile
+        )
+        context.manager.updateChromeSessionKeySource(
+            state.chromeSessionKeySource,
+            for: context.profile.id
+        )
+        state.sessionKey = "sk-ant-sid01-settings-typed-session-key"
+        state.retireAttempt(clearKey: false, clearChromeContext: false)
+        state.prepareForConnectionTest()
+
+        var credentials = try context.manager.loadCredentials(
+            for: context.profile.id
+        )
+        credentials.claudeSessionKey = state.sessionKey
+        try context.manager.saveCredentials(
+            for: context.profile.id,
+            credentials: credentials,
+            browserCredentialSave: true,
+            chromeSessionKeySource: .set(state.chromeSessionKeySource)
+        )
+
+        context.manager.loadProfiles()
+        XCTAssertNil(context.manager.profiles.first?.chromeSessionKeySource)
+    }
+
+    func testSetupChromeReadSurvivesConnectionTestAndSave() async throws {
+        let context = try await makeContext()
+        var state = SetupWizardState()
+        state.claudeSetupTarget = .existing(context.profile.id)
+        state.adoptSessionKeyReadFromChrome(
+            "sk-ant-sid01-setup-chrome-session-key",
+            from: chromeProfile
+        )
+        state.prepareForConnectionTest()
+        state.prepareForConnectionTest()
+
+        let completed = try await context.dependencies.completeClaudeManualSetup(
+            sessionKey: state.sessionKey,
+            organizationID: "browser-org",
+            autoStartSessionEnabled: false,
+            target: .existing(context.profile.id),
+            chromeSessionKeySource: .set(state.chromeSessionKeySource)
+        )
+
+        XCTAssertEqual(
+            completed.chromeSessionKeySource?.directoryName,
+            chromeProfile.directoryName
+        )
+        XCTAssertEqual(
+            context.manager.profiles.first?.chromeSessionKeySource,
+            completed.chromeSessionKeySource
+        )
+    }
+
+    func testSetupTypedKeyAfterChromeReadClearsOriginOnSave() async throws {
+        let context = try await makeContext()
+        var state = SetupWizardState()
+        state.claudeSetupTarget = .existing(context.profile.id)
+        state.adoptSessionKeyReadFromChrome(
+            "sk-ant-sid01-setup-chrome-session-key",
+            from: chromeProfile
+        )
+        context.manager.updateChromeSessionKeySource(
+            state.chromeSessionKeySource,
+            for: context.profile.id
+        )
+        state.sessionKey = "sk-ant-sid01-setup-typed-session-key"
+        state.retireAttempt(
+            clearKey: false,
+            clearChromeContext: false,
+            clearTarget: false
+        )
+        state.prepareForConnectionTest()
+
+        let completed = try await context.dependencies.completeClaudeManualSetup(
+            sessionKey: state.sessionKey,
+            organizationID: "browser-org",
+            autoStartSessionEnabled: false,
+            target: .existing(context.profile.id),
+            chromeSessionKeySource: .set(state.chromeSessionKeySource)
+        )
+
+        XCTAssertNil(completed.chromeSessionKeySource)
+        XCTAssertNil(context.manager.profiles.first?.chromeSessionKeySource)
+    }
+
+    func testStaleMetadataUpdatePreservesNewChromeOrigin() async throws {
+        let context = try await makeContext()
+        var staleProfile = try XCTUnwrap(context.manager.profiles.first)
+        let source = ProfileChromeSessionKeySource(
+            directoryName: chromeProfile.directoryName,
+            label: chromeProfile.label
+        )
+        context.manager.updateChromeSessionKeySource(
+            source,
+            for: context.profile.id
+        )
+
+        staleProfile.name = "Renamed Claude"
+        try context.manager.updateProfileThrowing(staleProfile)
+        context.manager.loadProfiles()
+
+        XCTAssertEqual(context.manager.profiles.first?.name, "Renamed Claude")
+        XCTAssertEqual(
+            context.manager.profiles.first?.chromeSessionKeySource,
+            source
+        )
+    }
+
     func testCompletionWithLinkChosenSavesBothSignIns() async throws {
         let context = try await makeContext()
 
@@ -167,6 +313,13 @@ final class ClaudeWizardCompletionTests: HostedAppTestCase {
 
     private var validTerminalLogin: String {
         #"{"claudeAiOauth":{"accessToken":"terminal-token"}}"#
+    }
+
+    private var chromeProfile: LaunchedChromeProfile {
+        LaunchedChromeProfile(
+            label: "Work — Profile 19",
+            directoryName: "Profile 19"
+        )
     }
 
     private func makeContext() async throws -> Context {

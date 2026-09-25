@@ -1349,6 +1349,8 @@
 "claude_account.browser_sheet.title" = "Connexion navigateur (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "Reliez ce profil à son organisation claude.ai.";
 "claude_account.browser.sign_in_again" = "Se reconnecter…";
+"claude_account.browser.read_from_chrome_again" = "Relire depuis Chrome (%@)";
+"claude_account.browser.chrome_repair_failed" = "Impossible de rétablir la connexion au navigateur depuis Chrome. Vérifiez que ce profil Chrome est connecté au même compte claude.ai, puis réessayez.";
 "claude_account.browser.sign_in" = "Se connecter à Claude.ai…";
 "claude_account.browser.missing_detail" = "Non liée — facultative. Ajoute l'utilisation supplémentaire de votre organisation.";
 "claude_account.browser.detail" = "claude.ai · %@ · clé de session stockée %@";

@@ -112,6 +112,136 @@ struct ClaudeBrowserCredentialDetail: Equatable {
     }
 }
 
+enum ClaudeBrowserRepairAction: Equatable {
+    case signIn
+    case signInAgain
+    case readFromChrome(ProfileChromeSessionKeySource)
+
+    static func forProfile(
+        _ profile: Profile,
+        health: ClaudeBrowserSummaryHealth
+    ) -> Self {
+        guard profile.hasClaudeAI else { return .signIn }
+        guard health == .needsAttention,
+              let source = profile.chromeSessionKeySource,
+              source.isUsable else { return .signInAgain }
+        return .readFromChrome(source)
+    }
+}
+
+struct ClaudeBrowserChromeRepair {
+    struct Snapshot: Equatable {
+        let profileID: UUID
+        let sessionKey: String
+        let organizationID: String
+        let source: ProfileChromeSessionKeySource
+    }
+
+    enum Outcome: Equatable {
+        case repaired
+        case unavailable
+        case readFailed
+        case validationFailed
+        case organizationMismatch
+        case superseded
+        case saveFailed
+    }
+
+    let readSessionKey: @Sendable (String) throws -> String
+    let testSessionKey: (String) async throws -> [String]
+    let currentSnapshot: (UUID) throws -> Snapshot?
+    let saveSessionKey: (UUID, String, ProfileChromeSessionKeySource) throws -> Void
+
+    func repair(_ expected: Snapshot) async -> Outcome {
+        guard expected.source.isUsable else { return .unavailable }
+        do {
+            guard try currentSnapshot(expected.profileID) == expected else {
+                return .superseded
+            }
+        } catch {
+            return .saveFailed
+        }
+
+        let read: Result<String, Error> = await withCheckedContinuation {
+            continuation in
+            let reader = readSessionKey
+            let directoryName = expected.source.directoryName
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: Result {
+                    try reader(directoryName)
+                })
+            }
+        }
+        guard let candidate = try? read.get() else { return .readFailed }
+
+        let organizations: [String]
+        do {
+            organizations = try await testSessionKey(candidate)
+        } catch {
+            return .validationFailed
+        }
+        guard organizations.contains(expected.organizationID) else {
+            return .organizationMismatch
+        }
+
+        do {
+            guard try currentSnapshot(expected.profileID) == expected else {
+                return .superseded
+            }
+            try saveSessionKey(
+                expected.profileID,
+                candidate,
+                expected.source
+            )
+            return .repaired
+        } catch {
+            return .saveFailed
+        }
+    }
+
+    static let live = Self(
+        readSessionKey: { directoryName in
+            try ChromeCookieSessionKeyReader().readSessionKey(
+                profileDirectoryName: directoryName
+            )
+        },
+        testSessionKey: { key in
+            try await ClaudeAPIService().testSessionKey(key).map(\.uuid)
+        },
+        currentSnapshot: { profileID in
+            guard let profile = ProfileManager.shared.profiles.first(where: {
+                $0.id == profileID && $0.providerID == .claude
+            }),
+            let source = profile.chromeSessionKeySource else { return nil }
+            let credentials = try ProfileManager.shared.loadCredentials(
+                for: profileID
+            )
+            guard let key = credentials.claudeSessionKey,
+                  let organizationID = credentials.organizationId else {
+                return nil
+            }
+            return Snapshot(
+                profileID: profileID,
+                sessionKey: key,
+                organizationID: organizationID,
+                source: source
+            )
+        },
+        saveSessionKey: { profileID, key, source in
+            var credentials = try ProfileManager.shared.loadCredentials(
+                for: profileID
+            )
+            credentials.claudeSessionKey = key
+            try ProfileManager.shared.saveCredentials(
+                for: profileID,
+                credentials: credentials,
+                browserCredentialSave: true,
+                chromeSessionKeySource: .set(source)
+            )
+        }
+    )
+}
+
 struct ClaudeAccountView: View {
     @StateObject private var profileManager = ProfileManager.shared
     /// The menu bar's own attention verdict for each profile. Read rather
@@ -140,6 +270,8 @@ struct ClaudeAccountView: View {
     @State private var copiedToClipboard = false
     @State private var copiedShellSnippet = false
     @State private var browserSheetTarget: ClaudeAccountSheetTarget?
+    @State private var browserRepairInProgressFor: UUID?
+    @State private var browserRepairError: String?
     @State private var terminalSheetTarget: ClaudeAccountSheetTarget?
     @State private var linkConfirmationTargetID: UUID?
     @State private var unlinkConfirmationTargetID: UUID?
@@ -167,6 +299,9 @@ struct ClaudeAccountView: View {
                     ) ?? .none
                     let terminalActions =
                         ClaudeTerminalAccountActions.forProfile(profile)
+                    let browserHealth = Self.browserSummaryHealth(
+                        attention: attentionStore.credential(for: profile.id)
+                    )
                     ClaudeSignInSummaryView(
                         state: setupState,
                         browserDetail: Self.browserDetail(profile),
@@ -174,18 +309,9 @@ struct ClaudeAccountView: View {
                             profile,
                             setupState: setupState
                         ),
-                        browserAction: ClaudeSignInSummaryAction(
-                            profile.hasClaudeAI
-                                ? "claude_account.browser.sign_in_again".localized
-                                : "claude_account.browser.sign_in".localized,
-                            // Never destructive-styled. A terminal-only
-                            // profile is complete; a red button on the
-                            // browser row would be telling someone to fix
-                            // something that works.
-                            style: .standard,
-                            action: {
-                                browserSheetTarget = .init(id: profile.id)
-                            }
+                        browserAction: browserAction(
+                            for: profile,
+                            health: browserHealth
                         ),
                         terminalAction: ClaudeSignInSummaryAction(
                             terminalActions.primary == .resync
@@ -204,12 +330,40 @@ struct ClaudeAccountView: View {
                             }
                         ),
                         terminalHealth: Self.terminalSummaryHealth(profile),
-                        browserHealth: Self.browserSummaryHealth(
-                            attention: attentionStore.credential(
-                                for: profile.id
-                            )
-                        )
+                        browserHealth: browserHealth
                     )
+
+                    if case .readFromChrome(let source) =
+                        ClaudeBrowserRepairAction.forProfile(
+                            profile,
+                            health: browserHealth
+                        ) {
+                        HStack {
+                            Spacer()
+                            Button(
+                                browserRepairInProgressFor == profile.id
+                                    ? "chrome_assisted.reading".localized
+                                    : String(
+                                        format: "claude_account.browser.read_from_chrome_again"
+                                            .localized,
+                                        source.label
+                                    )
+                            ) {
+                                repairBrowserSignIn(profile: profile, source: source)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(browserRepairInProgressFor == profile.id)
+                        }
+                    }
+
+                    if let browserRepairError {
+                        SettingsStatusBanner(
+                            tone: .error,
+                            icon: "exclamationmark.triangle.fill"
+                        ) {
+                            Text(browserRepairError)
+                        }
+                    }
 
                     if Self.showsBrowserCredentialNotSavedWarning(
                         profileID: profile.id,
@@ -280,6 +434,7 @@ struct ClaudeAccountView: View {
             skillsSourcePath = SharedDataStore.shared.loadSkillsSourceDirectory()
         }
         .onChange(of: profileManager.activeClaudeProfile?.id) { _, _ in
+            browserRepairError = nil
             if let terminalTarget = terminalSheetTarget {
                 loadCLIAccountInfo(profileID: terminalTarget.id)
                 return
@@ -538,6 +693,61 @@ struct ClaudeAccountView: View {
         attention: MenuBarAttentionSignal.Credential?
     ) -> ClaudeBrowserSummaryHealth {
         attention == .claudeAI ? .needsAttention : .working
+    }
+
+    private func browserAction(
+        for profile: Profile,
+        health: ClaudeBrowserSummaryHealth
+    ) -> ClaudeSignInSummaryAction {
+        switch ClaudeBrowserRepairAction.forProfile(profile, health: health) {
+        case .signIn:
+            return ClaudeSignInSummaryAction(
+                "claude_account.browser.sign_in".localized
+            ) {
+                browserSheetTarget = .init(id: profile.id)
+            }
+        case .signInAgain, .readFromChrome:
+            return ClaudeSignInSummaryAction(
+                "claude_account.browser.sign_in_again".localized
+            ) {
+                browserSheetTarget = .init(id: profile.id)
+            }
+        }
+    }
+
+    private func repairBrowserSignIn(
+        profile: Profile,
+        source: ProfileChromeSessionKeySource
+    ) {
+        guard browserRepairInProgressFor != profile.id,
+              let key = profile.claudeSessionKey,
+              let organizationID = profile.organizationId else { return }
+        browserRepairError = nil
+        browserRepairInProgressFor = profile.id
+        let expected = ClaudeBrowserChromeRepair.Snapshot(
+            profileID: profile.id,
+            sessionKey: key,
+            organizationID: organizationID,
+            source: source
+        )
+        Task {
+            let outcome = await ClaudeBrowserChromeRepair.live.repair(expected)
+            guard browserRepairInProgressFor == profile.id else { return }
+            browserRepairInProgressFor = nil
+            guard profileManager.activeClaudeProfile?.id == profile.id else {
+                return
+            }
+            switch outcome {
+            case .repaired:
+                profileManager.loadProfiles()
+            case .unavailable, .superseded:
+                break
+            case .readFailed, .validationFailed, .organizationMismatch,
+                 .saveFailed:
+                browserRepairError =
+                    "claude_account.browser.chrome_repair_failed".localized
+            }
+        }
     }
 
     private func browserCredentialNotSavedCard(
