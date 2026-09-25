@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-09-25
+
+### Fixed
+
+- **An expired claude.ai browser sign-in can repair itself from its remembered
+  Chrome profile.** An existing profile pairs with Chrome the first time it
+  expires if its saved organization is already known to be a personal account.
+  Team accounts and accounts whose organization type is unknown still use manual
+  sign-in. If a Chrome profile has been remembered but automatic repair cannot
+  complete, Settings offers a one-click **Read from Chrome again** button.
+
 ## [4.3.2] - 2026-09-22
 
 ### Fixed
