@@ -1369,6 +1369,8 @@
 "claude_account.browser_sheet.title" = "Browser-Anmeldung (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "Dieses Profil mit seiner claude.ai-Organisation verbinden.";
 "claude_account.browser.sign_in_again" = "Erneut anmelden…";
+"claude_account.browser.read_from_chrome_again" = "Erneut aus Chrome auslesen (%@)";
+"claude_account.browser.chrome_repair_failed" = "Die Browser-Anmeldung konnte nicht aus Chrome wiederhergestellt werden. Prüfen Sie, ob dieses Chrome-Profil beim selben claude.ai-Konto angemeldet ist, und versuchen Sie es erneut.";
 "claude_account.browser.sign_in" = "Bei Claude.ai anmelden…";
 "claude_account.browser.missing_detail" = "Nicht verknüpft — optional. Ergänzt die Zusatznutzung Ihrer Organisation.";
 "claude_account.browser.detail" = "claude.ai · %@ · Sitzungsschlüssel %@ gespeichert";

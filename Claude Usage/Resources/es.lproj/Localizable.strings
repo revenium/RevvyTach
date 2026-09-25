@@ -1352,6 +1352,8 @@
 "claude_account.browser_sheet.title" = "Inicio en navegador (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "Conecta este perfil con su organización de claude.ai.";
 "claude_account.browser.sign_in_again" = "Iniciar de nuevo…";
+"claude_account.browser.read_from_chrome_again" = "Volver a leer desde Chrome (%@)";
+"claude_account.browser.chrome_repair_failed" = "No se pudo restaurar el inicio de sesión del navegador desde Chrome. Comprueba que este perfil de Chrome haya iniciado sesión en la misma cuenta de claude.ai y vuelve a intentarlo.";
 "claude_account.browser.sign_in" = "Iniciar en Claude.ai…";
 "claude_account.browser.missing_detail" = "No vinculado — opcional. Añade el uso adicional de tu organización.";
 "claude_account.browser.detail" = "claude.ai · %@ · clave de sesión guardada %@";

@@ -24,6 +24,219 @@ import XCTest
 /// account would be the same defect wearing the other shoe.
 @MainActor
 final class BrowserSignInSettingsVisibilityTests: HostedAppTestCase {
+    private nonisolated final class ChromeRepairReadSpy: @unchecked Sendable {
+        private let lock = NSLock()
+        private var recordedDirectories: [String] = []
+        private var recordedOnMainThread = false
+
+        var directories: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return recordedDirectories
+        }
+
+        var ranOnMainThread: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return recordedOnMainThread
+        }
+
+        func read(_ directoryName: String) -> String {
+            lock.lock()
+            recordedDirectories.append(directoryName)
+            recordedOnMainThread = Thread.isMainThread
+            lock.unlock()
+            return "sk-ant-sid01-repaired000000000000"
+        }
+    }
+
+    private var chromeRepairSource: ProfileChromeSessionKeySource {
+        ProfileChromeSessionKeySource(
+            directoryName: "Profile 19",
+            label: "Work — Profile 19"
+        )
+    }
+
+    private func chromeRepairSnapshot(
+        source: ProfileChromeSessionKeySource
+    ) -> ClaudeBrowserChromeRepair.Snapshot {
+        .init(
+            profileID: UUID(),
+            sessionKey: "sk-ant-sid01-expired000000000000",
+            organizationID: "org-work",
+            source: source
+        )
+    }
+
+    func testChromeRepairButtonAppearsOnlyForExpiredPairedBrowserSignIn() {
+        let source = chromeRepairSource
+        let paired = Profile(
+            name: "Work",
+            claudeSessionKey: "browser-key",
+            organizationId: "org-work",
+            chromeSessionKeySource: source
+        )
+        XCTAssertEqual(
+            ClaudeBrowserRepairAction.forProfile(
+                paired,
+                health: .needsAttention
+            ),
+            .readFromChrome(source)
+        )
+        XCTAssertEqual(
+            ClaudeBrowserRepairAction.forProfile(paired, health: .working),
+            .signInAgain
+        )
+
+        var unpaired = paired
+        unpaired.chromeSessionKeySource = nil
+        XCTAssertEqual(
+            ClaudeBrowserRepairAction.forProfile(
+                unpaired,
+                health: .needsAttention
+            ),
+            .signInAgain
+        )
+
+        var unusable = paired
+        unusable.chromeSessionKeySource = .init(
+            directoryName: "../Profile 19",
+            label: "Invalid"
+        )
+        XCTAssertEqual(
+            ClaudeBrowserRepairAction.forProfile(
+                unusable,
+                health: .needsAttention
+            ),
+            .signInAgain
+        )
+
+        XCTAssertEqual(
+            ClaudeBrowserRepairAction.forProfile(
+                Profile(name: "No browser key"),
+                health: .needsAttention
+            ),
+            .signIn
+        )
+    }
+
+    func testManualChromeRepairReadsRememberedProfileAndSavesAfterValidation()
+        async
+    {
+        let expected = chromeRepairSnapshot(source: chromeRepairSource)
+        let reader = ChromeRepairReadSpy()
+        var testedKeys: [String] = []
+        var saved: (UUID, String, ProfileChromeSessionKeySource)?
+        let repair = ClaudeBrowserChromeRepair(
+            readSessionKey: { reader.read($0) },
+            testSessionKey: { key in
+                testedKeys.append(key)
+                return ["other-org", expected.organizationID]
+            },
+            currentSnapshot: { _ in expected },
+            saveSessionKey: { profileID, key, source in
+                saved = (profileID, key, source)
+            }
+        )
+
+        let outcome = await repair.repair(expected)
+
+        XCTAssertEqual(outcome, .repaired)
+        XCTAssertEqual(reader.directories, ["Profile 19"])
+        XCTAssertFalse(reader.ranOnMainThread)
+        XCTAssertEqual(testedKeys, ["sk-ant-sid01-repaired000000000000"])
+        XCTAssertEqual(saved?.0, expected.profileID)
+        XCTAssertEqual(saved?.1, testedKeys.first)
+        XCTAssertEqual(saved?.2, expected.source)
+    }
+
+    func testManualChromeRepairLeavesCredentialsAloneOnOrgMismatchAndFailure()
+        async
+    {
+        let expected = chromeRepairSnapshot(source: chromeRepairSource)
+        var saves = 0
+        let mismatch = ClaudeBrowserChromeRepair(
+            readSessionKey: { _ in "sk-ant-sid01-other000000000000" },
+            testSessionKey: { _ in ["different-org"] },
+            currentSnapshot: { _ in expected },
+            saveSessionKey: { _, _, _ in saves += 1 }
+        )
+        let mismatchOutcome = await mismatch.repair(expected)
+        XCTAssertEqual(mismatchOutcome, .organizationMismatch)
+
+        struct ReadFailure: Error {}
+        let unreadable = ClaudeBrowserChromeRepair(
+            readSessionKey: { _ in throw ReadFailure() },
+            testSessionKey: { _ in
+                XCTFail("An unreadable Chrome profile must not be tested")
+                return []
+            },
+            currentSnapshot: { _ in expected },
+            saveSessionKey: { _, _, _ in saves += 1 }
+        )
+        let unreadableOutcome = await unreadable.repair(expected)
+        XCTAssertEqual(unreadableOutcome, .readFailed)
+        XCTAssertEqual(saves, 0)
+    }
+
+    func testManualChromeRepairDiscardsResultAfterProfileChanges() async {
+        let expected = chromeRepairSnapshot(source: chromeRepairSource)
+        var current = expected
+        var saves = 0
+        let repair = ClaudeBrowserChromeRepair(
+            readSessionKey: { _ in "sk-ant-sid01-new00000000000000" },
+            testSessionKey: { _ in
+                current = .init(
+                    profileID: expected.profileID,
+                    sessionKey: expected.sessionKey,
+                    organizationID: expected.organizationID,
+                    source: .init(
+                        directoryName: "Profile 20",
+                        label: "Other — Profile 20"
+                    )
+                )
+                return [expected.organizationID]
+            },
+            currentSnapshot: { _ in current },
+            saveSessionKey: { _, _, _ in saves += 1 }
+        )
+
+        let outcome = await repair.repair(expected)
+        XCTAssertEqual(outcome, .superseded)
+        XCTAssertEqual(saves, 0)
+    }
+
+    func testChromeRepairStringsExistInEveryLocale() throws {
+        for locale in [
+            "de", "en", "es", "fr", "it", "ja", "ko", "pt", "zh-Hans"
+        ] {
+            let bundle = try XCTUnwrap(
+                Bundle(for: MenuBarManager.self)
+                    .path(forResource: locale, ofType: "lproj")
+                    .flatMap(Bundle.init(path:))
+            )
+            for key in [
+                "claude_account.browser.read_from_chrome_again",
+                "claude_account.browser.chrome_repair_failed"
+            ] {
+                let value = bundle.localizedString(
+                    forKey: key,
+                    value: nil,
+                    table: nil
+                )
+                XCTAssertNotEqual(value, key, "\(locale) is missing \(key)")
+                XCTAssertFalse(value.isEmpty)
+                if key == "claude_account.browser.read_from_chrome_again" {
+                    XCTAssertEqual(
+                        value.components(separatedBy: "%@").count - 1,
+                        1,
+                        "\(locale) must interpolate one Chrome profile label"
+                    )
+                }
+            }
+        }
+    }
+
     // MARK: - Settings agrees with the icon
 
     func testBrowserRowNeedsAttentionExactlyWhenTheIconMarksClaudeAI() {

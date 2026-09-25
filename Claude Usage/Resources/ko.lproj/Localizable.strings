@@ -1345,6 +1345,8 @@
 "claude_account.browser_sheet.title" = "브라우저 로그인 (claude.ai)";
 "claude_account.browser_sheet.subtitle" = "프로필을 claude.ai 조직에 연결합니다.";
 "claude_account.browser.sign_in_again" = "다시 로그인…";
+"claude_account.browser.read_from_chrome_again" = "Chrome에서 다시 읽기 (%@)";
+"claude_account.browser.chrome_repair_failed" = "Chrome에서 브라우저 로그인을 복원하지 못했습니다. 이 Chrome 프로필이 같은 claude.ai 계정에 로그인되어 있는지 확인한 후 다시 시도하세요.";
 "claude_account.browser.sign_in" = "Claude.ai에 로그인…";
 "claude_account.browser.missing_detail" = "연결되지 않음 — 선택 사항입니다. 조직의 추가 사용량을 더합니다.";
 "claude_account.browser.detail" = "claude.ai · %@ · 세션 키 %@ 저장";
