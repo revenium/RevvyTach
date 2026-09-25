@@ -2,7 +2,8 @@
 //  ChromeSessionKeyAutoReReader.swift
 //  Claude Usage
 //
-//  Re-reads a refused claude.ai session key from its remembered Chrome profile.
+//  Re-reads a refused claude.ai session key from its remembered Chrome profile,
+//  or discovers an unclaimed Chrome profile for a legacy profile missing one.
 //
 //  Why this exists. Every `claude /login` performed inside a Chrome profile
 //  makes claude.ai log that browser out and back in, which revokes the
@@ -14,7 +15,8 @@
 //
 //  Three properties are load-bearing:
 //
-//  1. Only the Chrome profile explicitly recorded for this account is read.
+//  1. A remembered source is read directly. Legacy pairing requires exactly
+//     one matching Chrome profile and a known personal organization.
 //  2. It cannot loop. One attempt per profile per hour, whatever the outcome,
 //     and never two attempts for one profile at the same time. The hour is
 //     remembered on disk, because a declined macOS prompt must not be raised
@@ -34,6 +36,10 @@ nonisolated enum ChromeSessionKeyReReadOutcome: Equatable, Sendable {
     /// No Chrome profile was ever recorded for this RevvyTach profile, or the
     /// recorded directory name is no longer one this app will open.
     case noRememberedProfile
+    /// No Chrome profile conclusively matches the saved account.
+    case noMatchingProfile
+    /// Several discovered Chrome profiles belong to the saved organization.
+    case ambiguousProfiles
     /// Chrome could not be read: the cookie database was busy, the macOS
     /// prompt was declined, the cookie is gone, or the format changed.
     case unreadable
@@ -70,9 +76,45 @@ nonisolated struct ChromeSessionKeyReReadSaveAttempt: Sendable {
     let organizationID: String?
     let source: ProfileChromeSessionKeySource
     let previousSource: ProfileChromeSessionKeySource?
+    let organizationIsPersonal: Bool?
 }
 
-/// Repairs a revoked claude.ai session key from its remembered Chrome profile.
+nonisolated enum ChromeSessionKeyCandidateReadOutcome: Sendable {
+    case sessionKey(String)
+    case absent
+    case inconclusive
+}
+
+nonisolated struct ChromeSessionKeyCandidateRead: Sendable {
+    let profile: ChromeProfile
+    let outcome: ChromeSessionKeyCandidateReadOutcome
+}
+
+private nonisolated final class ChromePassphraseOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: Result<Data, Error>?
+
+    func read() throws -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        if cached == nil {
+            cached = Result {
+                try ChromeCookieSessionKeyReader.liveKeychainPassphrase()
+            }
+        }
+        guard let cached else { throw ChromeCookieReadError.keychainItemMissing }
+        return try cached.get()
+    }
+
+    deinit {
+        if case .some(.success(var passphrase)) = cached {
+            passphrase.resetBytes(in: 0..<passphrase.count)
+        }
+    }
+}
+
+/// Repairs a revoked claude.ai session key from a remembered or uniquely
+/// matching Chrome profile.
 ///
 /// Every boundary is injected so tests never touch the real Keychain, the
 /// real Chrome, real profile storage, or the real notification centre.
@@ -93,6 +135,14 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
     typealias CredentialSaver = @Sendable (
         ChromeSessionKeyReReadSaveAttempt
     ) async -> ChromeSessionKeyReReadSaveResult
+    typealias ProfileDiscoverer = @Sendable () -> [ChromeProfile]
+    typealias CandidateReader = @Sendable (
+        [ChromeProfile]
+    ) -> [ChromeSessionKeyCandidateRead]
+    typealias ClaimedDirectories = @MainActor @Sendable (UUID) -> Set<String>
+    typealias OrganizationLookup = @MainActor @Sendable (
+        String
+    ) async throws -> Set<String>
     /// Tells the user once, naming the RevvyTach profile and the Chrome
     /// profile in that order.
     typealias Notifier = @Sendable (String, String) async -> Void
@@ -112,6 +162,10 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
     static let attemptLogDefaultsKey = "chromeSessionKeyAutoReReadLastAttempts"
 
     private let readSessionKey: SessionKeyReader
+    private let discoverProfiles: ProfileDiscoverer
+    private let readCandidates: CandidateReader
+    private let claimedDirectories: ClaimedDirectories
+    private let lookupOrganizations: OrganizationLookup
     private let saveSessionKey: CredentialSaver
     private let notify: Notifier
     private let validator: SessionKeyValidator
@@ -129,6 +183,10 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         readSessionKey: @escaping SessionKeyReader,
         saveSessionKey: @escaping CredentialSaver,
         notify: @escaping Notifier,
+        discoverProfiles: @escaping ProfileDiscoverer = { [] },
+        readCandidates: @escaping CandidateReader = { _ in [] },
+        claimedDirectories: @escaping ClaimedDirectories = { _ in [] },
+        lookupOrganizations: @escaping OrganizationLookup = { _ in [] },
         validator: SessionKeyValidator = SessionKeyValidator(),
         now: @escaping @Sendable () -> Date = Date.init,
         minimumInterval: TimeInterval = ChromeSessionKeyAutoReReader
@@ -141,6 +199,10 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         }
     ) {
         self.readSessionKey = readSessionKey
+        self.discoverProfiles = discoverProfiles
+        self.readCandidates = readCandidates
+        self.claimedDirectories = claimedDirectories
+        self.lookupOrganizations = lookupOrganizations
         self.saveSessionKey = saveSessionKey
         self.notify = notify
         self.validator = validator
@@ -205,6 +267,20 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
                         )
                         return .superseded
                     }
+                    if attempt.previousSource == nil {
+                        guard profile.organizationIsPersonal
+                                == attempt.organizationIsPersonal else {
+                            return .superseded
+                        }
+                    }
+                    if attempt.previousSource == nil,
+                        ProfileManager.shared.profiles.contains(where: {
+                            $0.id != attempt.profileID
+                                && $0.chromeSessionKeySource?.directoryName
+                                    == attempt.source.directoryName
+                        }) {
+                        return .superseded
+                    }
                     credentials.claudeSessionKey = attempt.sessionKey
                     try ProfileManager.shared.saveCredentials(
                         for: attempt.profileID,
@@ -230,6 +306,42 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
                         chromeProfileLabel: chromeProfileLabel
                     )
             }
+        },
+        discoverProfiles: {
+            ChromeProfileDiscoverer().discoverProfiles()
+        },
+        readCandidates: { profiles in
+            let passphrase = ChromePassphraseOnce()
+            let reader = ChromeCookieSessionKeyReader(
+                readKeychainPassphrase: { try passphrase.read() }
+            )
+            return profiles.map { profile in
+                let outcome: ChromeSessionKeyCandidateReadOutcome
+                do {
+                    outcome = .sessionKey(try reader.readSessionKey(
+                        profileDirectoryName: profile.directoryName
+                    ))
+                } catch ChromeCookieReadError.cookieDatabaseMissing,
+                        ChromeCookieReadError.sessionCookieMissing {
+                    outcome = .absent
+                } catch {
+                    outcome = .inconclusive
+                }
+                return ChromeSessionKeyCandidateRead(
+                    profile: profile,
+                    outcome: outcome
+                )
+            }
+        },
+        claimedDirectories: { profileID in
+            Set(ProfileManager.shared.profiles.compactMap { profile in
+                profile.id == profileID
+                    ? nil : profile.chromeSessionKeySource?.directoryName
+            })
+        },
+        lookupOrganizations: { sessionKey in
+            try await ClaudeAPIService()
+                .organizationIDsForAutomaticChromePairing(sessionKey)
         }
     )
 
@@ -247,10 +359,17 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         profileName: String,
         source: ProfileChromeSessionKeySource?,
         currentSessionKey: String?,
-        organizationID: String? = nil
+        organizationID: String? = nil,
+        organizationIsPersonal: Bool? = nil
     ) async -> ChromeSessionKeyReReadOutcome {
-        guard let source, source.isUsable else {
+        guard source?.isUsable != false else {
             return .noRememberedProfile
+        }
+        guard source != nil || organizationID != nil else {
+            return .noRememberedProfile
+        }
+        guard source != nil || organizationIsPersonal == true else {
+            return .noMatchingProfile
         }
         switch claimAttempt(for: profileID) {
         case .throttled:
@@ -262,12 +381,23 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
         }
         defer { releaseAttempt(for: profileID) }
 
-        return await reReadRemembered(
+        if let source {
+            return await reReadRemembered(
+                profileID: profileID,
+                profileName: profileName,
+                source: source,
+                currentSessionKey: currentSessionKey,
+                organizationID: organizationID
+            )
+        }
+
+        guard let organizationID else { return .noRememberedProfile }
+        return await discoverAndPair(
             profileID: profileID,
             profileName: profileName,
-            source: source,
             currentSessionKey: currentSessionKey,
-            organizationID: organizationID
+            organizationID: organizationID,
+            organizationIsPersonal: organizationIsPersonal
         )
     }
 
@@ -309,7 +439,8 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
             refusedSessionKey: currentSessionKey,
             organizationID: organizationID,
             source: source,
-            previousSource: source
+            previousSource: source,
+            organizationIsPersonal: nil
         )) {
         case .stored:
             break
@@ -321,6 +452,106 @@ nonisolated final class ChromeSessionKeyAutoReReader: @unchecked Sendable {
 
         await notify(profileName, source.label)
         return .renewed(sessionKey: candidate)
+    }
+
+    private func discoverAndPair(
+        profileID: UUID,
+        profileName: String,
+        currentSessionKey: String?,
+        organizationID: String,
+        organizationIsPersonal: Bool?
+    ) async -> ChromeSessionKeyReReadOutcome {
+        let claimed = await claimedDirectories(profileID)
+        let discovered: (
+            profiles: [ChromeProfile],
+            reads: [ChromeSessionKeyCandidateRead]
+        ) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                [discoverProfiles, readCandidates] in
+                let profiles = discoverProfiles().filter {
+                    !claimed.contains($0.directoryName)
+                }
+                continuation.resume(returning: (
+                    profiles: profiles,
+                    reads: readCandidates(profiles)
+                ))
+            }
+        }
+
+        let expected = Set(discovered.profiles.map(\.directoryName))
+        let received = Set(discovered.reads.map {
+            $0.profile.directoryName
+        })
+        guard expected.count == discovered.profiles.count,
+            received == expected,
+            discovered.reads.count == discovered.profiles.count else {
+            LoggingService.shared.logWarning(
+                "Chrome profile discovery did not yield one result per "
+                    + "eligible profile; automatic pairing was skipped."
+            )
+            return .unreadable
+        }
+
+        var matches: [(ChromeProfile, String)] = []
+        for read in discovered.reads {
+            switch read.outcome {
+            case .absent:
+                continue
+            case .inconclusive:
+                LoggingService.shared.log(
+                    "A Chrome profile could not be checked conclusively; "
+                        + "automatic pairing was skipped."
+                )
+                return .unreadable
+            case .sessionKey(let candidate):
+                guard validator.isValid(candidate) else {
+                    return .malformed
+                }
+                guard let organizations = try? await lookupOrganizations(
+                    candidate
+                ) else {
+                    LoggingService.shared.log(
+                        "A Chrome account's organizations could not be "
+                            + "checked; automatic pairing was skipped."
+                    )
+                    return .unreadable
+                }
+                if organizations.contains(organizationID) {
+                    matches.append((read.profile, candidate))
+                }
+            }
+        }
+
+        guard matches.count == 1 else {
+            LoggingService.shared.log(
+                "Automatic Chrome pairing found \(matches.count) matching "
+                    + "profiles; the expired sign-in was kept."
+            )
+            return matches.isEmpty ? .noMatchingProfile : .ambiguousProfiles
+        }
+        let (chromeProfile, candidate) = matches[0]
+        guard candidate != currentSessionKey else { return .unchanged }
+        let source = ProfileChromeSessionKeySource(
+            directoryName: chromeProfile.directoryName,
+            label: chromeProfile.label
+        )
+        switch await saveSessionKey(ChromeSessionKeyReReadSaveAttempt(
+            profileID: profileID,
+            sessionKey: candidate,
+            refusedSessionKey: currentSessionKey,
+            organizationID: organizationID,
+            source: source,
+            previousSource: nil,
+            organizationIsPersonal: organizationIsPersonal
+        )) {
+        case .stored:
+            await notify(profileName, source.label)
+            return .renewed(sessionKey: candidate)
+        case .failed:
+            return .saveFailed
+        case .superseded:
+            return .superseded
+        }
     }
 
     // MARK: - Throttle

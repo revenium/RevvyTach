@@ -85,7 +85,8 @@ nonisolated enum ClaudeBrowserSignInRecovery {
                     profileName: profile.name,
                     source: profile.chromeSessionKeySource,
                     currentSessionKey: profile.claudeSessionKey,
-                    organizationID: profile.organizationId
+                    organizationID: profile.organizationId,
+                    organizationIsPersonal: profile.organizationIsPersonal
                 )
             },
             retryFetch: { sessionKey in
