@@ -333,6 +333,29 @@ struct ClaudeAccountView: View {
                         browserHealth: browserHealth
                     )
 
+                    if case .readFromChrome(let source) =
+                        ClaudeBrowserRepairAction.forProfile(
+                            profile,
+                            health: browserHealth
+                        ) {
+                        HStack {
+                            Spacer()
+                            Button(
+                                browserRepairInProgressFor == profile.id
+                                    ? "chrome_assisted.reading".localized
+                                    : String(
+                                        format: "claude_account.browser.read_from_chrome_again"
+                                            .localized,
+                                        source.label
+                                    )
+                            ) {
+                                repairBrowserSignIn(profile: profile, source: source)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(browserRepairInProgressFor == profile.id)
+                        }
+                    }
+
                     if let browserRepairError {
                         SettingsStatusBanner(
                             tone: .error,
@@ -683,22 +706,11 @@ struct ClaudeAccountView: View {
             ) {
                 browserSheetTarget = .init(id: profile.id)
             }
-        case .signInAgain:
+        case .signInAgain, .readFromChrome:
             return ClaudeSignInSummaryAction(
                 "claude_account.browser.sign_in_again".localized
             ) {
                 browserSheetTarget = .init(id: profile.id)
-            }
-        case .readFromChrome(let source):
-            let title = browserRepairInProgressFor == profile.id
-                ? "chrome_assisted.reading".localized
-                : String(
-                    format: "claude_account.browser.read_from_chrome_again"
-                        .localized,
-                    source.label
-                )
-            return ClaudeSignInSummaryAction(title) {
-                repairBrowserSignIn(profile: profile, source: source)
             }
         }
     }

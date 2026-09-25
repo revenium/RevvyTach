@@ -3,9 +3,8 @@
 //  Claude UsageTests
 //
 //  The rules that keep an automatic re-read from Chrome safe: remembered
-//  profiles read their recorded source, legacy profiles require one conclusive
-//  organization match, unchanged keys write nothing, and attempts are
-//  throttled across launches.
+//  profiles read their recorded source, profiles without one read nothing,
+//  unchanged keys write nothing, and attempts are throttled across launches.
 //
 //  Nothing here touches the real Keychain, the real Chrome, real profile
 //  storage, or the real notification centre. Every boundary is a closure.
@@ -32,7 +31,6 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
         private let lock = NSLock()
         private(set) var readDirectories: [String] = []
         private(set) var savedKeys: [String] = []
-        private(set) var saveAttempts: [ChromeSessionKeyReReadSaveAttempt] = []
         private(set) var notifications: [(String, String)] = []
 
         func recordRead(_ directoryName: String) {
@@ -44,13 +42,6 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
         func recordSave(_ key: String) {
             lock.lock()
             savedKeys.append(key)
-            lock.unlock()
-        }
-
-        func recordSave(_ attempt: ChromeSessionKeyReReadSaveAttempt) {
-            lock.lock()
-            saveAttempts.append(attempt)
-            savedKeys.append(attempt.sessionKey)
             lock.unlock()
         }
 
@@ -85,51 +76,6 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
             },
             now: now,
             minimumInterval: minimumInterval,
-            readAttemptLog: { attemptLog.value },
-            writeAttemptLog: { attemptLog.value = $0 }
-        )
-    }
-
-    private func makeDiscoveryReader(
-        recorder: Recorder,
-        profiles: [ChromeProfile],
-        readOutcomes: [String: ChromeSessionKeyCandidateReadOutcome],
-        organizations: [String: Set<String>] = [:],
-        claimedDirectories: Set<String> = [],
-        lookupFailures: Set<String> = [],
-        now: @escaping @Sendable () -> Date = Date.init,
-        attemptLog: AttemptLog = AttemptLog()
-    ) -> ChromeSessionKeyAutoReReader {
-        ChromeSessionKeyAutoReReader(
-            readSessionKey: { _ in
-                XCTFail("A legacy profile must use candidate reads")
-                return ""
-            },
-            saveSessionKey: { attempt in
-                recorder.recordSave(attempt)
-                return .stored
-            },
-            notify: { profileName, chromeLabel in
-                recorder.recordNotification(profileName, chromeLabel)
-            },
-            discoverProfiles: { profiles },
-            readCandidates: { profiles in
-                profiles.map { profile in
-                    recorder.recordRead(profile.directoryName)
-                    return ChromeSessionKeyCandidateRead(
-                        profile: profile,
-                        outcome: readOutcomes[profile.directoryName] ?? .absent
-                    )
-                }
-            },
-            claimedDirectories: { _ in claimedDirectories },
-            lookupOrganizations: { key in
-                if lookupFailures.contains(key) {
-                    throw ChromeCookieReadError.databaseUnreadable
-                }
-                return organizations[key] ?? []
-            },
-            now: now,
             readAttemptLog: { attemptLog.value },
             writeAttemptLog: { attemptLog.value = $0 }
         )
@@ -250,218 +196,28 @@ final class ChromeSessionKeyAutoReReadTests: XCTestCase {
         XCTAssertTrue(recorder.notifications.isEmpty)
     }
 
-    // MARK: - Legacy profiles discover a unique account match
-
-    func testUniqueDiscoveredMatchPairsRenewsAndNotifiesOnce() async {
-        let recorder = Recorder()
-        let profiles = [
-            ChromeProfile(name: "Personal", directoryName: "Default"),
-            ChromeProfile(name: "Work", directoryName: "Profile 19"),
-        ]
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: profiles,
-            readOutcomes: [
-                "Default": .absent,
-                "Profile 19": .sessionKey(freshKey),
-            ],
-            organizations: [freshKey: ["work-org"]]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .renewed(sessionKey: freshKey))
-        XCTAssertEqual(recorder.readDirectories, ["Default", "Profile 19"])
-        XCTAssertEqual(recorder.savedKeys, [freshKey])
-        XCTAssertEqual(recorder.saveAttempts.first?.source.directoryName,
-                       "Profile 19")
-        XCTAssertEqual(recorder.saveAttempts.first?.source.label,
-                       "Work — Profile 19")
-        XCTAssertNil(recorder.saveAttempts.first?.previousSource)
-        XCTAssertEqual(recorder.saveAttempts.first?.organizationID,
-                       "work-org")
-        XCTAssertEqual(recorder.notifications.count, 1)
-    }
-
-    func testNoDiscoveredAccountMatchKeepsExpiredState() async {
-        let recorder = Recorder()
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: [ChromeProfile(name: "Other", directoryName: "Default")],
-            readOutcomes: ["Default": .sessionKey(freshKey)],
-            organizations: [freshKey: ["other-org"]]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .noMatchingProfile)
-        XCTAssertTrue(recorder.savedKeys.isEmpty)
-        XCTAssertTrue(recorder.notifications.isEmpty)
-    }
-
-    func testTwoDiscoveredMatchesAreAmbiguous() async {
-        let recorder = Recorder()
-        let otherKey = "sk-ant-sid01-other0000000000000"
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: [
-                ChromeProfile(name: "One", directoryName: "Default"),
-                ChromeProfile(name: "Two", directoryName: "Profile 19"),
-            ],
-            readOutcomes: [
-                "Default": .sessionKey(freshKey),
-                "Profile 19": .sessionKey(otherKey),
-            ],
-            organizations: [
-                freshKey: ["work-org"],
-                otherKey: ["work-org"],
-            ]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .ambiguousProfiles)
-        XCTAssertEqual(recorder.readDirectories.count, 2)
-        XCTAssertTrue(recorder.savedKeys.isEmpty)
-        XCTAssertTrue(recorder.notifications.isEmpty)
-    }
-
-    func testChromeProfileClaimedByAnotherProfileIsNotReadOrPaired() async {
-        let recorder = Recorder()
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: [
-                ChromeProfile(name: "Work", directoryName: "Profile 19")
-            ],
-            readOutcomes: ["Profile 19": .sessionKey(freshKey)],
-            organizations: [freshKey: ["work-org"]],
-            claimedDirectories: ["Profile 19"]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .noMatchingProfile)
-        XCTAssertTrue(recorder.readDirectories.isEmpty)
-        XCTAssertTrue(recorder.savedKeys.isEmpty)
-    }
-
-    func testUnknownChromeCandidatePreventsPairing() async {
-        let recorder = Recorder()
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: [
-                ChromeProfile(name: "Work", directoryName: "Profile 19"),
-                ChromeProfile(name: "Unknown", directoryName: "Profile 20"),
-            ],
-            readOutcomes: [
-                "Profile 19": .sessionKey(freshKey),
-                "Profile 20": .inconclusive,
-            ],
-            organizations: [freshKey: ["work-org"]]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .unreadable)
-        XCTAssertTrue(recorder.savedKeys.isEmpty)
-        XCTAssertTrue(recorder.notifications.isEmpty)
-    }
-
-    func testFailedOrganizationLookupPreventsPairing() async {
-        let recorder = Recorder()
-        let reader = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: [
-                ChromeProfile(name: "Work", directoryName: "Profile 19")
-            ],
-            readOutcomes: ["Profile 19": .sessionKey(freshKey)],
-            lookupFailures: [freshKey]
-        )
-
-        let outcome = await reader.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(outcome, .unreadable)
-        XCTAssertTrue(recorder.savedKeys.isEmpty)
-    }
-
-    func testLegacyDiscoveryUsesThePersistedHourlyThrottle() async {
+    func testOrganizationAloneDoesNotReadAnUnclaimedChromeProfile() async {
         let recorder = Recorder()
         let attemptLog = AttemptLog()
-        let clock = MutableClock(Date(timeIntervalSince1970: 10_000))
-        let profiles = [
-            ChromeProfile(name: "Work", directoryName: "Profile 19")
-        ]
-        let first = makeDiscoveryReader(
+        let reader = makeReader(
             recorder: recorder,
-            profiles: profiles,
-            readOutcomes: ["Profile 19": .absent],
-            now: { clock.value },
+            read: { [freshKey] _ in freshKey },
             attemptLog: attemptLog
         )
-        let initial = await first.reReadAfterRefusal(
+
+        let outcome = await reader.reReadAfterRefusal(
             profileID: profileID,
             profileName: "Work",
             source: nil,
             currentSessionKey: deadKey,
-            organizationID: "work-org"
+            organizationID: "shared-work-org"
         )
 
-        clock.value = clock.value.addingTimeInterval(60)
-        let afterRestart = makeDiscoveryReader(
-            recorder: recorder,
-            profiles: profiles,
-            readOutcomes: ["Profile 19": .absent],
-            now: { clock.value },
-            attemptLog: attemptLog
-        )
-        let repeated = await afterRestart.reReadAfterRefusal(
-            profileID: profileID,
-            profileName: "Work",
-            source: nil,
-            currentSessionKey: deadKey,
-            organizationID: "work-org"
-        )
-
-        XCTAssertEqual(initial, .noMatchingProfile)
-        XCTAssertEqual(repeated, .throttled)
-        XCTAssertEqual(recorder.readDirectories, ["Profile 19"])
-        XCTAssertNotNil(attemptLog.value[profileID.uuidString])
+        XCTAssertEqual(outcome, .noRememberedProfile)
+        XCTAssertTrue(recorder.readDirectories.isEmpty)
+        XCTAssertTrue(recorder.savedKeys.isEmpty)
+        XCTAssertTrue(recorder.notifications.isEmpty)
+        XCTAssertNil(attemptLog.value[profileID.uuidString])
     }
 
     // MARK: - The same dead key changes nothing
