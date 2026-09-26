@@ -872,6 +872,7 @@
 "popover.banner.cli_sign_in_expired" = "El inicio de sesión de Claude Code ha caducado. Vuelve a iniciar sesión.";
 "popover.banner.cli_signed_out" = "Claude Code tiene la sesión cerrada en la cuenta vinculada aquí.";
 "popover.banner.cli_sign_in_unusable" = "El inicio de sesión de Claude Code de esta cuenta no funciona.";
+"popover.banner.cli_different_account" = "El inicio de sesión de Claude Code de este perfil pertenece a otra cuenta. Vuelve a vincularlo en Ajustes para que estos números sean de esta cuenta.";
 "popover.banner.refresh_failed" = "Actualización fallida %d veces";
 "popover.banner.updated_ago" = "Actualizado hace %dm";
 "popover.banner.last_success" = "Última actualización correcta: %@";
@@ -1291,6 +1292,7 @@
 "cli.login_expired_explain" = "Volver a sincronizar no ayudará: copia el inicio de sesión de esta cuenta, y ese inicio de sesión ha caducado. Ejecuta esto en el Terminal para iniciar sesión de nuevo.";
 "cli.login_expired_then_resync" = "Cuando hayas iniciado sesión, vuelve y pulsa Volver a sincronizar.";
 "popover.extra_usage.cli_other_organization" = "Este es el total de tu organización. Tu cuenta de Claude Code vinculada pertenece a otra organización, por lo que su uso no se muestra aquí.";
+"popover.extra_usage.cli_different_account" = "El inicio de sesión de Claude Code vinculado aquí pertenece a otra cuenta, por lo que su uso no se muestra en este perfil. Vuelve a vincular la cuenta en Ajustes.";
 "popover.extra_usage.claude_account_unresolved" = "Este es el total de tu organización. Tu propio uso no se pudo asociar a esta organización: vuelve a conectar tu cuenta en Ajustes → Cuenta Claude.";
 "popover.extra_usage.absent.cli_not_linked" = "Tu uso adicional proviene de Claude Code, que aún no está vinculado a esta cuenta: añádelo en Ajustes → Cuenta CLI.";
 "popover.extra_usage.absent.cli_sign_in_expired" = "No se puede leer tu uso adicional: el inicio de sesión de Claude Code para esta cuenta ha caducado. Vuelve a iniciar sesión en Claude Code y el dato reaparecerá por sí solo.";
@@ -1298,6 +1300,7 @@
 "popover.extra_usage.absent.cli_sign_in_unusable" = "No se ha podido leer tu uso adicional con la cuenta de Claude Code vinculada aquí.";
 "popover.extra_usage.absent.cli_temporarily_unavailable" = "No se ha podido leer tu uso adicional esta vez. Se reintentará automáticamente.";
 "popover.extra_usage.absent.cli_other_organization" = "Tu uso adicional no se muestra: la cuenta de Claude Code vinculada pertenece a otra organización.";
+"popover.extra_usage.absent.cli_different_account" = "Estos números no se muestran: el inicio de sesión de Claude Code vinculado pertenece a otra cuenta. Vuelve a vincular la cuenta en Ajustes.";
 "popover.extra_usage.absent.claude_account_unresolved" = "Tu uso adicional no se pudo asociar a esta organización: vuelve a conectar tu cuenta en Ajustes → Cuenta Claude.";
 "popover.extra_usage.organization_lookup_failed" = "No se ha podido leer tu uso adicional ahora mismo. Actualiza para volver a intentarlo.";
 
@@ -1362,6 +1365,12 @@
 "claude_account.terminal.link" = "Vincular Claude Code…";
 "claude_account.terminal.not_linked_detail" = "Sin vincular — Vincula la cuenta de Claude Code de esta organización.";
 "claude_account.terminal.detail" = "Cuenta de Claude Code %@ · renovada %@ · escrita en Claude Code";
+"claude_account.terminal.different_account_detail" = "Este inicio de sesión de Claude Code pertenece a una cuenta distinta de la de este perfil. Inicia sesión con la cuenta correcta en este directorio de cuenta, o vincula otra.";
+"claude_identity.browser.different_account" = "Este inicio de sesión pertenece a %@, no a la cuenta de este perfil. Inicia sesión con la cuenta a la que corresponde este perfil, o crea un perfil aparte para esa otra.";
+"claude_identity.browser.already_bound" = "El perfil '%@' ya tiene la sesión iniciada en esta cuenta.";
+"claude_identity.terminal.different_account" = "Este directorio de cuenta de Claude Code tiene la sesión iniciada con una cuenta distinta de aquella a la que se vinculó este perfil. Vuelve a iniciar sesión aquí con esa cuenta, o usa Desvincular y luego Vincular para apuntar este perfil a la cuenta que ahora contiene el directorio.";
+"claude_identity.terminal.different_account_named" = "Este directorio de cuenta de Claude Code tiene la sesión iniciada como %@, que no es la cuenta a la que se vinculó este perfil. Vuelve a iniciar sesión aquí con esa cuenta, o usa Desvincular y luego Vincular para apuntar este perfil a la cuenta que ahora contiene el directorio.";
+"claude_identity.terminal.already_bound" = "El perfil '%@' ya usa esta cuenta de Claude Code, y dos perfiles en una misma cuenta muestran los mismos números. Inicia sesión en este directorio con otra cuenta, o desvincúlalo primero de '%@'.";
 "claude_account.terminal.link_sheet.title" = "Inicio en terminal (Claude Code)";
 "claude_account.terminal.link_sheet.subtitle" = "Crea el directorio, inicia sesión y comprueba el acceso.";
 "claude_account.sync.title" = "Sincronización de Claude Code";

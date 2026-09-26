@@ -55,6 +55,12 @@ enum LegacyPopoverBanner: Equatable {
         /// The sign-in is current and still could not be made to work.
         case unusable
 
+        /// The sign-in works and belongs to a different account than this
+        /// profile. Its numbers are someone else's, so this one is louder
+        /// than the others by design: the others explain a figure that is
+        /// missing, this one explains a figure that would have been wrong.
+        case differentAccount
+
         /// Exhaustive on purpose, with no `default:`, so a newly added
         /// `PersonalExtraUsageIssue` cannot compile silently into "no
         /// banner" — nor into one. Whoever adds a case has to decide.
@@ -73,6 +79,8 @@ enum LegacyPopoverBanner: Equatable {
                 self = .signedOut
             case .signInUnusable:
                 self = .unusable
+            case .differentAccount:
+                self = .differentAccount
             case .notLinked, .differentOrganization,
                  .temporarilyUnavailable, .claudeAccountUnresolved,
                  .signInAsleep, nil:
@@ -175,6 +183,8 @@ enum LegacyPopoverBanner: Equatable {
                 return "popover.banner.cli_signed_out".localized
             case .unusable:
                 return "popover.banner.cli_sign_in_unusable".localized
+            case .differentAccount:
+                return "popover.banner.cli_different_account".localized
             }
         case .browserSignInBroken:
             return "popover.banner.browser_sign_in_expired".localized
