@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.4] - 2026-11-18
+
+### Fixed
+
+- **Codex accounts no longer go stale in the menu bar until you click Relink.**
+  After a failed Codex check the app now tries again within 5 minutes instead of
+  waiting up to 30, and a Codex check that hangs is dropped after 90 seconds so
+  the next refresh can run. Each refresh failure is now written to the system
+  log, so the cause of the next one is visible. Claude accounts are unchanged.
+
 ## [4.3.3] - 2026-09-25
 
 ### Fixed
