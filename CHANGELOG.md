@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Homebrew cask is updated again on each release.** Homebrew now refuses
+  to load apps from a tap that has not been trusted, so the release job trusts
+  `revenium/tap` before checking the cask. The install steps in the README add
+  the same `brew trust` step.
+
 ## [4.3.4] - 2026-11-18
 
 ### Fixed
