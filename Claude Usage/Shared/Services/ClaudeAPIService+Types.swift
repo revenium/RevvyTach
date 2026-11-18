@@ -108,13 +108,27 @@ extension ClaudeAPIService {
         }
     }
 
-    /// `GET api.anthropic.com/api/oauth/profile`. Only the organization is
-    /// read: it is what decides whether the CLI login's member figures
+    /// `GET api.anthropic.com/api/oauth/profile`.
+    ///
+    /// The organization decides whether the CLI login's member figures
     /// describe the profile being displayed.
+    ///
+    /// The account is a *secondary* identity, read only to refine an answer
+    /// the file on disk could not give. The primary source is
+    /// `oauthAccount.accountUuid` in the bound account directory's
+    /// `.claude.json`, which is known to be present — this field is not:
+    /// nothing in this codebase has ever decoded it, so whether the endpoint
+    /// carries it is unestablished. Optional for that reason, and a response
+    /// without it changes nothing.
     struct OAuthProfileResponse: Codable {
         let organization: Organization?
+        let account: Account?
 
         struct Organization: Codable {
+            let uuid: String?
+        }
+
+        struct Account: Codable {
             let uuid: String?
         }
     }

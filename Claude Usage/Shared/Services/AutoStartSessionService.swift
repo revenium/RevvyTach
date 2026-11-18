@@ -217,15 +217,56 @@ final class AutoStartSessionService {
         // Fetch usage data using the profile's specific credentials
         let usage = try await fetchUsageData(for: profile)
 
-        // Save usage to profile
-        await MainActor.run {
+        // This service is a second publisher — it builds its own request and
+        // writes straight to the per-profile store, so a guard inside
+        // `ClaudeAPIService.fetchUsageData(using:)` never sees it — and it
+        // deliberately carries no account guard of its own.
+        //
+        // It cannot produce the collision that guard exists for, and neither
+        // kind of collision check belongs here.
+        //
+        // Not an account check: every request this file makes is
+        // browser-credential, organization-scoped. `fetchUsageData(for:)`
+        // below guards on `profile.claudeSessionKey`, sends it as
+        // `Cookie: sessionKey=…`, and addresses
+        // `/organizations/\(orgId)/usage` built from `profile.organizationId`.
+        // There is no `Authorization` header and no `Bearer` token anywhere in
+        // this file. It never reads `cliAccountName`, `cliCredentialsJSON` or
+        // the Claude Code account directory — which is where a directory
+        // *name* stands in for an identity and two profiles come to share one
+        // login — so the Claude Code verdict says nothing about what this
+        // path publishes, and applying it would lose a profile's own numbers
+        // over a credential this request does not use.
+        //
+        // Not an organization check either: two profiles on one organization
+        // is a supported setup, two seats with two sets of member figures,
+        // and `ClaudeAPIService.swift` says so twice — "organization id which
+        // more than one profile can share". An organization-scoped figure
+        // being equal for two seats is the endpoint answering correctly, not
+        // one login read twice.
+        //
+        // What it must not do is erase the explanation the guarded path put
+        // on screen. This response carries no verdict about the Claude Code
+        // sign-in, so a saved record without one would silently clear
+        // `differentAccount` and leave an unexplained profile behind.
+        let publishable: ClaudeUsage = await MainActor.run {
+            var carried = usage
+            if carried.personalExtraUsageIssue == nil,
+               let known = profileManager.profiles
+                   .first(where: { $0.id == profile.id })?
+                   .claudeUsage?
+                   .personalExtraUsageIssue,
+               known == .differentAccount {
+                carried.personalExtraUsageIssue = known
+            }
             _ = profileManager.saveClaudeUsage(
-                usage,
+                carried,
                 for: profile.id
             )
+            return carried
         }
 
-        return usage
+        return publishable
     }
 
     private func fetchUsageData(for profile: Profile) async throws -> ClaudeUsage {

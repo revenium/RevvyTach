@@ -191,6 +191,17 @@ struct ClaudeUsage: Codable, Equatable {
         /// the one being displayed, so its figures describe someone else's
         /// context.
         case differentOrganization
+        /// The Claude Code sign-in linked to this profile belongs to a
+        /// different Anthropic account than the profile represents — most
+        /// often because two profiles are bound to Claude Code directories
+        /// holding one account's login, which makes both show one account's
+        /// numbers.
+        ///
+        /// Kept apart from `differentOrganization`, which is a settled fact
+        /// about a supplementary figure and asks for nothing. This one says
+        /// the percentages themselves would have been another account's, so
+        /// it is a problem with an action attached: re-link the account.
+        case differentAccount
 
         /// This profile could not be lined up with the organization on
         /// screen at all — either its claude.ai organization is not the one

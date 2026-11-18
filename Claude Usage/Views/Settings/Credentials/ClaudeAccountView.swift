@@ -48,6 +48,18 @@ struct ClaudeTerminalLinkVerifier {
     }
 }
 
+/// A Claude Code account directory refused because it is not this profile's
+/// account, carrying the sentence shown on the settings card.
+///
+/// Its own error type so it travels through the link flow's existing rollback
+/// path — which unlinks a directory this app created and puts the profile
+/// back — instead of needing a second, parallel unwind.
+struct ClaudeAccountIdentityRefusal: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
+}
+
 enum ClaudeTerminalLinkVerificationState: Equatable {
     case unverified
     case ready(ClaudeTerminalLinkVerifier.Source)
@@ -251,6 +263,9 @@ struct ClaudeAccountView: View {
     /// was already marking as broken.
     @ObservedObject private var attentionStore =
         ClaudeSignInAttentionStore.shared
+    /// Used for one question only: which Anthropic account a Claude Code
+    /// login belongs to, asked before that login is kept as this profile's.
+    private let apiService = ClaudeAPIService()
     @State private var isSyncing = false
     @State private var syncError: String?
     @State private var cliAccountInfo: CLIAccountInfo?
@@ -631,6 +646,9 @@ struct ClaudeAccountView: View {
                 return "popover.banner.cli_signed_out".localized
             case .unusable:
                 return "popover.banner.cli_sign_in_unusable".localized
+            case .differentAccount:
+                return "claude_account.terminal.different_account_detail"
+                    .localized
             }
         }
         if terminalSignInIsExpired(profile) {
@@ -1766,6 +1784,41 @@ struct ClaudeAccountView: View {
                 try profileManager.updateProfileThrowing(updated)
             }
 
+            // `linkAccount` adopts a directory that already holds a login
+            // as-is — `hasCredentialFiles` is satisfied by `.claude.json`
+            // carrying an `oauthAccount` at all — so this is the step where a
+            // profile can end up bound to an account another profile is
+            // already showing. Refuse it here, while the link is still this
+            // function's to undo.
+            let verdict = apiService.claudeCodeLinkVerdict(for: profile.id)
+            if case .mismatch(let mismatch) = verdict {
+                LoggingService.shared.logWarning(
+                    "ClaudeAccountView: refused a Claude Code directory that "
+                    + "is not this profile's account: "
+                    + ClaudeAPIService.identityMismatchDetail(mismatch)
+                )
+                throw ClaudeAccountIdentityRefusal(
+                    message: ClaudeAccountIdentityGuard.claudeCodeLinkRefusal(
+                        mismatch,
+                        emailAddress: profileManager.profiles
+                            .first { $0.id == profile.id }
+                            .flatMap {
+                                apiService.boundClaudeCodeAccount(for: $0)?
+                                    .emailAddress
+                            }
+                    )
+                )
+            }
+            // Accepted: record the identity this profile is now bound to, so
+            // the refresh path has something to measure against.
+            if let bound = profileManager.profiles
+                .first(where: { $0.id == profile.id }),
+               let account = apiService.boundClaudeCodeAccount(for: bound) {
+                var withIdentity = bound
+                withIdentity.cliAccountUUID = account.uuid
+                try profileManager.updateProfileThrowing(withIdentity)
+            }
+
             LoggingService.shared.log("ClaudeAccountView: Linked account '\(result.directoryName)' (\(result.symlinkCount) symlinks)")
         } catch {
             var recoveryFailures: [String] = []
@@ -1813,6 +1866,13 @@ struct ClaudeAccountView: View {
             updated.hasCliAccount = false
             updated.cliAccountSyncedAt = nil
             updated.cliCredentialsJSON = nil
+            // Clearing the accepted account is what makes re-pointing a
+            // profile possible in two deliberate steps — unlink, then link
+            // the directory that now holds the account you want. Without
+            // this the identity guard would refuse the new account for ever,
+            // because the profile would still be measuring against the one it
+            // accepted the first time.
+            updated.cliAccountUUID = nil
             try profileManager.updateProfileThrowing(updated)
 
             do {
@@ -1877,30 +1937,125 @@ struct ClaudeAccountView: View {
             }
         )
 
+        // What this profile held before the verifier wrote to it, so a
+        // credential that turns out to belong to someone else can be put
+        // back rather than left bound to the wrong account.
+        let credentialBeforeVerification = profile.cliCredentialsJSON
+
         do {
             let source = try verifier.verify(
                 profileID: profile.id,
                 accountName: accountName
             )
             profileManager.loadProfiles()
-            guard var updated = profileManager.profiles.first(
+            guard let verified = profileManager.profiles.first(
                 where: { $0.id == profile.id }
             ) else {
                 throw ClaudeCodeError.noProfileCredentials
             }
-            updated.hasCliAccount = true
-            updated.cliAccountSyncedAt = Date()
-            try profileManager.updateProfileThrowing(updated)
-            terminalLinkVerification = .ready(source)
-            loadCLIAccountInfo(profileID: profile.id)
-            if !SharedDataStore.shared.hasShownCLIShellIntegration() {
-                showShellIntegration = true
+            guard verified.cliCredentialsJSON != nil else {
+                throw ClaudeCodeError.noCredentialsFound
             }
+
+            // This flow is the one that produced the defect the guard exists
+            // for: it binds a profile to a Claude Code *directory name* and
+            // asks nothing about who is signed in inside it. Two directories
+            // can hold one account's login, and then two profiles publish
+            // one account's percentages as if they were two readings.
+            //
+            // A local file read, so it is synchronous and the page does not
+            // wait on a request to say no.
+            let verdict = apiService.claudeCodeLinkVerdict(for: profile.id)
+            if case .mismatch(let mismatch) = verdict {
+                restoreCredential(
+                    credentialBeforeVerification,
+                    for: profile.id
+                )
+                terminalLinkVerification = .failed
+                syncError = ClaudeAccountIdentityGuard.claudeCodeLinkRefusal(
+                    mismatch,
+                    emailAddress: apiService
+                        .boundClaudeCodeAccount(for: verified)?
+                        .emailAddress
+                )
+                LoggingService.shared.logWarning(
+                    "ClaudeAccountView: refused a Claude Code account "
+                    + "whose sign-in is not this profile's: "
+                    + ClaudeAPIService.identityMismatchDetail(mismatch)
+                )
+                return
+            }
+            // `.undetermined` keeps the link. A directory whose identity
+            // cannot be read says nothing about the account, and refusing a
+            // credential on that basis would break every profile bound
+            // before this field existed.
+            completeTerminalLinkVerification(
+                profileID: profile.id,
+                source: source
+            )
         } catch {
             terminalLinkVerification = .failed
             syncError = error.localizedDescription
             LoggingService.shared.logError(
                 "ClaudeAccountView: Credential verification failed",
+                error: error
+            )
+        }
+    }
+
+    /// Marks the link as this profile's, once its account has been checked.
+    private func completeTerminalLinkVerification(
+        profileID: UUID,
+        source: ClaudeTerminalLinkVerifier.Source
+    ) {
+        guard var updated = profileManager.profiles.first(
+            where: { $0.id == profileID }
+        ) else {
+            terminalLinkVerification = .failed
+            syncError = ClaudeCodeError.noProfileCredentials
+                .localizedDescription
+            return
+        }
+        updated.hasCliAccount = true
+        updated.cliAccountSyncedAt = Date()
+        // The identity this profile is accepting, written down at the moment
+        // it is accepted. Everything the refresh path refuses later is
+        // measured against this value.
+        if let account = apiService.boundClaudeCodeAccount(for: updated) {
+            updated.cliAccountUUID = account.uuid
+        }
+        do {
+            try profileManager.updateProfileThrowing(updated)
+        } catch {
+            terminalLinkVerification = .failed
+            syncError = error.localizedDescription
+            LoggingService.shared.logError(
+                "ClaudeAccountView: Credential verification failed",
+                error: error
+            )
+            return
+        }
+        terminalLinkVerification = .ready(source)
+        loadCLIAccountInfo(profileID: profileID)
+        if !SharedDataStore.shared.hasShownCLIShellIntegration() {
+            showShellIntegration = true
+        }
+    }
+
+    /// Puts back whatever Claude Code credential the profile held before a
+    /// verification that turned out to belong to another account.
+    private func restoreCredential(_ json: String?, for profileID: UUID) {
+        guard var profile = profileManager.profiles.first(
+            where: { $0.id == profileID }
+        ) else { return }
+        profile.cliCredentialsJSON = json
+        profile.hasCliAccount = json != nil && profile.cliAccountName != nil
+        do {
+            try profileManager.updateProfileThrowing(profile)
+        } catch {
+            LoggingService.shared.logError(
+                "ClaudeAccountView: could not restore the previous Claude "
+                + "Code credential",
                 error: error
             )
         }

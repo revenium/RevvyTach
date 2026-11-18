@@ -1507,7 +1507,8 @@ private struct ExtraUsageNoticeView: View {
                 return claudeAIAccountAction
             case .notLinked, .signInExpired, .signInUnusable,
                  .signInHasNoToken, .differentOrganization,
-                 .temporarilyUnavailable, .signInAsleep:
+                 .temporarilyUnavailable, .signInAsleep,
+                 .differentAccount:
                 // `.signInAsleep` asks for nothing, like
                 // `.temporarilyUnavailable` below it. The row is a button
                 // because every notice is one; the destination is where a
@@ -1613,6 +1614,13 @@ private struct ExtraUsageNoticeView: View {
                     + "Claude Code account belongs to a different "
                     + "organization, so its usage isn't shown here."
             )
+        case .differentAccount:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.cli_different_account",
+                default: "The Claude Code sign-in linked here belongs to a "
+                    + "different account, so its usage isn't shown under "
+                    + "this profile. Re-link the account in Settings."
+            )
         case .claudeAccountUnresolved:
             return NormalizedUsageStrings.localized(
                 "popover.extra_usage.claude_account_unresolved",
@@ -1682,6 +1690,13 @@ private struct ExtraUsageNoticeView: View {
                 "popover.extra_usage.absent.cli_other_organization",
                 default: "Your extra usage isn't shown: the linked Claude "
                     + "Code account belongs to a different organization."
+            )
+        case .differentAccount:
+            return NormalizedUsageStrings.localized(
+                "popover.extra_usage.absent.cli_different_account",
+                default: "These numbers aren't shown: the linked Claude "
+                    + "Code sign-in belongs to a different account. Re-link "
+                    + "the account in Settings."
             )
         case .claudeAccountUnresolved:
             return NormalizedUsageStrings.localized(
@@ -1753,6 +1768,11 @@ private struct ExtraUsageNoticeView: View {
                 return "arrow.clockwise"
             case .differentOrganization:
                 return "person.2.slash"
+            case .differentAccount:
+                // A warning triangle, unlike `.differentOrganization` above
+                // it: that one withholds a supplementary figure, this one
+                // says the account on screen is not the account signed in.
+                return "exclamationmark.triangle"
             case .claudeAccountUnresolved:
                 return "person.crop.circle.badge.questionmark"
             }

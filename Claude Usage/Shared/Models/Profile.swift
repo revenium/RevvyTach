@@ -40,6 +40,20 @@ struct Profile: Codable, Identifiable, Equatable {
     /// profile when this matches `organizationId`. Cached here because
     /// resolving it costs a request; `nil` means not yet resolved.
     var cliOrganizationId: String?
+    /// UUID of the Anthropic account this profile's Claude Code directory was
+    /// signed in as when the link was accepted.
+    ///
+    /// Read from `oauthAccount.accountUuid` in that directory's own
+    /// `.claude.json` — see `ClaudeSwitchService.linkedAccountIdentity` —
+    /// and compared on every reading after that. NOT from
+    /// `/api/oauth/profile`: that endpoint answers with an organization, and
+    /// a personal Max/Pro subscription has none, so it cannot separate two
+    /// personal accounts. A profile is bound to a Claude Code *directory
+    /// name*, and two directories can hold one account's login, which is what
+    /// this stops being published twice. `nil` means not yet read, and is
+    /// also what unlinking restores, so the next link may adopt whichever
+    /// account the directory then holds.
+    var cliAccountUUID: String?
 
     // MARK: - CLI Account Sync Metadata
     var hasCliAccount: Bool
@@ -118,6 +132,7 @@ struct Profile: Codable, Identifiable, Equatable {
         apiSessionKeyExpiry: Date? = nil,
         cliCredentialsJSON: String? = nil,
         cliOrganizationId: String? = nil,
+        cliAccountUUID: String? = nil,
         hasCliAccount: Bool = false,
         cliAccountSyncedAt: Date? = nil,
         cliAccountName: String? = nil,
@@ -150,6 +165,7 @@ struct Profile: Codable, Identifiable, Equatable {
         self.apiSessionKeyExpiry = apiSessionKeyExpiry
         self.cliCredentialsJSON = cliCredentialsJSON
         self.cliOrganizationId = cliOrganizationId
+        self.cliAccountUUID = cliAccountUUID
         self.hasCliAccount = hasCliAccount
         self.cliAccountSyncedAt = cliAccountSyncedAt
         self.cliAccountName = cliAccountName
@@ -185,6 +201,7 @@ struct Profile: Codable, Identifiable, Equatable {
         case apiSessionKeyExpiry
         case cliCredentialsJSON
         case cliOrganizationId
+        case cliAccountUUID
         case hasCliAccount
         case cliAccountSyncedAt
         case cliAccountName
@@ -245,6 +262,10 @@ struct Profile: Codable, Identifiable, Equatable {
         cliOrganizationId = try container.decodeIfPresent(
             String.self,
             forKey: .cliOrganizationId
+        )
+        cliAccountUUID = try container.decodeIfPresent(
+            String.self,
+            forKey: .cliAccountUUID
         )
         hasCliAccount = try container.decodeIfPresent(Bool.self, forKey: .hasCliAccount) ?? false
         cliAccountSyncedAt = try container.decodeIfPresent(Date.self, forKey: .cliAccountSyncedAt)
@@ -357,6 +378,7 @@ struct Profile: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(apiOrganizationId, forKey: .apiOrganizationId)
         try container.encodeIfPresent(apiSessionKeyExpiry, forKey: .apiSessionKeyExpiry)
         try container.encodeIfPresent(cliOrganizationId, forKey: .cliOrganizationId)
+        try container.encodeIfPresent(cliAccountUUID, forKey: .cliAccountUUID)
         try container.encode(hasCliAccount, forKey: .hasCliAccount)
         try container.encodeIfPresent(cliAccountSyncedAt, forKey: .cliAccountSyncedAt)
         try container.encodeIfPresent(cliAccountName, forKey: .cliAccountName)

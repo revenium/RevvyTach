@@ -1186,6 +1186,29 @@ struct EnterKeyStepSetup: View {
                         )
                         return
                     }
+                    // The same two checks the Claude Account sign-in sheet
+                    // makes, because a profile created here can be bound to
+                    // an account another profile is already showing just as
+                    // easily — and then both publish one account's
+                    // percentages with nothing on screen to say why.
+                    let signInVerdict = ClaudeAccountIdentityGuard
+                        .browserSignInVerdict(
+                            apiService.browserSignIn(
+                                organizations: organizations,
+                                key: key
+                            ),
+                            for: identityBindingForTarget(),
+                            otherProfiles: otherProfileBindingsForTarget()
+                        )
+                    if case .mismatch(let mismatch) = signInVerdict {
+                        wizardState.validationState = .error(
+                            ClaudeAccountIdentityGuard.browserSignInRefusal(
+                                mismatch,
+                                accountName: organizations.first?.name
+                            )
+                        )
+                        return
+                    }
                     wizardState.testedOrganizations = organizations
                     // Never start on a console/API organization: that is the
                     // choice that leaves the popover permanently unavailable.
@@ -1297,6 +1320,53 @@ struct EnterKeyStepSetup: View {
             wizardState.claudeSetupTarget = .newProfile
             wizardState.targetProfileName =
                 "chrome_assisted.new_claude_profile".localized
+        }
+    }
+
+    /// The profile a pasted key is being validated for, as the identity
+    /// guard reads it.
+    ///
+    /// A target that is not a profile yet answers with an empty binding under
+    /// a throwaway id, so the check cannot fire on a profile that has no
+    /// organization to compare against.
+    ///
+    /// In practice that branch is unreachable: `SetupTargetFreshness.isCurrent`
+    /// accepts `.newProfile` only when no Claude profile exists at all, and
+    /// `captureNewTarget` above chooses it on the same condition — so there is
+    /// never a peer profile on screen when it is taken. The binding exists so
+    /// the property holds if that ever changes, not because it does work
+    /// today.
+    private func identityBindingForTarget()
+        -> ClaudeAccountIdentityGuard.ProfileBinding {
+        if let profile = targetProfile() {
+            return ClaudeAPIService.identityBinding(profile)
+        }
+        return ClaudeAccountIdentityGuard.ProfileBinding(
+            id: UUID(),
+            name: wizardState.targetProfileName
+                ?? "chrome_assisted.new_claude_profile".localized,
+            organizationUUID: nil,
+            accountUUID: nil
+        )
+    }
+
+    private func otherProfileBindingsForTarget()
+        -> [ClaudeAccountIdentityGuard.ProfileBinding] {
+        let targetID = targetProfile()?.id
+        return dependencies.profileManager.profiles
+            .filter { $0.id != targetID }
+            .map(ClaudeAPIService.identityBinding)
+    }
+
+    private func targetProfile() -> Profile? {
+        switch wizardState.claudeSetupTarget {
+        case .existing(let id), .createdProfile(let id):
+            return dependencies.profileManager.profiles
+                .first { $0.id == id }
+        case .compatibilityCurrent:
+            return dependencies.profileManager.activeClaudeProfile
+        case .newProfile, nil:
+            return nil
         }
     }
 

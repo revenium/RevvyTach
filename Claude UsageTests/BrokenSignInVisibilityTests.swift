@@ -25,7 +25,11 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
 
     /// The Claude Code states that are genuinely broken.
     private static let raising: [ClaudeUsage.PersonalExtraUsageIssue] = [
-        .signInExpired, .signInHasNoToken, .signInUnusable
+        .signInExpired, .signInHasNoToken, .signInUnusable,
+        // The sign-in works and is someone else's: the numbers it produces
+        // would be another account's, which is louder than a figure that is
+        // merely missing.
+        .differentAccount
     ]
 
     /// Settled facts and transient misses. Nothing here is a broken sign-in:
@@ -69,6 +73,12 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
             banner(for: .signInUnusable),
             .cliSignInBroken(.unusable)
         )
+        // Its own banner rather than one of the three above: the sign-in
+        // works, and what is wrong is whose account it is.
+        XCTAssertEqual(
+            banner(for: .differentAccount),
+            .cliSignInBroken(.differentAccount)
+        )
     }
 
     func testSettledAndTransientStatesRaiseNoBanner() {
@@ -89,7 +99,7 @@ final class BrokenSignInVisibilityTests: HostedAppTestCase {
     /// complaint they are reading survives untouched.
     func testBrokenSignInBannerRoutesToCLIAccountNotSettingsAtLarge() {
         for problem: LegacyPopoverBanner.CLISignInProblem in [
-            .expired, .signedOut, .unusable
+            .expired, .signedOut, .unusable, .differentAccount
         ] {
             XCTAssertEqual(
                 LegacyPopoverBanner.cliSignInBroken(problem).action,
