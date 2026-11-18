@@ -1138,7 +1138,7 @@ final class UsageRefreshRuntime {
         now: @escaping @Sendable () -> Date = Date.init,
         batchObserver: UsageRefreshEngine.BatchObserver? = nil,
         staggerPolicy: any RefreshStaggerPolicy = IndexedRefreshStaggerPolicy(),
-        maximumBackoffWindow: TimeInterval = 30 * 60
+        maximumBackoffWindow: TimeInterval = UsageRefreshBackoffPolicy.claudeMaximumWindow
     ) {
         self.registry = registry
         self.presentationStore = presentationStore
@@ -1659,6 +1659,20 @@ final class UsageRefreshRuntime {
                 (previousFailure?.consecutiveCount ?? 0) + 1,
             sameKindConsecutiveCount: sameKindConsecutiveCount
         )
+        LoggingService.shared.logInfo(UsageRefreshDiagnostics.message(
+            .captureFailed,
+            identity: ProviderRefreshIdentity(
+                profileID: profile.id,
+                providerID: profile.providerID,
+                providerRevision: profile.providerRevision
+            ),
+            trigger: trigger,
+            requestedAt: failure.occurredAt,
+            now: now(),
+            phase: .capture,
+            failureKind: kind,
+            consecutiveCount: failure.consecutiveCount
+        ))
         let candidate = UsageRefreshFailureCandidate(
             identity: ProviderRefreshIdentity(
                 profileID: profile.id,
@@ -1809,6 +1823,10 @@ actor UsageRefreshEngine {
         @Sendable (UsageRefreshBatchResult) async -> Void
     typealias MemberEnqueueObserver =
         @Sendable (UUID, Int) async -> Void
+    typealias WatchdogSleep = @Sendable (TimeInterval) async throws -> Void
+    typealias DiagnosticLogger = @Sendable (String) -> Void
+
+    static let runningRequestDeadline: TimeInterval = 90
 
     private struct Request {
         let requestID: UUID
@@ -1830,6 +1848,7 @@ actor UsageRefreshEngine {
         let request: Request
         let generation: UInt64
         let task: Task<Void, Never>
+        let watchdog: Task<Void, Never>
         var phase: Phase
         var providerTerminal = false
         var providerSucceeded = false
@@ -1895,6 +1914,8 @@ actor UsageRefreshEngine {
     /// Ceiling on the consecutive-failure backoff window, regardless of how
     /// many failures have accumulated or the profile's refresh interval.
     private let maximumBackoffWindow: TimeInterval
+    private let watchdogSleep: WatchdogSleep
+    private let diagnosticLogger: DiagnosticLogger
 
     private var slots: [UUID: Slot] = [:]
     private var batches: [UUID: Batch] = [:]
@@ -1914,7 +1935,17 @@ actor UsageRefreshEngine {
         batchObserver: BatchObserver? = nil,
         memberEnqueueObserver: MemberEnqueueObserver? = nil,
         staggerPolicy: any RefreshStaggerPolicy = IndexedRefreshStaggerPolicy(),
-        maximumBackoffWindow: TimeInterval = 30 * 60
+        maximumBackoffWindow: TimeInterval = UsageRefreshBackoffPolicy.claudeMaximumWindow,
+        watchdogSleep: @escaping WatchdogSleep = { seconds in
+            try await Task.sleep(
+                nanoseconds: UInt64(seconds * 1_000_000_000)
+            )
+        },
+        diagnosticLogger: @escaping DiagnosticLogger = { message in
+            Task { @MainActor in
+                LoggingService.shared.logInfo(message)
+            }
+        }
     ) {
         self.committer = committer
         self.presentationStore = presentationStore
@@ -1924,6 +1955,8 @@ actor UsageRefreshEngine {
         self.memberEnqueueObserver = memberEnqueueObserver
         self.staggerPolicy = staggerPolicy
         self.maximumBackoffWindow = maximumBackoffWindow
+        self.watchdogSleep = watchdogSleep
+        self.diagnosticLogger = diagnosticLogger
     }
 
     @discardableResult
@@ -2120,6 +2153,7 @@ actor UsageRefreshEngine {
         removedProfiles.insert(profileID)
         let removedSlot = slots.removeValue(forKey: profileID)
         removedSlot?.running?.task.cancel()
+        removedSlot?.running?.watchdog.cancel()
         await presentationStore.remove(profileID: profileID)
         if let running = removedSlot?.running {
             await finishBatchMember(
@@ -2144,6 +2178,9 @@ actor UsageRefreshEngine {
         let statusTask = statusRunning?.1
         for task in requestTasks {
             task.cancel()
+        }
+        for slot in slots.values {
+            slot.running?.watchdog.cancel()
         }
         statusTask?.cancel()
         slots.removeAll()
@@ -2198,6 +2235,12 @@ actor UsageRefreshEngine {
         }
 
         if let running = slot.running {
+            log(
+                .superseded,
+                request: running.request,
+                slot: slot,
+                phase: running.phase == .fetching ? .fetching : .committing
+            )
             if running.phase == .fetching {
                 running.task.cancel()
             }
@@ -2280,12 +2323,20 @@ actor UsageRefreshEngine {
         if !request.trigger.isUserInitiated,
            let nextAllowedRetryAt = slots[profileID]?.nextAllowedRetryAt,
            now() < nextAllowedRetryAt {
+            log(
+                .backoffSkipped,
+                request: request,
+                slot: slots[profileID] ?? Slot(),
+                phase: .queued,
+                nextRetryAt: nextAllowedRetryAt
+            )
             await finishBatchMember(
                 request,
                 outcome: .backoffSkipped
             )
             return
         }
+        let deadline = now().addingTimeInterval(Self.runningRequestDeadline)
         let staggerDelay = request.staggerDelay
         let task = Task { [weak self] in
             if staggerDelay > 0 {
@@ -2340,10 +2391,19 @@ actor UsageRefreshEngine {
             )
         }
         var slot = slots[profileID] ?? Slot()
+        let watchdog = Task { [weak self] in
+            guard let self else { return }
+            await self.watch(
+                request,
+                generation: generation,
+                deadline: deadline
+            )
+        }
         slot.running = Running(
             request: request,
             generation: generation,
             task: task,
+            watchdog: watchdog,
             phase: .fetching,
             apiTerminal: request.job.apiFetch == nil
         )
@@ -2357,6 +2417,102 @@ actor UsageRefreshEngine {
             ),
             slot: slot
         )
+    }
+
+    private func watch(
+        _ request: Request,
+        generation: UInt64,
+        deadline: Date
+    ) async {
+        var delay = max(0, deadline.timeIntervalSince(now()))
+        while !Task.isCancelled {
+            do {
+                try await watchdogSleep(delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  !isShutdown,
+                  let slot = slots[request.job.identity.profileID],
+                  let running = slot.running,
+                  running.request.requestID == request.requestID,
+                  running.generation == generation else {
+                return
+            }
+            let remaining = deadline.timeIntervalSince(now())
+            if remaining > 0 {
+                delay = remaining
+            } else if running.phase == .committing {
+                delay = 1
+            } else {
+                await retire(request, slot: slot, running: running)
+                return
+            }
+        }
+    }
+
+    private func retire(
+        _ request: Request,
+        slot: Slot,
+        running: Running
+    ) async {
+        let profileID = request.job.identity.profileID
+        var retiredSlot = slot
+        let pending = retiredSlot.pending
+        retiredSlot.generation &+= 1
+        retiredSlot.running = nil
+        retiredSlot.pending = nil
+        slots[profileID] = retiredSlot
+        running.task.cancel()
+        log(
+            .retired,
+            request: request,
+            slot: retiredSlot,
+            phase: .fetching,
+            watchdogTimeout: true
+        )
+        let replacement: UsageRefreshActivity = pending.map {
+            .queued(
+                requestID: $0.requestID,
+                trigger: $0.trigger,
+                requestedAt: $0.job.requestContext.requestedAt
+            )
+        } ?? .idle
+        await presentationStore.completeRefreshActivity(
+            profileID: profileID,
+            requestID: request.requestID,
+            invocationOrder: request.invocationOrder,
+            replacement: replacement,
+            replacementInvocationOrder: pending?.invocationOrder,
+            expected: request.presentationContext
+        )
+        await finishBatchMember(request, outcome: .superseded)
+        if let pending {
+            await enqueue(pending)
+        }
+    }
+
+    private func log(
+        _ event: UsageRefreshDiagnostics.Event,
+        request: Request,
+        slot: Slot,
+        phase: UsageRefreshDiagnostics.Phase,
+        failure: ProviderRefreshFailure? = nil,
+        watchdogTimeout: Bool = false,
+        nextRetryAt: Date? = nil
+    ) {
+        diagnosticLogger(UsageRefreshDiagnostics.message(
+            event,
+            identity: request.job.identity,
+            trigger: request.trigger,
+            requestedAt: request.job.requestContext.requestedAt,
+            now: now(),
+            phase: phase,
+            failureKind: watchdogTimeout ? .timedOut : failure?.kind ?? slot.lastFailureKind,
+            watchdogTimeout: watchdogTimeout,
+            consecutiveCount: failure?.consecutiveCount ?? slot.consecutiveFailures,
+            nextRetryAt: nextRetryAt ?? slot.nextAllowedRetryAt
+        ))
     }
 
     private func componentCompleted(
@@ -2560,12 +2716,21 @@ actor UsageRefreshEngine {
             sameKindConsecutiveCount
         let nextAllowedRetryAt = nextAllowedRetryAt(
             after: terminalFailure,
-            refreshInterval: request.job.refreshInterval
+            refreshInterval: request.job.refreshInterval,
+            providerID: request.job.identity.providerID
         )
         // Thread the engine's actual scheduling decision back into the
         // failure so presenters ("Retrying at") never diverge from the
         // real retry schedule computed above.
         terminalFailure.scheduledRetryAt = nextAllowedRetryAt
+        log(
+            .providerFailed,
+            request: request,
+            slot: slot,
+            phase: .committing,
+            failure: terminalFailure,
+            nextRetryAt: nextAllowedRetryAt
+        )
         running.providerTerminal = true
         running.providerSucceeded = false
         running.providerError = error
@@ -2848,6 +3013,12 @@ actor UsageRefreshEngine {
             accepted: accepted
         )
         running.wasSuperseded = true
+        log(
+            .superseded,
+            request: request,
+            slot: slot,
+            phase: running.phase == .fetching ? .fetching : .committing
+        )
         running.phase = .fetching
         running.task.cancel()
         slot.running = running
@@ -2947,6 +3118,7 @@ actor UsageRefreshEngine {
             return
         }
         authoritativeSlot.running = nil
+        running.watchdog.cancel()
         slots[profileID] = authoritativeSlot
         await startPendingIfNeeded(profileID: profileID)
     }
@@ -2954,12 +3126,14 @@ actor UsageRefreshEngine {
     private func startPendingIfNeeded(profileID: UUID) async {
         guard !isShutdown,
               let slot = slots[profileID],
+              slot.running == nil,
               let pending = slot.pending else {
             return
         }
         let currentInputGeneration =
             await committer.currentInputGeneration(for: profileID)
         guard var authoritativeSlot = slots[profileID],
+              authoritativeSlot.running == nil,
               authoritativeSlot.pending?.requestID
                 == pending.requestID else {
             return
@@ -3029,13 +3203,14 @@ actor UsageRefreshEngine {
     }
 
     /// Exponential backoff window for consecutive scheduled-refresh
-    /// failures: `min(2^min(N,5) * refreshInterval, maximumBackoffWindow)`.
+    /// failures use a provider-specific ceiling.
     /// A server-provided `Retry-After` hint (e.g. from a 429) can push the
     /// next allowed attempt out further than the computed window, but never
     /// pulls it in earlier — the exponential floor still applies.
     private func nextAllowedRetryAt(
         after failure: ProviderRefreshFailure,
-        refreshInterval: TimeInterval
+        refreshInterval: TimeInterval,
+        providerID: ProviderID
     ) -> Date {
         let baseInterval =
             refreshInterval.isFinite && refreshInterval > 0
@@ -3044,7 +3219,10 @@ actor UsageRefreshEngine {
         let exponent = min(failure.consecutiveCount, 5)
         let window = min(
             pow(2.0, Double(exponent)) * baseInterval,
-            maximumBackoffWindow
+            UsageRefreshBackoffPolicy.maximumWindow(
+                for: providerID,
+                configuredMaximum: maximumBackoffWindow
+            )
         )
         let backoffDeadline = failure.occurredAt.addingTimeInterval(
             window
