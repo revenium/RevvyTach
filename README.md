@@ -72,8 +72,12 @@ or CLI state.
 ### Homebrew
 
 ```bash
-brew install --cask revenium/tap/revvytach
+brew tap revenium/tap
+brew trust revenium/tap
+brew install --cask revvytach
 ```
+
+Homebrew refuses to load an app from a tap you have not trusted, so `brew trust` is needed once.
 
 Update with `brew upgrade --cask revvytach`, remove with `brew uninstall --cask revvytach`.
 

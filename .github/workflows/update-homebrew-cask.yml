@@ -105,6 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           brew tap revenium/tap
+          brew trust revenium/tap
           audit_tap=$(brew --repository revenium/tap)
           mkdir -p "$audit_tap/Casks"
           cp "$RUNNER_TEMP/revvytach.rb" "$audit_tap/Casks/revvytach.rb"
