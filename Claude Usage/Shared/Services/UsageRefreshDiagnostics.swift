@@ -21,33 +21,36 @@ nonisolated enum UsageRefreshDiagnostics {
         _ event: Event,
         identity: ProviderRefreshIdentity,
         trigger: UsageRefreshTrigger,
-        requestedAt: Date,
+        requestedAt: Date?,
         now: Date,
         phase: Phase,
         failureKind: ProviderRefreshFailureKind? = nil,
         watchdogTimeout: Bool = false,
-        consecutiveCount: Int,
+        consecutiveCount: Int?,
         nextRetryAt: Date? = nil
     ) -> String {
         let provider = identity.providerID == .codex
             ? "codex"
             : identity.providerID == .claude ? "claude" : "unknown"
-        let age = max(0, now.timeIntervalSince(requestedAt))
+        let age = requestedAt.map {
+            String(max(0, now.timeIntervalSince($0)))
+        } ?? "none"
         let kind = failureKind.map { String(describing: $0) } ?? "none"
+        let count = consecutiveCount.map { String($0) } ?? "none"
         let retry = nextRetryAt.map {
             String($0.timeIntervalSince1970)
         } ?? "none"
         return "Usage refresh event=\(event.rawValue) provider=\(provider) "
             + "profile=\(identity.profileID.uuidString) trigger=\(trigger.rawValue) "
             + "request_age_seconds=\(age) phase=\(phase.rawValue) "
-            + "failure_kind=\(kind) timeout_stage=\(watchdogTimeout ? "watchdog" : "unknown") "
-            + "consecutive_count=\(consecutiveCount) next_retry_at=\(retry)"
+            + "failure_kind=\(kind) timeout_stage=\(watchdogTimeout ? "watchdog" : "none") "
+            + "consecutive_count=\(count) next_retry_at=\(retry)"
     }
 }
 
 nonisolated enum UsageRefreshBackoffPolicy {
     static let codexMaximumWindow: TimeInterval = 5 * 60
-    static let claudeMaximumWindow: TimeInterval = 30 * 60
+    static let defaultMaximumWindow: TimeInterval = 30 * 60
 
     static func maximumWindow(
         for providerID: ProviderID,
@@ -56,5 +59,15 @@ nonisolated enum UsageRefreshBackoffPolicy {
         providerID == .codex
             ? min(codexMaximumWindow, configuredMaximum)
             : configuredMaximum
+    }
+}
+
+nonisolated enum UsageRefreshWatchdogPolicy {
+    static let codexRunningRequestDeadline: TimeInterval = 90
+
+    static func runningRequestDeadline(
+        for providerID: ProviderID
+    ) -> TimeInterval? {
+        providerID == .codex ? codexRunningRequestDeadline : nil
     }
 }
