@@ -141,6 +141,27 @@ final class UsageRefreshEngineTests: HostedAppTestCase {
         }
     }
 
+    private final class ManualSleeper: @unchecked Sendable {
+        private let gates = Locked<[CancellationGate<Void>]>([])
+
+        func sleep(_ seconds: TimeInterval) async throws {
+            let gate = CancellationGate<Void>()
+            gates.withValue { $0.append(gate) }
+            try await gate.wait()
+        }
+
+        var count: Int {
+            gates.snapshot().count
+        }
+
+        func wakeNext() {
+            let gate = gates.withValue {
+                $0.isEmpty ? nil : $0.removeFirst()
+            }
+            gate?.resolve(())
+        }
+    }
+
     /// A test-controlled clock so backoff-window math can be exercised
     /// without real sleeps: the engine's `now` closure reads this instead
     /// of the wall clock, and tests advance it explicitly.
@@ -6696,6 +6717,394 @@ final class UsageRefreshEngineTests: HostedAppTestCase {
         )
     }
 
+    func testCodexScheduledFailuresRecoverWithinFiveMinuteCapWithoutRelinking()
+        async throws
+    {
+        let identity = makeIdentity(providerID: .codex)
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let attempts = Locked(0)
+        let messages = Locked<[String]>([])
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            diagnosticLogger: { message in
+                messages.withValue { $0.append(message) }
+            }
+        )
+        let report = try Self.makeReport(providerID: .codex, marker: 7)
+        let job = makeJob(
+            identity: identity,
+            refreshInterval: 30,
+            trigger: .timer,
+            coreFetch: {
+                let attempt = attempts.withValue {
+                    $0 += 1
+                    return $0
+                }
+                if attempt <= 6 {
+                    throw UsageProviderError.timedOut
+                }
+                return ProviderFetchResult(report: report)
+            }
+        )
+
+        for (index, delay) in [60.0, 120, 240, 300, 300, 300].enumerated() {
+            _ = await enqueue(job, on: harness, context: context)
+            await assertEventually {
+                harness.batches.snapshot.count == index + 1
+            }
+            let failure = harness.store.snapshot(for: identity.profileID)?.currentFailure
+            XCTAssertEqual(failure?.consecutiveCount, index + 1)
+            XCTAssertEqual(
+                failure?.scheduledRetryAt,
+                clock.now().addingTimeInterval(delay)
+            )
+            clock.advance(by: delay)
+        }
+
+        _ = await enqueue(job, on: harness, context: context)
+        await assertEventually { harness.batches.snapshot.count == 7 }
+        XCTAssertEqual(attempts.snapshot(), 7)
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+        XCTAssertEqual(harness.committer.durableCommits.first?.0.identity, identity)
+        XCTAssertNil(harness.store.snapshot(for: identity.profileID)?.currentFailure)
+        XCTAssertEqual(outcome(harness.batches.snapshot.last?.outcomes[identity.profileID]), .accepted)
+        XCTAssertEqual(messages.snapshot().filter { $0.contains("event=provider_failed") }.count, 6)
+        XCTAssertTrue(messages.snapshot().allSatisfy {
+            $0.contains("provider=codex") && $0.contains("failure_kind=timedOut")
+                && $0.contains("next_retry_at=")
+        })
+    }
+
+    func testClaudeScheduledFailureBackoffKeepsThirtyMinuteCap() async {
+        let identity = makeIdentity(providerID: .claude)
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() }
+        )
+        let job = makeJob(
+            identity: identity,
+            refreshInterval: 300,
+            trigger: .timer,
+            coreFetch: { throw UsageProviderError.transportFailure }
+        )
+        for (index, delay) in [600.0, 1200, 1800, 1800].enumerated() {
+            _ = await enqueue(job, on: harness, context: context)
+            await assertEventually { harness.batches.snapshot.count == index + 1 }
+            XCTAssertEqual(
+                harness.store.snapshot(for: identity.profileID)?.currentFailure?.scheduledRetryAt,
+                clock.now().addingTimeInterval(delay)
+            )
+            clock.advance(by: delay)
+        }
+    }
+
+    func testWatchdogRetiresUnresponsiveRequestAndNextScheduledRefreshSucceeds()
+        async throws
+    {
+        let identity = makeIdentity()
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let neverReturns = ManualGate<ProviderFetchResult>()
+        let messages = Locked<[String]>([])
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) },
+            diagnosticLogger: { message in
+                messages.withValue { $0.append(message) }
+            }
+        )
+        let stale = makeGatedJob(identity: identity, gate: neverReturns, trigger: .timer)
+        _ = await enqueue(stale, on: harness, context: context)
+        await assertEventually { neverReturns.startCount == 1 && sleeper.count == 1 }
+        clock.advance(by: 89)
+        sleeper.wakeNext()
+        await assertEventually { sleeper.count == 1 }
+        XCTAssertTrue(harness.batches.snapshot.isEmpty)
+        clock.advance(by: 1)
+        sleeper.wakeNext()
+        await assertEventually { harness.batches.snapshot.count == 1 }
+        XCTAssertEqual(outcome(harness.batches.snapshot[0].outcomes[identity.profileID]), .failed)
+        XCTAssertFalse(harness.store.snapshot(for: identity.profileID)?.activity.isInFlight ?? true)
+        let retiredFailure = harness.store.snapshot(for: identity.profileID)?.currentFailure
+        XCTAssertEqual(retiredFailure?.kind, .timedOut)
+        XCTAssertEqual(retiredFailure?.scheduledRetryAt, clock.now().addingTimeInterval(60))
+        clock.advance(by: 60)
+
+        let fresh = makeJob(
+            identity: identity,
+            trigger: .timer,
+            coreFetch: {
+                ProviderFetchResult(report: try Self.makeReport(providerID: .codex, marker: 2))
+            }
+        )
+        _ = await enqueue(fresh, on: harness, context: context)
+        await assertEventually { harness.batches.snapshot.count == 2 }
+        neverReturns.resolve(ProviderFetchResult(report: try makeReport(providerID: .codex, marker: 1)))
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+        XCTAssertEqual(harness.committer.cachedUsage(for: identity.profileID)?.report?.usageSummary?.metrics.first?.value, 2)
+        XCTAssertEqual(outcome(harness.batches.snapshot[1].outcomes[identity.profileID]), .accepted)
+        XCTAssertTrue(messages.snapshot().contains {
+            $0.contains("event=retired") && $0.contains("timeout_stage=watchdog")
+                && $0.contains("phase=fetching") && $0.contains("failure_kind=timedOut")
+                && $0.contains("consecutive_count=1")
+        })
+        XCTAssertNil(harness.store.snapshot(for: identity.profileID)?.currentFailure)
+    }
+
+    func testWatchdogRetirementRecordsTimedOutFailureAndBacksOffScheduledRefresh()
+        async throws
+    {
+        let identity = makeIdentity(providerID: .codex)
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let firstHang = ManualGate<ProviderFetchResult>()
+        let secondHang = ManualGate<ProviderFetchResult>()
+        let lateResult = ProviderFetchResult(
+            report: try makeReport(providerID: .codex, marker: 1)
+        )
+        defer {
+            firstHang.resolve(lateResult)
+            secondHang.resolve(lateResult)
+        }
+        let messages = Locked<[String]>([])
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) },
+            diagnosticLogger: { message in
+                messages.withValue { $0.append(message) }
+            }
+        )
+
+        for (index, hang) in [firstHang, secondHang].enumerated() {
+            _ = await enqueue(
+                makeGatedJob(identity: identity, gate: hang, trigger: .timer),
+                on: harness,
+                context: context
+            )
+            await assertEventually { hang.startCount == 1 && sleeper.count == 1 }
+            clock.advance(by: 90)
+            sleeper.wakeNext()
+            await assertEventually { harness.batches.snapshot.count == index + 1 }
+            XCTAssertEqual(
+                outcome(harness.batches.snapshot[index].outcomes[identity.profileID]),
+                .failed
+            )
+            let failure = harness.store.snapshot(for: identity.profileID)?.currentFailure
+            XCTAssertEqual(failure?.kind, .timedOut)
+            XCTAssertEqual(failure?.consecutiveCount, index + 1)
+            XCTAssertEqual(failure?.sameKindConsecutiveCount, index + 1)
+            XCTAssertEqual(
+                failure?.scheduledRetryAt,
+                clock.now().addingTimeInterval(index == 0 ? 60 : 120)
+            )
+            XCTAssertFalse(harness.store.snapshot(for: identity.profileID)?.activity.isInFlight ?? true)
+            clock.advance(by: 60)
+        }
+
+        _ = await enqueue(
+            makeJob(identity: identity, trigger: .timer, coreFetch: { lateResult }),
+            on: harness,
+            context: context
+        )
+        await assertEventually { harness.batches.snapshot.count == 3 }
+        XCTAssertEqual(
+            outcome(harness.batches.snapshot[2].outcomes[identity.profileID]),
+            .backoffSkipped
+        )
+        XCTAssertTrue(harness.committer.durableCommits.isEmpty)
+        XCTAssertTrue(messages.snapshot().contains {
+            $0.contains("event=retired") && $0.contains("consecutive_count=2")
+        })
+        XCTAssertTrue(messages.snapshot().contains {
+            $0.contains("event=backoff_skipped") && $0.contains("failure_kind=timedOut")
+                && $0.contains("consecutive_count=2")
+        })
+    }
+
+    func testWatchdogIsNotArmedForClaudeRequestThatRunsPastDeadline() async throws {
+        let identity = makeIdentity(providerID: .claude)
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let slowFetch = ManualGate<ProviderFetchResult>()
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) }
+        )
+        _ = await enqueue(
+            makeGatedJob(identity: identity, gate: slowFetch, trigger: .timer),
+            on: harness,
+            context: context
+        )
+        await assertEventually { slowFetch.startCount == 1 }
+        clock.advance(by: 120)
+        sleeper.wakeNext()
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(sleeper.count, 0)
+        XCTAssertTrue(harness.batches.snapshot.isEmpty)
+        XCTAssertTrue(harness.store.snapshot(for: identity.profileID)?.activity.isInFlight ?? false)
+
+        slowFetch.resolve(ProviderFetchResult(
+            report: try makeReport(providerID: .claude, marker: 4)
+        ))
+        await assertEventually { harness.batches.snapshot.count == 1 }
+        XCTAssertEqual(outcome(harness.batches.snapshot[0].outcomes[identity.profileID]), .accepted)
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+        XCTAssertNil(harness.store.snapshot(for: identity.profileID)?.currentFailure)
+    }
+
+    func testWatchdogStartsLatestPendingRequestAndFencesLateCallback() async throws {
+        let identity = makeIdentity()
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let staleGate = ManualGate<ProviderFetchResult>()
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) }
+        )
+        _ = await enqueue(makeGatedJob(identity: identity, gate: staleGate), on: harness, context: context)
+        await assertEventually { staleGate.startCount == 1 && sleeper.count == 1 }
+        _ = await enqueue(makeImmediateJob(identity: identity, result: ProviderFetchResult(
+            report: try makeReport(providerID: .codex, marker: 2)
+        )), on: harness, context: context)
+        _ = await enqueue(makeImmediateJob(identity: identity, result: ProviderFetchResult(
+            report: try makeReport(providerID: .codex, marker: 3)
+        )), on: harness, context: context)
+        clock.advance(by: 90)
+        sleeper.wakeNext()
+        await assertEventually { harness.batches.snapshot.count == 3 }
+        staleGate.resolve(ProviderFetchResult(report: try makeReport(providerID: .codex, marker: 1)))
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+        XCTAssertEqual(harness.committer.cachedUsage(for: identity.profileID)?.report?.usageSummary?.metrics.first?.value, 3)
+    }
+
+    func testWatchdogRetirementDoesNotLeaveOlderPendingActivityAfterNewEnqueue() async throws {
+        let identity = makeIdentity()
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let staleGate = ManualGate<ProviderFetchResult>()
+        let pendingGate = ManualGate<ProviderFetchResult>()
+        let retirementGate = ManualGate<Void>()
+        let staleResult = ProviderFetchResult(
+            report: try makeReport(providerID: .codex, marker: 1)
+        )
+        defer {
+            retirementGate.resolve(())
+            staleGate.resolve(staleResult)
+            pendingGate.resolve(staleResult)
+        }
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            batchObserver: { result in
+                if result.invocationOrder == 1 {
+                    await retirementGate.wait()
+                }
+            },
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) }
+        )
+        let retiredBatch = await enqueue(
+            makeGatedJob(identity: identity, gate: staleGate),
+            on: harness,
+            context: context
+        )
+        await assertEventually {
+            staleGate.startCount == 1 && sleeper.count == 1
+        }
+        let pendingBatch = await enqueue(
+            makeGatedJob(identity: identity, gate: pendingGate),
+            on: harness,
+            context: context
+        )
+        clock.advance(by: 90)
+        sleeper.wakeNext()
+        await assertEventually { retirementGate.startCount == 1 }
+
+        let latestBatch = await enqueue(
+            makeImmediateJob(
+                identity: identity,
+                result: ProviderFetchResult(
+                    report: try makeReport(providerID: .codex, marker: 3)
+                )
+            ),
+            on: harness,
+            context: context
+        )
+        await assertEventually {
+            harness.batches.snapshot.contains { $0.batchID == latestBatch }
+        }
+        retirementGate.resolve(())
+        await assertEventually {
+            harness.batches.snapshot.count == 3
+                && harness.store.snapshot(for: identity.profileID)?.activity == .idle
+        }
+        for batchID in [retiredBatch, pendingBatch] {
+            XCTAssertEqual(
+                outcome(harness.batches.snapshot.first { $0.batchID == batchID }?.outcomes[identity.profileID]),
+                .superseded
+            )
+        }
+        XCTAssertEqual(
+            outcome(harness.batches.snapshot.first { $0.batchID == latestBatch }?.outcomes[identity.profileID]),
+            .accepted
+        )
+        XCTAssertEqual(pendingGate.startCount, 0)
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+        XCTAssertEqual(
+            harness.committer.cachedUsage(for: identity.profileID)?.report?.usageSummary?.metrics.first?.value,
+            3
+        )
+    }
+
+    func testWatchdogDoesNotRetireActiveCommit() async throws {
+        let identity = makeIdentity()
+        let context = makeContext(visible: [identity.profileID])
+        let clock = MutableClock(TestValues.now)
+        let sleeper = ManualSleeper()
+        let commitGate = ManualGate<Void>()
+        let harness = makeHarness(
+            identities: [identity],
+            context: context,
+            now: { clock.now() },
+            watchdogSleep: { try await sleeper.sleep($0) }
+        )
+        harness.committer.commitGate = commitGate
+        _ = await enqueue(makeImmediateJob(identity: identity, result: ProviderFetchResult(
+            report: try makeReport(providerID: .codex, marker: 1)
+        )), on: harness, context: context)
+        await assertEventually { commitGate.startCount == 1 && sleeper.count == 1 }
+        clock.advance(by: 90)
+        sleeper.wakeNext()
+        await assertEventually { sleeper.count == 1 }
+        XCTAssertTrue(harness.batches.snapshot.isEmpty)
+        XCTAssertTrue(harness.store.snapshot(for: identity.profileID)?.activity.isInFlight ?? false)
+        commitGate.resolve(())
+        await assertEventually { harness.batches.snapshot.count == 1 }
+        XCTAssertEqual(outcome(harness.batches.snapshot[0].outcomes[identity.profileID]), .accepted)
+        XCTAssertEqual(harness.committer.durableCommits.count, 1)
+    }
+
     // MARK: - Cadence: multi-profile fan-out stagger
 
     func testIndexedStaggerPolicyDelaysNonFocusedProfilesByIndexedStep() {
@@ -6946,10 +7355,15 @@ final class UsageRefreshEngineTests: HostedAppTestCase {
         },
         memberEnqueueObserver:
             UsageRefreshEngine.MemberEnqueueObserver? = nil,
+        batchObserver: UsageRefreshEngine.BatchObserver? = nil,
         now: @escaping @Sendable () -> Date = { TestValues.now },
         staggerPolicy: any RefreshStaggerPolicy =
             IndexedRefreshStaggerPolicy(),
-        maximumBackoffWindow: TimeInterval = 30 * 60
+        maximumBackoffWindow: TimeInterval = 30 * 60,
+        watchdogSleep: @escaping UsageRefreshEngine.WatchdogSleep = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        },
+        diagnosticLogger: @escaping UsageRefreshEngine.DiagnosticLogger = { _ in }
     ) -> Harness {
         let ledger = retain(UsageRefreshInputLedger())
         let committer = retain(FakeCommitter(ledger: ledger))
@@ -6969,10 +7383,13 @@ final class UsageRefreshEngineTests: HostedAppTestCase {
             now: now,
             batchObserver: { result in
                 batches.append(result)
+                await batchObserver?(result)
             },
             memberEnqueueObserver: memberEnqueueObserver,
             staggerPolicy: staggerPolicy,
-            maximumBackoffWindow: maximumBackoffWindow
+            maximumBackoffWindow: maximumBackoffWindow,
+            watchdogSleep: watchdogSleep,
+            diagnosticLogger: diagnosticLogger
         ))
         return Harness(
             ledger: ledger,
